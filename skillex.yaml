@@ -1,0 +1,9 @@
+# Skillex configuration
+# See https://github.com/skillex/skillex for documentation
+
+Version: 4
+Rules:
+    - Scope: '**'
+      Skills:
+        - skills/repo.md
+      DependencyBoundary: ""
