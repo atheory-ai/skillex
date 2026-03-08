@@ -75,13 +75,13 @@ The package automatically installs the correct binary for your platform (macOS a
 ### go install
 
 ```bash
-go install github.com/ladyhunterbear/skillex/cmd/skillex@latest
+go install github.com/atheory-ai/skillex/cmd/skillex@latest
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/ladyhunterbear/skillex
+git clone https://github.com/atheory-ai/skillex
 cd skillex
 make build          # produces ./skillex
 make install        # installs to $GOPATH/bin
@@ -629,7 +629,7 @@ The CLI validates structure. The agent validates behavior.
 **Requirements:** Go 1.22+
 
 ```bash
-git clone https://github.com/ladyhunterbear/skillex
+git clone https://github.com/atheory-ai/skillex
 cd skillex
 
 make build      # ./skillex

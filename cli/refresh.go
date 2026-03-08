@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/ladyhunterbear/skillex/internal/agents"
-	"github.com/ladyhunterbear/skillex/internal/config"
-	"github.com/ladyhunterbear/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/agents"
+	"github.com/atheory-ai/skillex/internal/config"
+	"github.com/atheory-ai/skillex/internal/registry"
 )
 
 func newRefreshCmd() *cobra.Command {

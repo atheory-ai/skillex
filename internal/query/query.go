@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/gobwas/glob"
-	"github.com/ladyhunterbear/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/registry"
 )
 
 // Format controls what query results include.
