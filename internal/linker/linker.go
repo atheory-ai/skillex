@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/gobwas/glob"
-	"github.com/ladyhunterbear/skillex/internal/config"
-	"github.com/ladyhunterbear/skillex/internal/scanner"
+	"github.com/atheory-ai/skillex/internal/config"
+	"github.com/atheory-ai/skillex/internal/scanner"
 )
 
 // LinkedSkill is a skill with its resolved scope assignments.

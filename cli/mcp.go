@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	mcpserver "github.com/ladyhunterbear/skillex/mcp"
-	"github.com/ladyhunterbear/skillex/internal/registry"
+	mcpserver "github.com/atheory-ai/skillex/mcp"
+	"github.com/atheory-ai/skillex/internal/registry"
 )
 
 func newMCPCmd() *cobra.Command {

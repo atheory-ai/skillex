@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ladyhunterbear/skillex/internal/agents"
-	"github.com/ladyhunterbear/skillex/internal/config"
-	"github.com/ladyhunterbear/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/agents"
+	"github.com/atheory-ai/skillex/internal/config"
+	"github.com/atheory-ai/skillex/internal/registry"
 )
 
 func newInitCmd() *cobra.Command {
@@ -209,7 +209,7 @@ func createSkilexYAML(root string, yes bool) error {
 	}
 
 	// Add version comment
-	header := "# Skillex configuration\n# See https://github.com/ladyhunterbear/skillex for documentation\n\n"
+	header := "# Skillex configuration\n# See https://github.com/atheory-ai/skillex for documentation\n\n"
 	return os.WriteFile(path, append([]byte(header), data...), 0o644)
 }
 

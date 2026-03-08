@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ladyhunterbear/skillex/internal/frontmatter"
+	"github.com/atheory-ai/skillex/internal/frontmatter"
 )
 
 func newImportCmd() *cobra.Command {
