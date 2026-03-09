@@ -1,0 +1,7 @@
+Version: 4
+
+Rules:
+  - Scope: "**"
+    Skills:
+      - skills/repo.md
+    DependencyBoundary: .

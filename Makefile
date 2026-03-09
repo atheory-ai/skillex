@@ -73,3 +73,20 @@ refresh:
 
 doctor:
 	go run $(LDFLAGS) ./cmd/skillex doctor
+
+# ── Acceptance tests ──────────────────────────────────────────────────────────
+
+.PHONY: test-setup test-acceptance test-perf test-clean
+
+test-setup:
+	./test/setup.sh
+
+test-acceptance: test-setup build
+	go test ./test/acceptance/... -v -timeout 300s
+
+test-perf: build
+	./test/setup.sh --perf
+	go test ./test/acceptance/ -run "TestPerformance" -v -timeout 600s
+
+test-clean:
+	./test/setup.sh --clean
