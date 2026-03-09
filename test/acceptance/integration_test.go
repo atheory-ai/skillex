@@ -52,11 +52,9 @@ func TestIntegration_CiPipeline(t *testing.T) {
 		t.Errorf("step 2 (check fresh) should exit 0, got %d: %s", res.ExitCode, res.Stderr)
 	}
 
-	// 3. Modify a file
-	compPath := filepath.Join(dir, "packages", "ui", "skillex", "public", "components.md")
-	f, _ := os.OpenFile(compPath, os.O_APPEND|os.O_WRONLY, 0o644)
-	f.WriteString("\nChange.")
-	f.Close()
+	// 3. Add a new skill file (changes count — what --check compares)
+	newSkill := filepath.Join(dir, "packages", "ui", "skillex", "public", "ci-stale-skill.md")
+	os.WriteFile(newSkill, []byte("# CI Stale Skill\n\nAdded to trigger staleness.\n"), 0o644)
 
 	// 4. Check → non-zero (stale)
 	res = helpers.Run(t, dir, "refresh", "--check")

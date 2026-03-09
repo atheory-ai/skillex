@@ -96,6 +96,10 @@ func Open(path string) (*Registry, error) {
 
 	db.SetMaxOpenConns(1) // SQLite is single-writer
 
+	// Wait up to 5s for concurrent writers instead of failing immediately.
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		return nil, err
+	}
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return nil, err
 	}

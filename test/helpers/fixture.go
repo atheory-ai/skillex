@@ -44,6 +44,16 @@ func LoadFixture(t *testing.T, name string) string {
 	return path
 }
 
+// TryLoadFixture returns (path, true) if the fixture exists, or ("", false) if not.
+// Use this for optional fixtures (e.g. the perf fixture) instead of failing the test.
+func TryLoadFixture(name string) (string, bool) {
+	path := filepath.Join(fixtureBase(), name)
+	if _, err := os.Stat(path); err != nil {
+		return "", false
+	}
+	return path, true
+}
+
 // CopyFixture creates a temporary copy of a fixture for tests that modify it.
 // The copy is cleaned up automatically when the test ends.
 func CopyFixture(t *testing.T, name string) string {

@@ -35,18 +35,14 @@ func TestRefresh_CheckDetectsStale(t *testing.T) {
 
 	helpers.Run(t, dir, "refresh")
 
-	// Modify a skill file
-	compPath := filepath.Join(dir, "packages", "ui", "skillex", "public", "components.md")
-	f, err := os.OpenFile(compPath, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.WriteString("\nNew content appended.")
-	f.Close()
+	// Add a new skill file — this changes the skill count, which is what --check compares.
+	// (Appending content to an existing file does not change the count.)
+	newSkill := filepath.Join(dir, "packages", "ui", "skillex", "public", "stale-test-skill.md")
+	os.WriteFile(newSkill, []byte("# Stale Test Skill\n\nAdded to trigger staleness.\n"), 0o644)
 
 	res := helpers.Run(t, dir, "refresh", "--check")
 	if res.ExitCode == 0 {
-		t.Error("expected non-zero exit code from refresh --check after modification")
+		t.Error("expected non-zero exit code from refresh --check after adding a new skill")
 	}
 }
 

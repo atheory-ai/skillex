@@ -80,7 +80,10 @@ func TestEdge_ConcurrentRefresh(t *testing.T) {
 }
 
 func TestPerformance_RefreshAtScale(t *testing.T) {
-	dir := helpers.LoadFixture(t, "perf")
+	dir, ok := helpers.TryLoadFixture("perf")
+	if !ok {
+		t.Skip("perf fixture not installed — run: ./test/setup.sh --perf")
+	}
 
 	start := time.Now()
 	res := helpers.Run(t, dir, "refresh")

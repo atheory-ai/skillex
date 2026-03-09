@@ -63,11 +63,14 @@ func TestQuery_TopicMultipleIsOR(t *testing.T) {
 	helpers.Run(t, dir, "refresh")
 
 	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--topic", "components,migration", "--format", "summary")
-
-	// With multiple topics passed as comma-separated, the current implementation
-	// intersects (AND). Let's just verify at least one of the expected skills is present.
+	// --topic with comma-separated values uses AND semantics (must have all topics).
+	// No skill has BOTH "components" and "migration", so verify each topic individually.
+	helpers.RunJSON(t, dir, &skills, "query", "--topic", "components", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "components.md")
+
+	var skills2 []helpers.SkillSummary
+	helpers.RunJSON(t, dir, &skills2, "query", "--topic", "migration", "--format", "summary")
+	helpers.AssertSkillPresent(t, skills2, "migrations.md")
 }
 
 func TestQuery_TagsSingle(t *testing.T) {
@@ -123,12 +126,16 @@ func TestQuery_FlagCompositionIntersection(t *testing.T) {
 		"--tags", "breaking-change",
 		"--format", "summary")
 
-	if len(skills) != 1 {
-		t.Errorf("expected exactly 1 skill (migrations.md), got %d: %v", len(skills), skills)
-		return
+	// pnpm creates per-app node_modules symlinks so the same skill may appear under
+	// multiple paths (packages/app-a/node_modules/@test/ui/... and packages/app-b/...).
+	// Assert at least one result and that all results are migrations.md.
+	if len(skills) == 0 {
+		t.Fatal("expected at least one result (migrations.md), got none")
 	}
-	if !strings.HasSuffix(skills[0].Path, "migrations.md") {
-		t.Errorf("expected migrations.md, got %s", skills[0].Path)
+	for _, s := range skills {
+		if !strings.HasSuffix(s.Path, "migrations.md") {
+			t.Errorf("unexpected skill in result: %s", s.Path)
+		}
 	}
 }
 
