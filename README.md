@@ -63,11 +63,11 @@ Skillex scans your dependencies for skill exports, links them to the right scope
 ### npm (recommended for Node.js projects)
 
 ```bash
-npm install --save-dev @skillex/skillex
+npm install --save-dev @atheory-ai/skillex
 # or
-pnpm add -D @skillex/skillex
+pnpm add -D @atheory-ai/skillex
 # or
-yarn add -D @skillex/skillex
+yarn add -D @atheory-ai/skillex
 ```
 
 The package automatically installs the correct binary for your platform (macOS arm64/x64, Linux arm64/x64, Windows x64) via npm's `optionalDependencies` mechanism — only the binary for your OS is downloaded.

@@ -1,11 +1,11 @@
 {
-  "name": "@skillex/skillex",
+  "name": "@atheory-ai/skillex",
   "version": "0.6.0",
   "description": "Skill management for AI agents in Node.js projects",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/skillex/skillex"
+    "url": "https://github.com/atheory-ai/skillex"
   },
   "bin": {
     "skillex": "bin/skillex.js"
@@ -17,10 +17,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@skillex/skillex-darwin-arm64": "0.6.0",
-    "@skillex/skillex-darwin-x64": "0.6.0",
-    "@skillex/skillex-linux-x64": "0.6.0",
-    "@skillex/skillex-linux-arm64": "0.6.0",
-    "@skillex/skillex-win32-x64": "0.6.0"
+    "@atheory-ai/skillex-darwin-arm64": "0.6.0",
+    "@atheory-ai/skillex-darwin-x64": "0.6.0",
+    "@atheory-ai/skillex-linux-x64": "0.6.0",
+    "@atheory-ai/skillex-linux-arm64": "0.6.0",
+    "@atheory-ai/skillex-win32-x64": "0.6.0"
   }
 }

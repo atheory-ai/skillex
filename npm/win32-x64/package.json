@@ -1,11 +1,11 @@
 {
-  "name": "@skillex/skillex-win32-x64",
+  "name": "@atheory-ai/skillex-win32-x64",
   "version": "0.6.0",
-  "description": "Windows x64 binary for @skillex/skillex",
+  "description": "Windows x64 binary for @atheory-ai/skillex",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/skillex/skillex"
+    "url": "https://github.com/atheory-ai/skillex"
   },
   "os": ["win32"],
   "cpu": ["x64"],
