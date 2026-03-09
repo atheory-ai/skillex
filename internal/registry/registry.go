@@ -324,18 +324,10 @@ func (r *Registry) Query(path, pkg string, topics, tags []string) ([]Skill, erro
 
 	var sets []filterSet
 
-	if path != "" {
-		scopes := pathToScopes(path)
-		skills, err := r.QueryByScope(scopes)
-		if err != nil {
-			return nil, err
-		}
-		ids := map[int64]bool{}
-		for _, s := range skills {
-			ids[s.ID] = true
-		}
-		sets = append(sets, filterSet{ids: ids, set: true})
-	}
+	// Note: path filtering is NOT done here at the SQL level.
+	// Stored scopes are glob patterns (e.g. "**", "packages/*/**") that require
+	// in-process glob matching against the given path. That matching is performed
+	// by filterByPath in the query engine after this function returns.
 
 	if len(topics) > 0 {
 		skills, err := r.QueryByTopic(topics)
@@ -630,15 +622,6 @@ func (r *Registry) populateMeta(s *Skill) error {
 	}
 	rows.Close()
 	return rows.Err()
-}
-
-// pathToScopes converts a working path into candidate scope patterns.
-// We store exact scope globs in the DB, so we need to match those globs against the path.
-// For now, return the path itself and common parent patterns for matching.
-func pathToScopes(path string) []string {
-	// The query engine will filter in-process using glob matching
-	// Return the path; the Query function handles scope matching
-	return []string{path}
 }
 
 func nullStr(s string) any {

@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -55,7 +56,7 @@ func CopyFixture(t *testing.T, name string) string {
 	return dst
 }
 
-// copyDir recursively copies src to dst.
+// copyDir recursively copies src to dst, preserving symlinks.
 func copyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -63,6 +64,15 @@ func copyDir(src, dst string) error {
 		}
 		rel, _ := filepath.Rel(src, path)
 		target := filepath.Join(dst, rel)
+
+		if d.Type()&fs.ModeSymlink != 0 {
+			// Recreate symlink rather than following it (pnpm node_modules uses many symlinks).
+			linkTarget, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(linkTarget, target)
+		}
 
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
