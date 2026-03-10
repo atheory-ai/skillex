@@ -1,11 +1,11 @@
 {
-  "name": "@skillex/skillex-darwin-arm64",
+  "name": "@atheory-ai/skillex-darwin-arm64",
   "version": "0.6.0",
-  "description": "macOS arm64 binary for @skillex/skillex",
+  "description": "macOS arm64 binary for @atheory-ai/skillex",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/skillex/skillex"
+    "url": "https://github.com/atheory-ai/skillex"
   },
   "os": ["darwin"],
   "cpu": ["arm64"],

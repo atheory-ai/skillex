@@ -1,5 +1,5 @@
 VERSION ?= 0.6.0-dev
-LDFLAGS := -ldflags "-X github.com/skillex/skillex/cli.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
 
 .PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor
 
@@ -64,7 +64,7 @@ npm-publish: npm-stage
 	cd npm/linux-arm64  && npm publish --access public
 	cd npm/win32-x64    && npm publish --access public
 	cd npm/skillex      && npm publish --access public
-	@echo "Published @skillex/skillex@$(VERSION) and all platform packages."
+	@echo "Published @atheory-ai/skillex@$(VERSION) and all platform packages."
 
 # ── Repo workflow ────────────────────────────────────────────────────────────
 

@@ -1,11 +1,11 @@
 {
-  "name": "@skillex/skillex-linux-x64",
+  "name": "@atheory-ai/skillex-linux-x64",
   "version": "0.6.0",
-  "description": "Linux x64 binary for @skillex/skillex",
+  "description": "Linux x64 binary for @atheory-ai/skillex",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/skillex/skillex"
+    "url": "https://github.com/atheory-ai/skillex"
   },
   "os": ["linux"],
   "cpu": ["x64"],
