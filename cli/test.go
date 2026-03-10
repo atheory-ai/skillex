@@ -125,26 +125,28 @@ func collectSkillDirs(root string, cfg *config.Config, scope string) []string {
 	seen := map[string]bool{}
 	var dirs []string
 
-	// Repo-level skill directory
-	skillsDir := filepath.Join(root, "skills")
-	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {
-		if !seen[skillsDir] {
-			seen[skillsDir] = true
-			dirs = append(dirs, skillsDir)
+	add := func(dir string) {
+		if !seen[dir] {
+			if info, err := os.Stat(dir); err == nil && info.IsDir() {
+				seen[dir] = true
+				dirs = append(dirs, dir)
+			}
 		}
 	}
+
+	// Repo-level skill directory
+	add(filepath.Join(root, "skills"))
 
 	// Skill files from rules
 	for _, rule := range cfg.Rules {
 		for _, skillPath := range rule.Skills {
-			dir := filepath.Dir(filepath.Join(root, skillPath))
-			if !seen[dir] {
-				if info, err := os.Stat(dir); err == nil && info.IsDir() {
-					seen[dir] = true
-					dirs = append(dirs, dir)
-				}
-			}
+			add(filepath.Dir(filepath.Join(root, skillPath)))
 		}
+	}
+
+	// Package-level skillex/public and skillex/private directories
+	for _, dir := range collectSkilexPackageDirs(root) {
+		add(dir)
 	}
 
 	return dirs

@@ -1,0 +1,10 @@
+{
+  "name": "@test/app-b",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@test/ui": "workspace:*",
+    "@test/utils": "workspace:*"
+  },
+  "main": "src/index.ts"
+}

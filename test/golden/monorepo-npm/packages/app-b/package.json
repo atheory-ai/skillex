@@ -1,0 +1,9 @@
+{
+  "name": "@test/app-b",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@test/ui": "*",
+    "@test/utils": "*"
+  }
+}

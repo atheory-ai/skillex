@@ -188,13 +188,22 @@ func ParseTestFile(path string) (*TestFile, []Issue, error) {
 		}
 	}
 
-	// Validate H1 present
+	// Validate H1 present and matches filename
 	if tf.SkillRef == "" {
 		issues = append(issues, Issue{
 			File:    rel,
 			Message: "missing H1 'Tests: <filename>' header",
 			Level:   "error",
 		})
+	} else {
+		expectedRef := filepath.Base(strings.TrimSuffix(path, ".test.md") + ".md")
+		if tf.SkillRef != expectedRef {
+			issues = append(issues, Issue{
+				File:    rel,
+				Message: fmt.Sprintf("H1 references %q but file tests %q", tf.SkillRef, expectedRef),
+				Level:   "error",
+			})
+		}
 	}
 
 	if len(tf.Scenarios) == 0 && tf.SkillRef != "" {

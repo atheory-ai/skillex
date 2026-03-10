@@ -39,6 +39,10 @@ Examples:
 			root := repoRoot()
 			dbPath := filepath.Join(root, ".skillex", "index.db")
 
+			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+				return fmt.Errorf("registry not found — run 'skillex refresh' first")
+			}
+
 			reg, err := registry.Open(dbPath)
 			if err != nil {
 				return fmt.Errorf("opening registry: %w — run 'skillex refresh' first", err)

@@ -1,0 +1,6 @@
+{
+  "name": "@test/ui",
+  "version": "2.0.0",
+  "skillex": true,
+  "main": "src/index.ts"
+}

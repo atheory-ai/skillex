@@ -1,0 +1,18 @@
+Version: 4
+
+Rules:
+  - Scope: "**"
+    Skills:
+      - skills/repo.md
+      - skillex/vendor/github.com/example/react-patterns/hooks.md
+      - skillex/vendor/local/imported-guide.md
+
+  - Scope: "packages/*/**"
+    Skills:
+      - skills/package-dev.md
+
+  - Scope: "packages/app-a/**"
+    DependencyBoundary: packages/app-a
+
+  - Scope: "packages/app-b/**"
+    DependencyBoundary: packages/app-b
