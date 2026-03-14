@@ -24,7 +24,7 @@ func newRefreshCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "refresh",
 		Short: "Rebuild the skill registry",
-		Long: `Rebuild the registry from skillex.yaml and installed packages.
+		Long: `Rebuild the registry from skillex.json or skillex.yaml and installed packages.
 
 By default, refresh includes devDependencies. Use --mode prod to include
 only production dependencies and public skills.

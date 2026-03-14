@@ -22,8 +22,10 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// 2. Verify init artifacts
-	if _, err := os.Stat(filepath.Join(dir, "skillex.yaml")); err != nil {
-		t.Error("step 2: skillex.yaml missing after init")
+	if _, jsonErr := os.Stat(filepath.Join(dir, "skillex.json")); os.IsNotExist(jsonErr) {
+		if _, yamlErr := os.Stat(filepath.Join(dir, "skillex.yaml")); yamlErr != nil {
+			t.Error("step 2: neither skillex.json nor skillex.yaml exists after init")
+		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
 		t.Error("step 2: AGENTS.md missing after init")

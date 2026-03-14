@@ -21,9 +21,12 @@ func TestInit_BootstrapEmptyRepo(t *testing.T) {
 		t.Fatalf("init failed (exit %d):\nstdout: %s\nstderr: %s", res.ExitCode, res.Stdout, res.Stderr)
 	}
 
-	// skillex.yaml exists
-	if _, err := os.Stat(filepath.Join(dir, "skillex.yaml")); err != nil {
-		t.Error("skillex.yaml not created")
+	// skillex.json exists by default
+	if _, err := os.Stat(filepath.Join(dir, "skillex.json")); err != nil {
+		t.Error("skillex.json not created")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "skillex.yaml")); err == nil {
+		t.Error("skillex.yaml should not be created by default")
 	}
 
 	// skills/ directory exists with at least one .md file
@@ -70,6 +73,25 @@ func TestInit_HarnessCursor(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "skillex") {
 		t.Errorf(".cursor/mcp.json should contain 'skillex', got: %s", data)
+	}
+}
+
+func TestInit_YAMLFlagCreatesYAMLConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"test-repo","version":"1.0.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := helpers.Run(t, dir, "init", "--yes", "--yaml")
+	if res.ExitCode != 0 {
+		t.Fatalf("init --yaml failed (exit %d):\nstdout: %s\nstderr: %s", res.ExitCode, res.Stdout, res.Stderr)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "skillex.yaml")); err != nil {
+		t.Error("skillex.yaml not created with --yaml")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "skillex.json")); err == nil {
+		t.Error("skillex.json should not be created when --yaml is used")
 	}
 }
 

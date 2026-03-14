@@ -34,13 +34,13 @@ Checks:
 }
 
 type doctorReport struct {
-	ConfigOK     bool     `json:"config_ok"`
-	RegistryOK   bool     `json:"registry_ok"`
-	SkillCount   int      `json:"skill_count"`
-	Topics       []string `json:"topics"`
-	Tags         []string `json:"tags"`
-	Errors       []string `json:"errors"`
-	Warnings     []string `json:"warnings"`
+	ConfigOK   bool     `json:"config_ok"`
+	RegistryOK bool     `json:"registry_ok"`
+	SkillCount int      `json:"skill_count"`
+	Topics     []string `json:"topics"`
+	Tags       []string `json:"tags"`
+	Errors     []string `json:"errors"`
+	Warnings   []string `json:"warnings"`
 }
 
 func runDoctor(root string) error {
@@ -59,7 +59,12 @@ func runDoctor(root string) error {
 		errs = append(errs, fmt.Sprintf("configuration: %v", err))
 	} else {
 		report.ConfigOK = true
-		printCheck(true, "skillex.yaml loaded", fmt.Sprintf("version %d, %d rules", cfg.Version, len(cfg.Rules)))
+		configPath, _, pathErr := config.ResolvePath(root)
+		if pathErr != nil {
+			printCheck(true, "configuration loaded", fmt.Sprintf("version %d, %d rules", cfg.Version, len(cfg.Rules)))
+		} else {
+			printCheck(true, filepath.Base(configPath)+" loaded", fmt.Sprintf("version %d, %d rules", cfg.Version, len(cfg.Rules)))
+		}
 	}
 
 	// 2. Check registry

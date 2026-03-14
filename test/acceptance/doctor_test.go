@@ -59,7 +59,7 @@ func TestDoctor_ConfigurationError(t *testing.T) {
 	if len(report.Errors) > 0 {
 		foundConfig := false
 		for _, e := range report.Errors {
-			if strings.Contains(strings.ToLower(e), "config") || strings.Contains(e, "skillex.yaml") {
+			if strings.Contains(strings.ToLower(e), "config") || strings.Contains(e, "skillex.yaml") || strings.Contains(e, "skillex.json") {
 				foundConfig = true
 			}
 		}
