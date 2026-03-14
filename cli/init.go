@@ -14,9 +14,10 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var (
-		yes       bool
-		pkg       bool
-		harness   string
+		yes     bool
+		pkg     bool
+		harness string
+		useYAML bool
 	)
 
 	cmd := &cobra.Command{
@@ -25,7 +26,8 @@ func newInitCmd() *cobra.Command {
 		Long: `Initialize a repository (or package) for skillex.
 
 For repos:
-  Creates skillex.yaml, skills/, AGENTS.md, .skillex/, and optionally
+  Creates skillex.json by default (or skillex.yaml with --yaml), skills/,
+  AGENTS.md, .skillex/, and optionally
   configures MCP integration for the specified agent harness.
 
 For packages (--package):
@@ -35,6 +37,7 @@ For packages (--package):
 Flags:
   --harness  Configure MCP for a specific harness (cursor, claude-code, windsurf)
   --package  Initialize this directory as a skill-exporting package
+  --yaml     Generate skillex.yaml instead of the default skillex.json
   --yes      Accept all defaults without prompting`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
@@ -42,28 +45,36 @@ Flags:
 			if pkg {
 				return initPackage(root, yes)
 			}
-			return initRepo(root, yes, harness)
+			return initRepo(root, yes, harness, useYAML)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Accept all defaults without prompting")
 	cmd.Flags().BoolVar(&pkg, "package", false, "Initialize as a skill-exporting package")
 	cmd.Flags().StringVar(&harness, "harness", "", "Configure MCP for harness: cursor, claude-code, windsurf")
+	cmd.Flags().BoolVar(&useYAML, "yaml", false, "Generate skillex.yaml instead of the default skillex.json")
 
 	return cmd
 }
 
 // initRepo sets up a repository root for skillex.
-func initRepo(root string, yes bool, harness string) error {
+func initRepo(root string, yes bool, harness string, useYAML bool) error {
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, styleHeader.Render("  skillex init  "))
+	}
+
+	configPath := config.JSONFilename
+	configFormat := config.FormatJSON
+	if useYAML {
+		configPath = config.YAMLFilename
+		configFormat = config.FormatYAML
 	}
 
 	steps := []struct {
 		desc string
 		fn   func() error
 	}{
-		{"Creating skillex.yaml", func() error { return createSkilexYAML(root, yes) }},
+		{fmt.Sprintf("Creating %s", configPath), func() error { return createSkilexConfig(root, yes, configFormat) }},
 		{"Creating skills/ directory", func() error { return createSkillsDir(root) }},
 		{"Creating .skillex/ directory", func() error { return os.MkdirAll(filepath.Join(root, ".skillex"), 0o755) }},
 		{"Writing AGENTS.md", func() error { return createAgentsMD(root) }},
@@ -193,24 +204,39 @@ func initPackage(root string, yes bool) error {
 	return nil
 }
 
-func createSkilexYAML(root string, yes bool) error {
-	path := filepath.Join(root, "skillex.yaml")
+func createSkilexConfig(root string, yes bool, format config.Format) error {
+	filename := config.JSONFilename
+	if format == config.FormatYAML {
+		filename = config.YAMLFilename
+	}
+	path := filepath.Join(root, filename)
+
 	if _, err := os.Stat(path); err == nil {
 		if !yes {
-			fmt.Fprintf(os.Stderr, "  %s skillex.yaml already exists, skipping\n", styleDim.Render("→"))
+			fmt.Fprintf(os.Stderr, "  %s %s already exists, skipping\n", styleDim.Render("→"), filename)
+		}
+		return nil
+	}
+
+	if otherPath, _, err := config.ResolvePath(root); err == nil {
+		if !yes {
+			fmt.Fprintf(os.Stderr, "  %s %s already exists, skipping\n", styleDim.Render("→"), filepath.Base(otherPath))
 		}
 		return nil
 	}
 
 	cfg := config.DefaultConfig()
-	data, err := config.Marshal(cfg)
+	data, err := config.Marshal(cfg, format)
 	if err != nil {
 		return err
 	}
 
-	// Add version comment
-	header := "# Skillex configuration\n# See https://github.com/atheory-ai/skillex for documentation\n\n"
-	return os.WriteFile(path, append([]byte(header), data...), 0o644)
+	if format == config.FormatYAML {
+		header := "# Skillex configuration\n# See https://github.com/atheory-ai/skillex for documentation\n\n"
+		data = append([]byte(header), data...)
+	}
+
+	return os.WriteFile(path, data, 0o644)
 }
 
 func createSkillsDir(root string) error {
