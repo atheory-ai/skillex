@@ -33,15 +33,19 @@ type SkillFile struct {
 	IsTest bool
 	// TestFor is the RelPath of the skill this test belongs to (when IsTest == true).
 	TestFor string
+	// DependencyBoundary is the relPath of the package boundary that resolved this skill.
+	DependencyBoundary string
+	// PackageRoot is the relPath of the installed package root that owns this skill.
+	PackageRoot string
 }
 
 // PackageJSON represents the relevant fields from a package.json file.
 type PackageJSON struct {
-	Name            string          `json:"name"`
-	Version         string          `json:"version"`
+	Name            string            `json:"name"`
+	Version         string            `json:"version"`
 	Dependencies    map[string]string `json:"dependencies"`
 	DevDependencies map[string]string `json:"devDependencies"`
-	Skillex         json.RawMessage `json:"skillex"`
+	Skillex         json.RawMessage   `json:"skillex"`
 }
 
 // SkilexExport holds the skillex config extracted from a package.json.
@@ -78,7 +82,7 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	for _, rule := range s.cfg.Rules {
 		for _, skillPath := range rule.Skills {
 			abs := filepath.Join(s.root, skillPath)
-			sf, err := s.readSkillFile(abs, skillPath, "", "", "repo", "repo")
+			sf, err := s.readSkillFile(abs, skillPath, "", "", "repo", "repo", "", "")
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("repo skill %s: %w", skillPath, err))
 				continue
@@ -99,7 +103,7 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 		}
 		seen[boundaryPath] = true
 
-		depSkills, errs := s.scanBoundary(boundaryPath)
+		depSkills, errs := s.scanBoundary(boundaryPath, rule.DependencyBoundary)
 		result.DepSkills = append(result.DepSkills, depSkills...)
 		result.Errors = append(result.Errors, errs...)
 	}
@@ -108,7 +112,7 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 }
 
 // scanBoundary resolves dependencies at a boundary package.json and scans for skillex exports.
-func (s *Scanner) scanBoundary(boundaryPath string) ([]SkillFile, []error) {
+func (s *Scanner) scanBoundary(boundaryPath, boundaryRel string) ([]SkillFile, []error) {
 	var skills []SkillFile
 	var errs []error
 
@@ -142,7 +146,14 @@ func (s *Scanner) scanBoundary(boundaryPath string) ([]SkillFile, []error) {
 		}
 
 		skilexDir := filepath.Join(pkgRoot, export.Path)
-		depSkills, depErrs := s.scanSkilexDir(skilexDir, depPkgJSON.Name, depPkgJSON.Version)
+		pkgRootRel, _ := filepath.Rel(s.root, pkgRoot)
+		depSkills, depErrs := s.scanSkilexDir(
+			skilexDir,
+			depPkgJSON.Name,
+			depPkgJSON.Version,
+			filepath.ToSlash(boundaryRel),
+			filepath.ToSlash(pkgRootRel),
+		)
 		skills = append(skills, depSkills...)
 		errs = append(errs, depErrs...)
 	}
@@ -151,7 +162,7 @@ func (s *Scanner) scanBoundary(boundaryPath string) ([]SkillFile, []error) {
 }
 
 // scanSkilexDir reads public/ and private/ directories in a skillex export directory.
-func (s *Scanner) scanSkilexDir(skilexDir, pkgName, pkgVersion string) ([]SkillFile, []error) {
+func (s *Scanner) scanSkilexDir(skilexDir, pkgName, pkgVersion, boundaryRel, pkgRootRel string) ([]SkillFile, []error) {
 	var skills []SkillFile
 	var errs []error
 
@@ -173,7 +184,7 @@ func (s *Scanner) scanSkilexDir(skilexDir, pkgName, pkgVersion string) ([]SkillF
 			}
 
 			relToRoot, _ := filepath.Rel(s.root, path)
-			sfs, err := s.readSkillFile(path, relToRoot, pkgName, pkgVersion, vis, "dependency")
+			sfs, err := s.readSkillFile(path, relToRoot, pkgName, pkgVersion, vis, "dependency", boundaryRel, pkgRootRel)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("reading %s: %w", path, err))
 				return nil
@@ -190,7 +201,7 @@ func (s *Scanner) scanSkilexDir(skilexDir, pkgName, pkgVersion string) ([]SkillF
 
 // readSkillFile reads a skill (or test) file and returns SkillFile(s).
 // For repo-level skills, the path may not exist (gracefully skip).
-func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibility, sourceType string) ([]SkillFile, error) {
+func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel string) ([]SkillFile, error) {
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -211,16 +222,18 @@ func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibilit
 	}
 
 	sf := SkillFile{
-		AbsPath:        absPath,
-		RelPath:        relPath,
-		PackageName:    pkgName,
-		PackageVersion: pkgVersion,
-		Visibility:     visibility,
-		SourceType:     sourceType,
-		Frontmatter:    fm,
-		Body:           body,
-		IsTest:         isTest,
-		TestFor:        testFor,
+		AbsPath:            absPath,
+		RelPath:            relPath,
+		PackageName:        pkgName,
+		PackageVersion:     pkgVersion,
+		Visibility:         visibility,
+		SourceType:         sourceType,
+		Frontmatter:        fm,
+		Body:               body,
+		IsTest:             isTest,
+		TestFor:            testFor,
+		DependencyBoundary: boundaryRel,
+		PackageRoot:        pkgRootRel,
 	}
 
 	return []SkillFile{sf}, nil

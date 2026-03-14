@@ -97,3 +97,70 @@ func TestLinker_VendorSkillsInScope(t *testing.T) {
 
 	helpers.AssertSkillPresent(t, skills, "hooks.md")
 }
+
+func TestLinker_MultiVersionBoundaryScopes(t *testing.T) {
+	dir := helpers.CopyFixture(t, "multi-version-local")
+	helpers.Run(t, dir, "refresh")
+
+	var appASkills []helpers.SkillSummary
+	helpers.RunJSON(t, dir, &appASkills, "query",
+		"--path", "apps/app-a/**",
+		"--package", "@demo/component-library",
+		"--format", "summary")
+
+	if len(appASkills) == 0 {
+		t.Fatal("expected app-a skills, got none")
+	}
+	for _, s := range appASkills {
+		if s.Version != "1.0.0" {
+			t.Errorf("app-a should only see @demo/component-library@1.0.0, got %s from %s", s.Version, s.Path)
+		}
+		if s.Visibility == "private" {
+			t.Errorf("private v1 skill visible from app-a consumer path: %s", s.Path)
+		}
+	}
+	helpers.AssertSkillPresent(t, appASkills, "consumer.md")
+
+	var appBSkills []helpers.SkillSummary
+	helpers.RunJSON(t, dir, &appBSkills, "query",
+		"--path", "apps/app-b/**",
+		"--package", "@demo/component-library",
+		"--format", "summary")
+
+	if len(appBSkills) == 0 {
+		t.Fatal("expected app-b skills, got none")
+	}
+	for _, s := range appBSkills {
+		if s.Version != "2.0.0" {
+			t.Errorf("app-b should only see @demo/component-library@2.0.0, got %s from %s", s.Version, s.Path)
+		}
+		if s.Visibility == "private" {
+			t.Errorf("private v2 skill visible from app-b consumer path: %s", s.Path)
+		}
+	}
+	helpers.AssertSkillPresent(t, appBSkills, "consumer.md")
+}
+
+func TestLinker_MultiVersionPrivateScopes(t *testing.T) {
+	dir := helpers.CopyFixture(t, "multi-version-local")
+	helpers.Run(t, dir, "refresh")
+
+	var maintainerSkills []helpers.SkillSummary
+	helpers.RunJSON(t, dir, &maintainerSkills, "query",
+		"--path", "apps/app-a/node_modules/@demo/component-library/**",
+		"--package", "@demo/component-library",
+		"--format", "summary")
+
+	hasPrivate := false
+	for _, s := range maintainerSkills {
+		if s.Version != "1.0.0" {
+			t.Errorf("app-a package path should only see v1 skills, got %s from %s", s.Version, s.Path)
+		}
+		if s.Visibility == "private" {
+			hasPrivate = true
+		}
+	}
+	if !hasPrivate {
+		t.Fatal("expected private v1 skills when querying inside app-a's installed package path")
+	}
+}

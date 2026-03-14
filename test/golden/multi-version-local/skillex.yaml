@@ -1,0 +1,12 @@
+Version: 4
+
+Rules:
+  - Scope: "**"
+    Skills:
+      - skills/repo.md
+
+  - Scope: "apps/app-a/**"
+    DependencyBoundary: apps/app-a
+
+  - Scope: "apps/app-b/**"
+    DependencyBoundary: apps/app-b

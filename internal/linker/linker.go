@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gobwas/glob"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/scanner"
+	"github.com/gobwas/glob"
 )
 
 // LinkedSkill is a skill with its resolved scope assignments.
@@ -45,12 +45,28 @@ func (l *Linker) Link(result *scanner.ScanResult) []LinkedSkill {
 		linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: scopes})
 	}
 
-	// For dependency skills, determine scopes based on which rules reference
-	// their boundary, and apply visibility rules.
+	// For dependency skills, determine scopes from the specific boundary that
+	// resolved the package and merge duplicate discoveries by relPath.
 	depScopes := l.resolveDepSkillScopes(result.DepSkills)
+	depByPath := map[string]LinkedSkill{}
 	for _, sf := range result.DepSkills {
-		scopes := depScopes[sf.RelPath]
-		linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: scopes})
+		if existing, ok := depByPath[sf.RelPath]; ok {
+			existing.Scopes = appendUnique(existing.Scopes, depScopes[sf.RelPath]...)
+			depByPath[sf.RelPath] = existing
+			continue
+		}
+		depByPath[sf.RelPath] = LinkedSkill{
+			SkillFile: sf,
+			Scopes:    append([]string(nil), depScopes[sf.RelPath]...),
+		}
+	}
+	for _, sf := range result.DepSkills {
+		ls, ok := depByPath[sf.RelPath]
+		if !ok {
+			continue
+		}
+		linked = append(linked, ls)
+		delete(depByPath, sf.RelPath)
 	}
 
 	return linked
@@ -83,8 +99,8 @@ func (l *Linker) resolveRepoSkillScopes(skills []scanner.SkillFile) map[string][
 }
 
 // resolveDepSkillScopes determines scopes for dependency skills.
-// Public skills are linked for scopes that declare a DependencyBoundary.
-// Private skills are linked for paths inside their package.
+// Public skills are linked only to the scopes of the boundary that resolved
+// them. Private skills are linked to their package install path.
 func (l *Linker) resolveDepSkillScopes(skills []scanner.SkillFile) map[string][]string {
 	result := map[string][]string{}
 
@@ -107,19 +123,15 @@ func (l *Linker) resolveDepSkillScopes(skills []scanner.SkillFile) map[string][]
 
 		switch sf.Visibility {
 		case "public":
-			// Public skills are available in all scopes that declared a boundary
-			// that resolves to the skill's package.
-			// Since we don't know which boundary resolves which package here,
-			// we attach all boundary scopes for simplicity.
-			// A more precise implementation would track boundary->package mapping.
-			for _, scopes := range boundaryScopes {
-				result[sf.RelPath] = appendUnique(result[sf.RelPath], scopes...)
+			if sf.DependencyBoundary == "" {
+				continue
 			}
+			result[sf.RelPath] = appendUnique(result[sf.RelPath], boundaryScopes[sf.DependencyBoundary]...)
 		case "private":
-			// Private skills apply when the working path is inside the package root.
-			// We model this as a scope glob matching the package's install location.
-			// For the registry, we store the package path as a scope.
-			pkgScope := filepath.Join("node_modules", sf.PackageName) + "/**"
+			if sf.PackageRoot == "" {
+				continue
+			}
+			pkgScope := filepath.ToSlash(filepath.Join(sf.PackageRoot, "**"))
 			result[sf.RelPath] = appendUnique(result[sf.RelPath], pkgScope)
 		}
 	}

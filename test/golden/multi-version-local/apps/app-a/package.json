@@ -1,0 +1,8 @@
+{
+  "name": "@demo/app-a",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@demo/component-library": "file:../../vendor/component-library-v1"
+  }
+}
