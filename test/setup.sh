@@ -81,6 +81,17 @@ copy_golden single-package
   rm -rf "$dst/_simulated_deps"
 )
 
+# Fixture E: same package name with different installed versions per boundary
+copy_golden multi-version-local
+(
+  cd "$FIXTURES_DIR/multi-version-local/apps/app-a"
+  npm install --silent 2>/dev/null || npm install
+)
+(
+  cd "$FIXTURES_DIR/multi-version-local/apps/app-b"
+  npm install --silent 2>/dev/null || npm install
+)
+
 echo "Standard fixtures ready in $FIXTURES_DIR"
 
 # ── performance fixture ────────────────────────────────────────────────────────

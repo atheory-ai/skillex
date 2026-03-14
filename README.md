@@ -12,8 +12,21 @@ Modern agent workflows depend on "skills": Markdown documents that teach agents 
 
 - Skills differ by **package version** — the right guidance for `@acme/foo@2` is wrong for v1.
 - **Monorepos** may have different versions of the same package in different workspaces.
+- The same package name may exist at multiple installed versions in one repo, and the correct answer depends on the active dependency boundary.
+- Similar prompts collide across packages and versions. "Add a CTA button" is not enough unless the agent knows which app, which router, and which installed package API is in scope.
 - Loading all skills upfront **wastes context window**. Agents get everything or nothing.
 - Skills scattered across docs folders require agents to **browse multiple files** to find what they need.
+
+This is not just an authoring problem. It is a retrieval problem.
+
+File-crawled skill systems can represent package skills, project skills, path activation, and version metadata, but they still push a lot of work onto the agent:
+
+- Discover the relevant skill catalogs.
+- Load metadata for many possible skills into context.
+- Decide which paths, versions, and package docs apply.
+- Avoid pulling in near-miss guidance for sibling apps or different installed versions.
+
+That approach is workable when the skill surface is small. As adoption grows, the retrieval overhead starts competing with the actual task.
 
 Skillex covers the full lifecycle: **authoring, indexing, and retrieving** exactly the right skills on demand — in a single query, in microseconds.
 
@@ -40,6 +53,20 @@ packages/app-a/
 ```
 
 Skillex scans your dependencies for skill exports, links them to the right scopes, stores everything in a local SQLite registry, and serves queries in microseconds. The registry is a deterministic build artifact — same repo state always produces the same index.
+
+In practice, that means the agent can ask:
+
+> I'm working on this file, with these dependencies, on this version. What do I need to know?
+
+And get back the small, correct slice:
+
+- repo skills for the current path
+- app or package-area skills for that scope
+- only the public skills for dependencies being consumed
+- private skills only when working inside the package itself
+- the correct installed version when the same package name appears more than once in the repo
+
+That is the core difference: Skillex moves scope resolution out of the model's prompt assembly and into deterministic indexing plus structured query.
 
 ---
 
