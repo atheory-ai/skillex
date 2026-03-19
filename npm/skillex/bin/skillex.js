@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// This script is the platform selector shim for @skillex/skillex.
+// This script is the platform selector shim for @atheory-ai/skillex.
 //
 // npm installs only the optionalDependency that matches the current
 // platform (via the "os" and "cpu" fields in each platform package).
@@ -13,11 +13,11 @@ const path = require("path");
 
 // Maps process.platform + process.arch to the npm package name.
 const PLATFORM_PACKAGES = {
-  "darwin-arm64": "@skillex/skillex-darwin-arm64",
-  "darwin-x64":   "@skillex/skillex-darwin-x64",
-  "linux-x64":    "@skillex/skillex-linux-x64",
-  "linux-arm64":  "@skillex/skillex-linux-arm64",
-  "win32-x64":    "@skillex/skillex-win32-x64",
+  "darwin-arm64": "@atheory-ai/skillex-darwin-arm64",
+  "darwin-x64":   "@atheory-ai/skillex-darwin-x64",
+  "linux-x64":    "@atheory-ai/skillex-linux-x64",
+  "linux-arm64":  "@atheory-ai/skillex-linux-arm64",
+  "win32-x64":    "@atheory-ai/skillex-win32-x64",
 };
 
 function getBinaryPath() {
@@ -28,7 +28,7 @@ function getBinaryPath() {
     throw new Error(
       `skillex: unsupported platform "${key}"\n` +
       `Supported platforms: ${Object.keys(PLATFORM_PACKAGES).join(", ")}\n` +
-      `\nPlease open an issue at https://github.com/skillex/skillex/issues`
+      `\nPlease open an issue at https://github.com/atheory-ai/skillex/issues`
     );
   }
 

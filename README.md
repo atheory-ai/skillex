@@ -90,11 +90,11 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 ### npm (recommended for Node.js projects)
 
 ```bash
-npm install --save-dev @skillex/skillex
+npm install --save-dev @atheory-ai/skillex
 # or
-pnpm add -D @skillex/skillex
+pnpm add -D @atheory-ai/skillex
 # or
-yarn add -D @skillex/skillex
+yarn add -D @atheory-ai/skillex
 ```
 
 The package automatically installs the correct binary for your platform (macOS arm64/x64, Linux arm64/x64, Windows x64) via npm's `optionalDependencies` mechanism — only the binary for your OS is downloaded.
@@ -686,12 +686,30 @@ make dist       # cross-compile for all platforms → dist/
 | `dist/skillex-linux-arm64` | Linux arm64 |
 | `dist/skillex-win32-x64.exe` | Windows x64 |
 
-### Publishing the npm package
+### Versioning and releases
+
+Skillex uses a single source of truth for releases: the root `VERSION` file.
+
+- Go binaries read the version at build time via `-ldflags`.
+- npm package versions are synced from `VERSION` before packaging.
+- Local development builds default to `<VERSION>-dev`.
+
+To prepare a release:
+
+1. Update `VERSION` in a pull request.
+2. Merge the PR to `main`.
+3. Create and push a tag that matches the file exactly, for example `v0.6.0`.
+4. GitHub Actions verifies the tag, rebuilds the artifacts, and publishes to npm after release approval.
+
+To build release tarballs locally for inspection:
 
 ```bash
-VERSION=0.6.0 make npm-pack     # produces tarballs in dist/ for inspection
-VERSION=0.6.0 make npm-publish  # publishes all 6 packages to npm
+make npm-pack
 ```
+
+`make npm-publish` still exists as a manual fallback, but the intended release path is the GitHub Actions release workflow.
+
+At the moment, releases are maintainer-only. In practice, only `@ladyhunterbear` should bump `VERSION`, create release tags, or approve the `npm-release` publish environment until additional maintainers are explicitly added.
 
 ---
 
@@ -707,4 +725,4 @@ VERSION=0.6.0 make npm-publish  # publishes all 6 packages to npm
 
 ## License
 
-MIT
+Apache 2.0

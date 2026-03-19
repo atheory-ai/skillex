@@ -15,8 +15,8 @@ import (
 
 func newGetCmd() *cobra.Command {
 	var (
-		topicsFlag     string
-		skipReview     bool
+		topicsFlag string
+		skipReview bool
 	)
 
 	cmd := &cobra.Command{

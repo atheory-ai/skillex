@@ -1,7 +1,23 @@
-VERSION ?= 0.6.0-dev
-LDFLAGS := -ldflags "-X github.com/skillex/skillex/cli.Version=$(VERSION)"
+BASE_VERSION := $(shell cat VERSION)
+VERSION ?= $(BASE_VERSION)-dev
+PACKAGE_VERSION ?= $(BASE_VERSION)
+LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
 
-.PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor
+.PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor version-sync verify
+
+verify:
+	go test $$(go list ./... | grep -v '/test/acceptance$$')
+	go vet ./...
+	@files=$$(git ls-files '*.go'); \
+	if [ -n "$$files" ]; then \
+		unformatted=$$(gofmt -l $$files); \
+		if [ -n "$$unformatted" ]; then \
+			echo "These files need gofmt:"; \
+			echo "$$unformatted"; \
+			exit 1; \
+		fi; \
+	fi
+	$(MAKE) build
 
 build:
 	go build $(LDFLAGS) -o skillex ./cmd/skillex
@@ -10,10 +26,13 @@ install:
 	go install $(LDFLAGS) ./cmd/skillex
 
 test:
-	go test ./...
+	go test $$(go list ./... | grep -v '/test/acceptance$$')
 
 lint:
 	go vet ./...
+
+lint-fix:
+	gofmt -w .
 
 clean:
 	rm -f skillex skillex.exe
@@ -31,9 +50,12 @@ dist: clean
 
 # ── npm packaging ────────────────────────────────────────────────────────────
 
+version-sync:
+	node scripts/set-npm-version.mjs $(PACKAGE_VERSION)
+
 # Stage: copy dist/ binaries into each platform package's bin/ directory.
 # Run `make dist` first, then `make npm-stage`.
-npm-stage: dist
+npm-stage: version-sync dist
 	cp dist/skillex-darwin-arm64   npm/darwin-arm64/bin/skillex
 	cp dist/skillex-darwin-x64     npm/darwin-x64/bin/skillex
 	cp dist/skillex-linux-x64      npm/linux-x64/bin/skillex
@@ -55,8 +77,8 @@ npm-pack: npm-stage
 	cd npm/skillex      && npm pack --pack-destination ../../dist
 	@echo "Tarballs written to dist/. Inspect before publishing."
 
-# Publish all packages to npm (requires npm login and correct VERSION).
-# Publish platform packages first, then the main wrapper.
+# Publish all packages to npm (manual fallback only).
+# The normal release path is the GitHub Actions release workflow.
 npm-publish: npm-stage
 	cd npm/darwin-arm64 && npm publish --access public
 	cd npm/darwin-x64   && npm publish --access public
@@ -64,7 +86,7 @@ npm-publish: npm-stage
 	cd npm/linux-arm64  && npm publish --access public
 	cd npm/win32-x64    && npm publish --access public
 	cd npm/skillex      && npm publish --access public
-	@echo "Published @skillex/skillex@$(VERSION) and all platform packages."
+	@echo "Published @atheory-ai/skillex@$(VERSION) and all platform packages."
 
 # ── Repo workflow ────────────────────────────────────────────────────────────
 

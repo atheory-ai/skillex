@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify_release:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.release_version.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag points to main
+        shell: bash
+        run: |
+          git fetch origin main --depth=1
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -q "origin/main"; then
+            echo "Release tags must point to a commit on origin/main."
+            exit 1
+          fi
+
+      - name: Read release version
+        id: release_version
+        shell: bash
+        run: |
+          file_version=$(cat VERSION)
+          tag_version="${GITHUB_REF#refs/tags/v}"
+          if [[ "$tag_version" != "$file_version" ]]; then
+            echo "Tag version does not match VERSION file."
+            echo "tag:  $tag_version"
+            echo "file: $file_version"
+            exit 1
+          fi
+          echo "version=$tag_version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          files=$(git ls-files '*.go')
+          if [ -z "$files" ]; then
+            exit 0
+          fi
+          unformatted=$(gofmt -l $files)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests
+        shell: bash
+        run: go test $(go list ./... | grep -v '/test/acceptance$')
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm and yarn
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+          corepack prepare yarn@1.22.22 --activate
+
+      - name: Run fixture acceptance tests
+        run: make test-acceptance
+
+      - name: Sync npm package versions
+        run: node scripts/set-npm-version.mjs "${{ steps.release_version.outputs.version }}"
+
+      - name: Build npm tarballs
+        run: VERSION=${{ steps.release_version.outputs.version }} PACKAGE_VERSION=${{ steps.release_version.outputs.version }} make npm-pack
+
+      - name: Upload npm tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs-${{ steps.release_version.outputs.version }}
+          path: dist/*.tgz
+          if-no-files-found: error
+
+  publish_npm:
+    runs-on: ubuntu-latest
+    needs: verify_release
+    environment:
+      name: npm-release
+
+    steps:
+      - name: Download npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs-${{ needs.verify_release.outputs.version }}
+          path: dist
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.verify_release.outputs.version }}
+        run: |
+          npm publish "dist/atheory-ai-skillex-darwin-arm64-${VERSION}.tgz" --access public
+          npm publish "dist/atheory-ai-skillex-darwin-x64-${VERSION}.tgz" --access public
+          npm publish "dist/atheory-ai-skillex-linux-arm64-${VERSION}.tgz" --access public
+          npm publish "dist/atheory-ai-skillex-linux-x64-${VERSION}.tgz" --access public
+          npm publish "dist/atheory-ai-skillex-win32-x64-${VERSION}.tgz" --access public
+
+      - name: Publish wrapper package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.verify_release.outputs.version }}
+        run: npm publish "dist/atheory-ai-skillex-${VERSION}.tgz" --access public
