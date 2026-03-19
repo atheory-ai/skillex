@@ -7,7 +7,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.0-dev"
+var Version = "dev"
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
@@ -15,7 +15,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Show the skillex version",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if flagJSON {
-				fmt.Printf(`{"version":%q}` + "\n", Version)
+				fmt.Printf(`{"version":%q}`+"\n", Version)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "skillex %s\n", Version)
 			}

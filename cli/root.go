@@ -7,9 +7,9 @@ import (
 )
 
 var (
-	flagJSON   bool
-	flagQuiet  bool
-	rootCmd    *cobra.Command
+	flagJSON  bool
+	flagQuiet bool
+	rootCmd   *cobra.Command
 )
 
 // Execute runs the root command.

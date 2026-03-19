@@ -3,8 +3,8 @@ package query
 import (
 	"strings"
 
-	"github.com/gobwas/glob"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/gobwas/glob"
 )
 
 // Format controls what query results include.
