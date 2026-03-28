@@ -129,7 +129,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		return e.vocabularyResponse()
 	}
 
-	// SQL-level filters: topics, tags, package. Path is always post-filtered in process.
+	// SQL-level filters: topics, tags, package. Path is resolved separately.
 	hasSQLFilters := len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
 
 	var (
@@ -138,18 +138,21 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	)
 	if hasSQLFilters {
 		skills, err = e.reg.Query(p.Path, p.Package, p.Topics, p.Tags)
+		if err != nil {
+			return nil, err
+		}
+		// Post-filter by path for the combined case: the SQL result is already
+		// a small, scoped set so in-process matching is inexpensive.
+		if p.Path != "" {
+			skills = filterByPath(skills, p.Path)
+		}
 	} else {
-		// Path is the only filter — load all skills then apply in-process scope matching
-		// below. SQLite does not evaluate the stored glob patterns against a given path,
-		// so there is no SQL-level shortcut: the full scan is O(n) by design.
-		skills, err = e.reg.AllSkills()
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if p.Path != "" {
-		skills = filterByPath(skills, p.Path)
+		// Path is the only filter. Use the SQL prefix index on skill_scopes
+		// to avoid a full registry scan.
+		skills, err = e.reg.QueryByPath(p.Path)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(skills) == 0 {
@@ -203,19 +206,26 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 // the vocabulary falls back to the full registry — the global set is the only
 // reasonable hint when there is no scope to narrow against.
 func (e *Engine) noMatchResponse(p Params) (*Response, error) {
-	all, err := e.reg.AllSkills()
-	if err != nil {
-		return nil, err
-	}
-
 	// Scope the vocabulary to skills reachable from the given path, if any.
-	vocab := all
+	// Use QueryByPath so the same SQL prefix index is applied here as in Execute.
+	var vocab []registry.Skill
 	if p.Path != "" {
-		if scoped := filterByPath(all, p.Path); len(scoped) > 0 {
+		scoped, err := e.reg.QueryByPath(p.Path)
+		if err != nil {
+			return nil, err
+		}
+		if len(scoped) > 0 {
 			vocab = scoped
 		}
-		// If scoped is empty (no skills at that path at all), fall back to the
-		// full registry so the agent still has useful hints.
+		// If no skills are reachable from this path, fall back to the full
+		// registry so the agent still has useful hints.
+	}
+	if vocab == nil {
+		all, err := e.reg.AllSkills()
+		if err != nil {
+			return nil, err
+		}
+		vocab = all
 	}
 
 	return &Response{

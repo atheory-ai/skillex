@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS skill_tags (
 
 CREATE TABLE IF NOT EXISTS skill_scopes (
 	skill_id      INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-	scope         TEXT NOT NULL
+	scope         TEXT    NOT NULL,
+	path_prefix   TEXT    NOT NULL DEFAULT '',
+	pattern_type  TEXT    NOT NULL DEFAULT 'glob'
 );
 
 CREATE TABLE IF NOT EXISTS skill_tests (
@@ -109,6 +111,10 @@ func Open(path string) (*Registry, error) {
 
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("creating schema: %w", err)
+	}
+
+	if err := migrateSchema(db); err != nil {
+		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
 
 	return &Registry{db: db, path: path}, nil
@@ -187,7 +193,11 @@ func (r *Registry) InsertSkill(s Skill) (int64, error) {
 		}
 	}
 	for _, scope := range s.Scopes {
-		if _, err := r.db.Exec(`INSERT INTO skill_scopes (skill_id, scope) VALUES (?, ?)`, id, scope); err != nil {
+		pt, pp := classifyScope(scope)
+		if _, err := r.db.Exec(
+			`INSERT INTO skill_scopes (skill_id, scope, path_prefix, pattern_type) VALUES (?, ?, ?, ?)`,
+			id, scope, pp, pt,
+		); err != nil {
 			return 0, err
 		}
 	}
