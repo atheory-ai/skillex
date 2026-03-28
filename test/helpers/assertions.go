@@ -1,11 +1,12 @@
 package helpers
 
 import (
+	"encoding/json"
 	"sort"
 	"testing"
 )
 
-// SkillSummary mirrors the JSON output of skillex query --json.
+// SkillSummary mirrors a single result entry in a skillex query --json response.
 type SkillSummary struct {
 	Path        string   `json:"path"`
 	PackageName string   `json:"package"`
@@ -16,6 +17,147 @@ type SkillSummary struct {
 	Tags        []string `json:"tags"`
 	Scopes      []string `json:"scopes"`
 	Content     string   `json:"content"`
+}
+
+// QueryResponse mirrors the top-level JSON envelope returned by skillex query --json.
+type QueryResponse struct {
+	Type       string         `json:"type"`
+	Results    []SkillSummary `json:"results"`
+	Vocabulary *VocabSummary  `json:"vocabulary"`
+	Query      *QueryEcho     `json:"query"`
+}
+
+// VocabSummary mirrors the vocabulary object in a QueryResponse.
+type VocabSummary struct {
+	Topics      []TopicEntry `json:"topics"`
+	Tags        []TagEntry   `json:"tags"`
+	Packages    []PkgEntry   `json:"packages"`
+	TotalSkills int          `json:"total_skills"`
+}
+
+// TopicEntry is a topic name + count pair in a vocabulary response.
+type TopicEntry struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// TagEntry is a tag name + count pair in a vocabulary response.
+type TagEntry struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// PkgEntry is a package name + version + count in a vocabulary response.
+type PkgEntry struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Count   int    `json:"count"`
+}
+
+// QueryEcho mirrors the query echo object in a no_match response.
+type QueryEcho struct {
+	Path    string   `json:"path"`
+	Topics  []string `json:"topics"`
+	Tags    []string `json:"tags"`
+	Package string   `json:"package"`
+}
+
+// RunQueryJSON executes skillex query with --json and unmarshals the response envelope.
+// Fails the test if stdout is not valid JSON or cannot be decoded.
+func RunQueryJSON(t *testing.T, dir string, args ...string) (QueryResponse, Result) {
+	t.Helper()
+	result := Run(t, dir, append(args, "--json")...)
+	if result.Stdout == "" {
+		t.Fatalf("RunQueryJSON: empty stdout (exit=%d, stderr=%s)", result.ExitCode, result.Stderr)
+	}
+	var resp QueryResponse
+	if err := json.Unmarshal([]byte(result.Stdout), &resp); err != nil {
+		t.Fatalf("RunQueryJSON: stdout is not valid QueryResponse JSON: %v\nstdout: %s", err, result.Stdout)
+	}
+	return resp, result
+}
+
+// AssertTopicInVocab fails the test if the named topic is absent from the vocabulary.
+func AssertTopicInVocab(t *testing.T, v *VocabSummary, name string) {
+	t.Helper()
+	if v == nil {
+		t.Errorf("vocabulary is nil, cannot check for topic %q", name)
+		return
+	}
+	for _, e := range v.Topics {
+		if e.Name == name {
+			return
+		}
+	}
+	names := make([]string, len(v.Topics))
+	for i, e := range v.Topics {
+		names[i] = e.Name
+	}
+	t.Errorf("topic %q not found in vocabulary; available: %v", name, names)
+}
+
+// AssertTagInVocab fails the test if the named tag is absent from the vocabulary.
+func AssertTagInVocab(t *testing.T, v *VocabSummary, name string) {
+	t.Helper()
+	if v == nil {
+		t.Errorf("vocabulary is nil, cannot check for tag %q", name)
+		return
+	}
+	for _, e := range v.Tags {
+		if e.Name == name {
+			return
+		}
+	}
+	names := make([]string, len(v.Tags))
+	for i, e := range v.Tags {
+		names[i] = e.Name
+	}
+	t.Errorf("tag %q not found in vocabulary; available: %v", name, names)
+}
+
+// AssertPackageInVocab fails the test if the named package is absent from the vocabulary.
+func AssertPackageInVocab(t *testing.T, v *VocabSummary, name string) {
+	t.Helper()
+	if v == nil {
+		t.Errorf("vocabulary is nil, cannot check for package %q", name)
+		return
+	}
+	for _, e := range v.Packages {
+		if e.Name == name {
+			return
+		}
+	}
+	names := make([]string, len(v.Packages))
+	for i, e := range v.Packages {
+		names[i] = e.Name
+	}
+	t.Errorf("package %q not found in vocabulary; available: %v", name, names)
+}
+
+// VocabTopicCount returns the count for a named topic, or 0 if absent.
+func VocabTopicCount(v *VocabSummary, name string) int {
+	if v == nil {
+		return 0
+	}
+	for _, e := range v.Topics {
+		if e.Name == name {
+			return e.Count
+		}
+	}
+	return 0
+}
+
+// VocabTagCount returns the count for a named tag, or 0 if absent.
+func VocabTagCount(v *VocabSummary, name string) int {
+	if v == nil {
+		return 0
+	}
+	for _, e := range v.Tags {
+		if e.Name == name {
+			return e.Count
+		}
+	}
+	return 0
 }
 
 // AssertSkillPaths checks that the query result contains exactly the given skill paths (order-independent).

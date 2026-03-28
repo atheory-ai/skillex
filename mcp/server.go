@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -106,7 +107,7 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 	}
 
 	eng := query.New(reg)
-	results, err := eng.Execute(query.Params{
+	resp, err := eng.Execute(query.Params{
 		Path:    pathVal,
 		Topics:  topics,
 		Tags:    tags,
@@ -122,31 +123,40 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 		}, nil
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText("No skills matched the query."), nil
-	}
-
-	var sb strings.Builder
-	if format == query.FormatContent {
-		sb.WriteString(query.ContentString(results))
-	} else {
-		for _, r := range results {
-			sb.WriteString(fmt.Sprintf("**%s**\n", r.Path))
-			if r.PackageName != "" {
-				sb.WriteString(fmt.Sprintf("  Package: %s@%s\n", r.PackageName, r.PackageVersion))
+	switch resp.Type {
+	case query.ResponseTypeResults:
+		var sb strings.Builder
+		if format == query.FormatContent {
+			sb.WriteString(query.ContentString(resp.Results))
+		} else {
+			for _, r := range resp.Results {
+				sb.WriteString(fmt.Sprintf("**%s**\n", r.Path))
+				if r.PackageName != "" {
+					sb.WriteString(fmt.Sprintf("  Package: %s@%s\n", r.PackageName, r.PackageVersion))
+				}
+				sb.WriteString(fmt.Sprintf("  Visibility: %s\n", r.Visibility))
+				if len(r.Topics) > 0 {
+					sb.WriteString(fmt.Sprintf("  Topics: %s\n", strings.Join(r.Topics, ", ")))
+				}
+				if len(r.Tags) > 0 {
+					sb.WriteString(fmt.Sprintf("  Tags: %s\n", strings.Join(r.Tags, ", ")))
+				}
+				sb.WriteString("\n")
 			}
-			sb.WriteString(fmt.Sprintf("  Visibility: %s\n", r.Visibility))
-			if len(r.Topics) > 0 {
-				sb.WriteString(fmt.Sprintf("  Topics: %s\n", strings.Join(r.Topics, ", ")))
-			}
-			if len(r.Tags) > 0 {
-				sb.WriteString(fmt.Sprintf("  Tags: %s\n", strings.Join(r.Tags, ", ")))
-			}
-			sb.WriteString("\n")
 		}
+		return mcplib.NewToolResultText(sb.String()), nil
+
+	case query.ResponseTypeVocabulary, query.ResponseTypeNoMatch:
+		// Return the full structured response as JSON so MCP-consuming agents can
+		// programmatically inspect topics/tags/packages without parsing free-form text.
+		data, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			return mcplib.NewToolResultText(fmt.Sprintf("failed to encode response: %v", err)), nil
+		}
+		return mcplib.NewToolResultText(string(data)), nil
 	}
 
-	return mcplib.NewToolResultText(sb.String()), nil
+	return mcplib.NewToolResultText(""), nil
 }
 
 func skillURI(s registry.Skill) string {

@@ -256,9 +256,10 @@ func (r *Registry) QueryByScope(scopes []string) ([]Skill, error) {
 }
 
 // QueryByTopic returns skills matching all given topics.
+// Returns nil if topics is empty — callers must handle the no-filter case explicitly.
 func (r *Registry) QueryByTopic(topics []string) ([]Skill, error) {
 	if len(topics) == 0 {
-		return r.AllSkills()
+		return nil, nil
 	}
 
 	// Skills that have ALL the given topics
@@ -283,9 +284,10 @@ func (r *Registry) QueryByTopic(topics []string) ([]Skill, error) {
 }
 
 // QueryByTags returns skills matching all given tags.
+// Returns nil if tags is empty — callers must handle the no-filter case explicitly.
 func (r *Registry) QueryByTags(tags []string) ([]Skill, error) {
 	if len(tags) == 0 {
-		return r.AllSkills()
+		return nil, nil
 	}
 
 	placeholders := make([]string, len(tags))
@@ -370,7 +372,9 @@ func (r *Registry) Query(path, pkg string, topics, tags []string) ([]Skill, erro
 	}
 
 	if len(sets) == 0 {
-		return r.AllSkills()
+		// No filters provided — return nil so the caller can decide the response type.
+		// Use AllSkills() directly if you need the full skill list.
+		return nil, nil
 	}
 
 	// Intersect all sets

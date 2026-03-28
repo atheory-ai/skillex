@@ -21,12 +21,7 @@ func TestEdge_NoDependencies(t *testing.T) {
 		t.Fatalf("refresh failed with no dependencies: %s", res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	resQ := helpers.RunJSON(t, dir, &skills, "query", "--path", "src/index.ts", "--format", "summary")
-	if resQ.ExitCode != 0 {
-		t.Fatalf("query failed: %s", resQ.Stderr)
-	}
-
+	skills := queryResults(t, dir, "--path", "src/index.ts", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "repo.md")
 }
 
@@ -71,9 +66,8 @@ func TestEdge_ConcurrentRefresh(t *testing.T) {
 		t.Errorf("both concurrent refreshes failed:\n  r1: %s\n  r2: %s", r1.stderr, r2.stderr)
 	}
 
-	// Registry must be queryable
-	var skills []helpers.SkillSummary
-	res := helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
+	// Registry must be queryable after concurrent refresh
+	_, res := helpers.RunQueryJSON(t, dir, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
 	if res.ExitCode != 0 {
 		t.Errorf("query after concurrent refresh failed: %s", res.Stderr)
 	}
@@ -97,8 +91,7 @@ func TestPerformance_RefreshAtScale(t *testing.T) {
 	}
 
 	start = time.Now()
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/pkg-50/src/index.ts", "--format", "summary")
+	helpers.Run(t, dir, "query", "--path", "packages/pkg-50/src/index.ts", "--format", "summary", "--json")
 	queryDuration := time.Since(start)
 
 	if queryDuration > 100*time.Millisecond {
@@ -114,9 +107,7 @@ func TestEdge_ExternalPackageInSinglePackage(t *testing.T) {
 		t.Fatalf("refresh failed: %s", res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "src/index.ts", "--format", "summary")
-
+	skills := queryResults(t, dir, "--path", "src/index.ts", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "repo.md")
 	// External dependency skills may also be present
 }

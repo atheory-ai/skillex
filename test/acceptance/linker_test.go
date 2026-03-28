@@ -11,8 +11,7 @@ func TestLinker_PublicSkillsForDependencies(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/auth.ts", "--format", "summary")
 
 	helpers.AssertSkillPresent(t, skills, "components.md")
 	helpers.AssertSkillPresent(t, skills, "migrations.md")
@@ -29,8 +28,7 @@ func TestLinker_PrivateSkillsForSourceTree(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var uiSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &uiSkills, "query", "--package", "@test/ui", "--format", "summary")
+	uiSkills := queryResults(t, dir, "--package", "@test/ui", "--format", "summary")
 
 	// All @test/ui skills — find private ones
 	hasPrivate := false
@@ -48,8 +46,7 @@ func TestLinker_PublicPrivateExclusion(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var appASkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &appASkills, "query",
+	appASkills := queryResults(t, dir,
 		"--path", "packages/app-a/src/auth.ts",
 		"--package", "@test/ui",
 		"--format", "summary")
@@ -68,8 +65,7 @@ func TestLinker_AdditiveRuleAccumulation(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/auth.ts", "--format", "summary")
 
 	// All three rule layers present simultaneously
 	helpers.AssertSkillPresent(t, skills, "repo.md")        // from ** rule
@@ -81,8 +77,7 @@ func TestLinker_AllDependenciesContribute(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/auth.ts", "--format", "summary")
 
 	helpers.AssertSkillPresent(t, skills, "components.md") // from @test/ui
 	helpers.AssertSkillPresent(t, skills, "api.md")        // from @test/utils
@@ -92,8 +87,7 @@ func TestLinker_VendorSkillsInScope(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--topic", "react", "--format", "summary")
+	skills := queryResults(t, dir, "--topic", "react", "--format", "summary")
 
 	helpers.AssertSkillPresent(t, skills, "hooks.md")
 }
@@ -102,8 +96,7 @@ func TestLinker_MultiVersionBoundaryScopes(t *testing.T) {
 	dir := helpers.CopyFixture(t, "multi-version-local")
 	helpers.Run(t, dir, "refresh")
 
-	var appASkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &appASkills, "query",
+	appASkills := queryResults(t, dir,
 		"--path", "apps/app-a/**",
 		"--package", "@demo/component-library",
 		"--format", "summary")
@@ -121,8 +114,7 @@ func TestLinker_MultiVersionBoundaryScopes(t *testing.T) {
 	}
 	helpers.AssertSkillPresent(t, appASkills, "consumer.md")
 
-	var appBSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &appBSkills, "query",
+	appBSkills := queryResults(t, dir,
 		"--path", "apps/app-b/**",
 		"--package", "@demo/component-library",
 		"--format", "summary")
@@ -145,8 +137,7 @@ func TestLinker_MultiVersionPrivateScopes(t *testing.T) {
 	dir := helpers.CopyFixture(t, "multi-version-local")
 	helpers.Run(t, dir, "refresh")
 
-	var maintainerSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &maintainerSkills, "query",
+	maintainerSkills := queryResults(t, dir,
 		"--path", "apps/app-a/node_modules/@demo/component-library/**",
 		"--package", "@demo/component-library",
 		"--format", "summary")

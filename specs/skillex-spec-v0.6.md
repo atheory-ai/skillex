@@ -426,6 +426,52 @@ skillex query --path packages/app-a/src/auth.ts --format summary
 
 Returns metadata only — skill names, topics, tags, sources. Useful for agents deciding what to load.
 
+#### Response types
+
+The `--json` output always includes a `type` field that distinguishes three response kinds:
+
+| `type`       | When                                 | Contents                                              |
+| ------------ | ------------------------------------ | ----------------------------------------------------- |
+| `results`    | Filters matched one or more skills   | `results` array of skill objects                      |
+| `vocabulary` | No filters provided                  | `vocabulary` with topics, tags, packages, skill count |
+| `no_match`   | Filters provided but nothing matched | `query` echo + `vocabulary` hint                      |
+
+**No code path returns all skill content as a fallback.** A bare `skillex query` returns vocabulary metadata to help agents discover valid filter values, not a dump of all skills.
+
+When a query matches nothing, the `no_match` response includes the full vocabulary so agents can self-correct by picking a valid topic, tag, or package name from the hint and retrying.
+
+Example vocabulary response:
+
+```json
+{
+  "type": "vocabulary",
+  "vocabulary": {
+    "topics": [
+      { "name": "api", "count": 2 },
+      { "name": "migration", "count": 1 }
+    ],
+    "tags": [
+      { "name": "breaking-change", "count": 1 },
+      { "name": "v2", "count": 2 }
+    ],
+    "packages": [
+      { "name": "@acme/ui", "version": "2.0.0", "count": 5 }
+    ],
+    "total_skills": 12
+  }
+}
+```
+
+Example no_match response:
+
+```json
+{
+  "type": "no_match",
+  "query": { "topics": ["nonexistent-topic"] },
+  "vocabulary": { ... }
+}
+```
+
 ### Refresh
 
 ```
