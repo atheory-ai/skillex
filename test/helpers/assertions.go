@@ -21,18 +21,18 @@ type SkillSummary struct {
 
 // QueryResponse mirrors the top-level JSON envelope returned by skillex query --json.
 type QueryResponse struct {
-	Type       string        `json:"type"`
+	Type       string         `json:"type"`
 	Results    []SkillSummary `json:"results"`
-	Vocabulary *VocabSummary `json:"vocabulary"`
-	Query      *QueryEcho    `json:"query"`
+	Vocabulary *VocabSummary  `json:"vocabulary"`
+	Query      *QueryEcho     `json:"query"`
 }
 
 // VocabSummary mirrors the vocabulary object in a QueryResponse.
 type VocabSummary struct {
-	Topics      []TopicEntry   `json:"topics"`
-	Tags        []TagEntry     `json:"tags"`
-	Packages    []PkgEntry     `json:"packages"`
-	TotalSkills int            `json:"total_skills"`
+	Topics      []TopicEntry `json:"topics"`
+	Tags        []TagEntry   `json:"tags"`
+	Packages    []PkgEntry   `json:"packages"`
+	TotalSkills int          `json:"total_skills"`
 }
 
 // TopicEntry is a topic name + count pair in a vocabulary response.

@@ -159,7 +159,6 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 	return mcplib.NewToolResultText(""), nil
 }
 
-
 func skillURI(s registry.Skill) string {
 	scope := ""
 	if len(s.Scopes) > 0 {
