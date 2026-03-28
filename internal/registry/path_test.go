@@ -10,9 +10,9 @@ import (
 
 func TestClassifyScope(t *testing.T) {
 	cases := []struct {
-		scope       string
-		wantType    string
-		wantPrefix  string
+		scope      string
+		wantType   string
+		wantPrefix string
 	}{
 		// universal
 		{"**", "universal", ""},
@@ -431,4 +431,3 @@ func filterByPathBench(skills []Skill, path string) []Skill {
 	}
 	return out
 }
-
