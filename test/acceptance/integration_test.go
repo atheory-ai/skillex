@@ -32,8 +32,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// 3. Query app-a path
-	var appASkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &appASkills, "query", "--path", "packages/app-a/src/auth.ts", "--format", "summary")
+	appASkills := queryResults(t, dir, "--path", "packages/app-a/src/auth.ts", "--format", "summary")
 	if len(appASkills) == 0 {
 		t.Error("step 3: expected skills for app-a path")
 	}
@@ -86,9 +85,7 @@ func TestIntegration_RefreshAfterNewSkill(t *testing.T) {
 
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--topic", "new-feature", "--format", "summary")
-
+	skills := queryResults(t, dir, "--topic", "new-feature", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "new-api.md")
 }
 
@@ -100,8 +97,7 @@ func TestIntegration_McpCliParity(t *testing.T) {
 	defer client.Close()
 
 	// Query via CLI
-	var cliSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &cliSkills, "query", "--tags", "v2", "--format", "summary")
+	cliSkills := queryResults(t, dir, "--tags", "v2", "--format", "summary")
 
 	// Query via MCP
 	text, err := client.CallToolText("skillex_query", map[string]interface{}{

@@ -16,16 +16,14 @@ func TestScanner_DiscoverViaPackageJsonBoolean(t *testing.T) {
 		t.Fatalf("refresh failed (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 
-	var uiSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &uiSkills, "query", "--package", "@test/ui", "--format", "summary")
+	uiSkills := queryResults(t, dir, "--package", "@test/ui", "--format", "summary")
 	if len(uiSkills) == 0 {
 		t.Fatal("expected @test/ui skills, got none")
 	}
 	helpers.AssertSkillPresent(t, uiSkills, "components.md")
 	helpers.AssertSkillPresent(t, uiSkills, "architecture.md")
 
-	var utilsSkills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &utilsSkills, "query", "--package", "@test/utils", "--format", "summary")
+	utilsSkills := queryResults(t, dir, "--package", "@test/utils", "--format", "summary")
 	if len(utilsSkills) == 0 {
 		t.Fatal("expected @test/utils skills, got none")
 	}
@@ -56,8 +54,7 @@ func TestScanner_DiscoverViaPackageJsonCustomPath(t *testing.T) {
 		t.Fatalf("refresh failed (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--package", "@test/ui", "--format", "summary")
+	skills := queryResults(t, dir, "--package", "@test/ui", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "components.md")
 }
 
@@ -68,11 +65,11 @@ func TestScanner_SkipPackagesWithoutSkillex(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("refresh failed: %s", res.Stderr)
 	}
-	// @test/data has no skillex field — should have no skills
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--package", "@test/data", "--format", "summary")
-	if len(skills) != 0 {
-		t.Errorf("expected no skills for @test/data, got %d: %v", len(skills), skills)
+	// @test/data has no skillex field — should have no skills.
+	// The query returns no_match (not results) when the package isn't indexed.
+	resp, _ := helpers.RunQueryJSON(t, dir, "query", "--package", "@test/data", "--format", "summary")
+	if resp.Type == "results" && len(resp.Results) != 0 {
+		t.Errorf("expected no skills for @test/data, got %d: %v", len(resp.Results), resp.Results)
 	}
 }
 
@@ -84,10 +81,10 @@ func TestScanner_HandleEmptySkillexDirectories(t *testing.T) {
 		t.Fatalf("refresh failed (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--package", "@test/legacy", "--format", "summary")
-	if len(skills) != 0 {
-		t.Errorf("expected no skills for @test/legacy (empty dirs), got %d", len(skills))
+	// @test/legacy has empty skill dirs — should have no skills.
+	resp, _ := helpers.RunQueryJSON(t, dir, "query", "--package", "@test/legacy", "--format", "summary")
+	if resp.Type == "results" && len(resp.Results) != 0 {
+		t.Errorf("expected no skills for @test/legacy (empty dirs), got %d", len(resp.Results))
 	}
 }
 
@@ -104,8 +101,7 @@ func TestScanner_PnpmDefaultLayout(t *testing.T) {
 		t.Fatalf("refresh failed: %s", res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/index.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/index.ts", "--format", "summary")
 	helpers.AssertSkillPresent(t, skills, "components.md")
 	helpers.AssertSkillPresent(t, skills, "api.md")
 }
@@ -118,8 +114,7 @@ func TestScanner_YarnWorkspaces(t *testing.T) {
 		t.Fatalf("refresh failed: %s", res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/index.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/index.ts", "--format", "summary")
 	if len(skills) == 0 {
 		t.Fatal("expected skills for packages/app-a/**, got none")
 	}
@@ -134,8 +129,7 @@ func TestScanner_NpmWorkspaces(t *testing.T) {
 		t.Fatalf("refresh failed: %s", res.Stderr)
 	}
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/index.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/index.ts", "--format", "summary")
 	if len(skills) == 0 {
 		t.Fatal("expected skills for packages/app-a/**, got none")
 	}

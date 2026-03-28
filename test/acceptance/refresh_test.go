@@ -80,8 +80,7 @@ func TestRefresh_TestFilesExcludedFromIndex(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
-	var skills []helpers.SkillSummary
-	helpers.RunJSON(t, dir, &skills, "query", "--path", "packages/app-a/src/index.ts", "--format", "summary")
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/index.ts", "--format", "summary")
 
 	for _, s := range skills {
 		if strings.HasSuffix(s.Path, ".test.md") {
