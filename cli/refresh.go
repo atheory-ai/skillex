@@ -130,7 +130,7 @@ func runRefreshCheck(root, dbPath string, cfg *config.Config, devMode bool) erro
 	defer tempReg.Close()
 
 	opts := registry.RefreshOptions{Root: root, DevMode: devMode}
-	freshResult, err := registry.Refresh(tempReg, cfg, opts)
+	_, err = registry.Refresh(tempReg, cfg, opts)
 	if err != nil {
 		return err
 	}
@@ -145,10 +145,30 @@ func runRefreshCheck(root, dbPath string, cfg *config.Config, devMode bool) erro
 	if err != nil {
 		return err
 	}
+	freshCount, err := tempReg.SkillCount()
+	if err != nil {
+		return err
+	}
 
-	if existingCount != freshResult.SkillsAdded {
-		return fmt.Errorf("registry is stale: current has %d skills, fresh scan has %d",
-			existingCount, freshResult.SkillsAdded)
+	// Signature is a deterministic fingerprint of what is actually indexed in the DB.
+	// In `--check` mode we compare fingerprints between the committed index and a
+	// freshly rebuilt index to avoid false negatives from count-only checks.
+	existingSig, err := existing.Signature()
+	if err != nil {
+		return fmt.Errorf("computing existing registry signature: %w", err)
+	}
+	freshSig, err := tempReg.Signature()
+	if err != nil {
+		return fmt.Errorf("computing fresh registry signature: %w", err)
+	}
+
+	if existingSig != freshSig {
+		if existingCount != freshCount {
+			return fmt.Errorf("registry is stale: indexed contents differ from a fresh refresh (%d skills → %d skills)",
+				existingCount, freshCount)
+		}
+		return fmt.Errorf("registry is stale: indexed contents differ from a fresh refresh (skill count unchanged at %d, but content or metadata has changed)",
+			existingCount)
 	}
 
 	if !flagQuiet {

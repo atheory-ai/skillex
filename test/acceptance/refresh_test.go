@@ -46,6 +46,48 @@ func TestRefresh_CheckDetectsStale(t *testing.T) {
 	}
 }
 
+func TestRefresh_CheckDetectsContentChange(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+
+	helpers.Run(t, dir, "refresh")
+
+	// Modify an existing skill file without changing the number of skills.
+	skillPath := filepath.Join(dir, "packages", "ui", "skillex", "public", "components.md")
+	orig, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", skillPath, err)
+	}
+
+	updated := append(orig, []byte("\nAppended content to trigger a stale index.\n")...)
+	if err := os.WriteFile(skillPath, updated, 0o644); err != nil {
+		t.Fatalf("writing %s: %v", skillPath, err)
+	}
+
+	res := helpers.Run(t, dir, "refresh", "--check")
+	if res.ExitCode == 0 {
+		t.Error("expected non-zero exit code from refresh --check after changing an existing skill's content")
+	}
+}
+
+func TestRefresh_CheckDetectsFrontmatterChange(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+
+	helpers.Run(t, dir, "refresh")
+
+	// Overwrite the entire file so the test doesn't depend on fixture internals.
+	// Only the tags differ from the original — body and topics stay the same.
+	skillPath := filepath.Join(dir, "packages", "ui", "skillex", "public", "components.md")
+	replacement := "---\ntopics:\n  - components\n  - react\ntags:\n  - v2\n  - breaking-change\n---\n# UI Components\n\nImport components from @test/ui using named exports.\n\n```typescript\nimport { Button, Input, Modal } from '@test/ui';\n```\n\nThe Button component accepts `variant`, `size`, and `onClick` props. In v2, the `type` prop has been renamed to `variant`.\n"
+	if err := os.WriteFile(skillPath, []byte(replacement), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", skillPath, err)
+	}
+
+	res := helpers.Run(t, dir, "refresh", "--check")
+	if res.ExitCode == 0 {
+		t.Error("expected non-zero exit code from refresh --check after changing an existing skill's frontmatter")
+	}
+}
+
 func TestRefresh_CheckPassesWhenFresh(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 
