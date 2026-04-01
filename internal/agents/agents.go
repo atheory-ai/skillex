@@ -45,12 +45,14 @@ func GenerateSection(reg *registry.Registry) (string, error) {
 
 	sb.WriteString("### MCP (preferred)\n\n")
 	sb.WriteString("If the `skillex` MCP server is connected, use it directly:\n\n")
-	sb.WriteString("- Use the `skillex_query` tool with parameters: path, topic, tags, package, format.\n")
+	sb.WriteString("- Use the `skillex_query` tool with parameters: path, topic, tags, package, search, format.\n")
+	sb.WriteString("- Use `search` for intent-based discovery — pass space/comma-separated concepts to find relevant skills without knowing the taxonomy.\n")
 	sb.WriteString("- Browse available skills through MCP resource discovery.\n\n")
 
 	sb.WriteString("### CLI (fallback)\n\n")
 	sb.WriteString("If MCP is not available, query skills via the command line:\n\n")
 	sb.WriteString("```\n")
+	sb.WriteString("  skillex query --search \"<concepts>\"\n")
 	sb.WriteString("  skillex query --path <filepath>\n")
 	sb.WriteString("  skillex query --topic <topic> --tags <tags>\n")
 	sb.WriteString("  skillex query --package <package>\n")

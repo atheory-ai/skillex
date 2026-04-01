@@ -102,6 +102,14 @@ func runDoctor(root string) error {
 				printInfo("tags", fmt.Sprintf("%d unique: %v", len(tags), tags))
 			}
 
+			// Warn about skills missing name or description (reduces search discoverability).
+			if missing, _ := reg.CountMissingNameOrDescription(); missing > 0 {
+				warns = append(warns, fmt.Sprintf(
+					"%d skill(s) missing 'name' or 'description' frontmatter — add them to improve --search discoverability",
+					missing,
+				))
+			}
+
 			packages, _ := reg.AllPackages()
 			if len(packages) > 0 {
 				for _, p := range packages {

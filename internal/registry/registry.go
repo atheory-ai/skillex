@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS skills (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
 	path          TEXT NOT NULL UNIQUE,
 	content       TEXT NOT NULL,
+	name          TEXT,
+	description   TEXT,
 	package_name  TEXT,
 	package_ver   TEXT,
 	visibility    TEXT NOT NULL,
@@ -66,6 +68,8 @@ type Skill struct {
 	ID             int64
 	Path           string
 	Content        string
+	Name           string
+	Description    string
 	PackageName    string
 	PackageVersion string
 	Visibility     string
@@ -146,16 +150,19 @@ func (r *Registry) Clear() error {
 func (r *Registry) InsertSkill(s Skill) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := r.db.Exec(
-		`INSERT INTO skills (path, content, package_name, package_ver, visibility, source_type, indexed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO skills (path, content, name, description, package_name, package_ver, visibility, source_type, indexed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(path) DO UPDATE SET
 			content=excluded.content,
+			name=excluded.name,
+			description=excluded.description,
 			package_name=excluded.package_name,
 			package_ver=excluded.package_ver,
 			visibility=excluded.visibility,
 			source_type=excluded.source_type,
 			indexed_at=excluded.indexed_at`,
-		s.Path, s.Content, nullStr(s.PackageName), nullStr(s.PackageVersion),
+		s.Path, s.Content, nullStr(s.Name), nullStr(s.Description),
+		nullStr(s.PackageName), nullStr(s.PackageVersion),
 		s.Visibility, s.SourceType, now,
 	)
 	if err != nil {
@@ -227,9 +234,9 @@ func (r *Registry) getSkillIDByPath(path string) (int64, error) {
 func (r *Registry) GetSkillByPath(path string) (*Skill, error) {
 	s := &Skill{}
 	err := r.db.QueryRow(
-		`SELECT id, path, content, COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type FROM skills WHERE path = ?`,
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type FROM skills WHERE path = ?`,
 		path,
-	).Scan(&s.ID, &s.Path, &s.Content, &s.PackageName, &s.PackageVersion, &s.Visibility, &s.SourceType)
+	).Scan(&s.ID, &s.Path, &s.Content, &s.Name, &s.Description, &s.PackageName, &s.PackageVersion, &s.Visibility, &s.SourceType)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -256,7 +263,7 @@ func (r *Registry) QueryByScope(scopes []string) ([]Skill, error) {
 	}
 
 	query := fmt.Sprintf(`
-		SELECT DISTINCT s.id, s.path, s.content, COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
+		SELECT DISTINCT s.id, s.path, s.content, COALESCE(s.name,''), COALESCE(s.description,''), COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
 		FROM skills s
 		JOIN skill_scopes ss ON ss.skill_id = s.id
 		WHERE ss.scope IN (%s)
@@ -282,7 +289,7 @@ func (r *Registry) QueryByTopic(topics []string) ([]Skill, error) {
 	args[len(topics)] = len(topics)
 
 	query := fmt.Sprintf(`
-		SELECT s.id, s.path, s.content, COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
+		SELECT s.id, s.path, s.content, COALESCE(s.name,''), COALESCE(s.description,''), COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
 		FROM skills s
 		WHERE s.id IN (
 			SELECT skill_id FROM skill_topics WHERE topic IN (%s)
@@ -309,7 +316,7 @@ func (r *Registry) QueryByTags(tags []string) ([]Skill, error) {
 	args[len(tags)] = len(tags)
 
 	query := fmt.Sprintf(`
-		SELECT s.id, s.path, s.content, COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
+		SELECT s.id, s.path, s.content, COALESCE(s.name,''), COALESCE(s.description,''), COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type
 		FROM skills s
 		WHERE s.id IN (
 			SELECT skill_id FROM skill_tags WHERE tag IN (%s)
@@ -323,7 +330,7 @@ func (r *Registry) QueryByTags(tags []string) ([]Skill, error) {
 // QueryByPackage returns all skills from a specific package.
 func (r *Registry) QueryByPackage(pkg string) ([]Skill, error) {
 	return r.querySkills(
-		`SELECT id, path, content, COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
 		 FROM skills WHERE package_name = ?`,
 		pkg,
 	)
@@ -410,7 +417,7 @@ func (r *Registry) Query(path, pkg string, topics, tags []string) ([]Skill, erro
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, path, content, COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
 		 FROM skills WHERE id IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
@@ -420,7 +427,7 @@ func (r *Registry) Query(path, pkg string, topics, tags []string) ([]Skill, erro
 // AllSkills returns all non-test skills.
 func (r *Registry) AllSkills() ([]Skill, error) {
 	return r.querySkills(
-		`SELECT id, path, content, COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
 		 FROM skills ORDER BY path`,
 	)
 }
@@ -561,6 +568,16 @@ func (r *Registry) SkillCount() (int, error) {
 	return count, err
 }
 
+// CountMissingNameOrDescription returns the number of skills that have no name
+// or no description, to support the doctor warning about search discoverability.
+func (r *Registry) CountMissingNameOrDescription() (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		`SELECT COUNT(*) FROM skills WHERE COALESCE(name,'') = '' OR COALESCE(description,'') = ''`,
+	).Scan(&count)
+	return count, err
+}
+
 // querySkills executes a query and populates Skill slices with metadata.
 func (r *Registry) querySkills(query string, args ...any) ([]Skill, error) {
 	rows, err := r.db.Query(query, args...)
@@ -572,7 +589,7 @@ func (r *Registry) querySkills(query string, args ...any) ([]Skill, error) {
 	var skills []Skill
 	for rows.Next() {
 		var s Skill
-		if err := rows.Scan(&s.ID, &s.Path, &s.Content, &s.PackageName, &s.PackageVersion, &s.Visibility, &s.SourceType); err != nil {
+		if err := rows.Scan(&s.ID, &s.Path, &s.Content, &s.Name, &s.Description, &s.PackageName, &s.PackageVersion, &s.Visibility, &s.SourceType); err != nil {
 			return nil, err
 		}
 		skills = append(skills, s)
@@ -640,6 +657,48 @@ func (r *Registry) populateMeta(s *Skill) error {
 	}
 	rows.Close()
 	return rows.Err()
+}
+
+// QueryBySearch returns skills whose name or description matches any of the
+// whitespace/comma-separated tokens in the search string.
+// The match is case-insensitive substring (LIKE). Returns nil when search is empty.
+func (r *Registry) QueryBySearch(search string) ([]Skill, error) {
+	if search == "" {
+		return nil, nil
+	}
+	tokens := searchTokens(search)
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+
+	// Build: (LOWER(name) LIKE ? OR LOWER(description) LIKE ?) OR (...)
+	clauses := make([]string, len(tokens))
+	args := make([]any, 0, len(tokens)*2)
+	for i, tok := range tokens {
+		pattern := "%" + strings.ToLower(tok) + "%"
+		clauses[i] = "(LOWER(COALESCE(name,'')) LIKE ? OR LOWER(COALESCE(description,'')) LIKE ?)"
+		args = append(args, pattern, pattern)
+	}
+
+	q := fmt.Sprintf(
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+		 FROM skills WHERE %s`,
+		strings.Join(clauses, " OR "),
+	)
+	return r.querySkills(q, args...)
+}
+
+// searchTokens splits a search string into individual tokens on whitespace and commas.
+func searchTokens(s string) []string {
+	var tokens []string
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ','
+	}) {
+		if tok = strings.TrimSpace(tok); tok != "" {
+			tokens = append(tokens, tok)
+		}
+	}
+	return tokens
 }
 
 func nullStr(s string) any {

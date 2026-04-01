@@ -12,6 +12,9 @@ import (
 type Format string
 
 const (
+	// FormatDefault means "not explicitly specified" — the engine auto-selects:
+	// summary when --search is used (discovery mode), content otherwise.
+	FormatDefault = Format("")
 	FormatContent = Format("content")
 	FormatSummary = Format("summary")
 )
@@ -44,6 +47,7 @@ type QueryEcho struct {
 	Topics  []string `json:"topics,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
 	Package string   `json:"package,omitempty"`
+	Search  string   `json:"search,omitempty"`
 }
 
 // Vocabulary describes the skill dimensions available in the registry.
@@ -77,6 +81,8 @@ type PackageEntry struct {
 // Result is a single skill query result.
 type Result struct {
 	Path           string   `json:"path"`
+	Name           string   `json:"name,omitempty"`
+	Description    string   `json:"description,omitempty"`
 	PackageName    string   `json:"package,omitempty"`
 	PackageVersion string   `json:"version,omitempty"`
 	Visibility     string   `json:"visibility"`
@@ -97,13 +103,17 @@ type Params struct {
 	Tags []string
 	// Package filters skills by package name.
 	Package string
+	// Search performs keyword search across skill name and description.
+	// Whitespace/comma-separated tokens are each matched independently (OR).
+	Search string
 	// Format controls output detail for result responses.
+	// FormatDefault auto-selects: summary when Search is set, content otherwise.
 	Format Format
 }
 
 // hasFilters reports whether any filter dimension is set.
 func (p Params) hasFilters() bool {
-	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
+	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != "" || p.Search != ""
 }
 
 // Engine executes structured skill queries against the registry.
@@ -129,26 +139,52 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		return e.vocabularyResponse()
 	}
 
-	// SQL-level filters: topics, tags, package. Path is resolved separately.
-	hasSQLFilters := len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
+	hasClassicFilters := len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
 
 	var (
 		skills []registry.Skill
 		err    error
 	)
-	if hasSQLFilters {
+
+	if hasClassicFilters {
 		skills, err = e.reg.Query(p.Path, p.Package, p.Topics, p.Tags)
 		if err != nil {
 			return nil, err
 		}
-		// Post-filter by path for the combined case: the SQL result is already
-		// a small, scoped set so in-process matching is inexpensive.
 		if p.Path != "" {
 			skills = filterByPath(skills, p.Path)
 		}
-	} else {
-		// Path is the only filter. Use the SQL prefix index on skill_scopes
-		// to avoid a full registry scan.
+	}
+
+	if p.Search != "" {
+		searchSkills, err := e.reg.QueryBySearch(p.Search)
+		if err != nil {
+			return nil, err
+		}
+		if hasClassicFilters {
+			// Intersect search results with the already-filtered classic set.
+			// ATH-172: a search that matches nothing in an otherwise valid set
+			// must return no_match, not all the classic results.
+			searchIDs := make(map[int64]bool, len(searchSkills))
+			for _, s := range searchSkills {
+				searchIDs[s.ID] = true
+			}
+			var intersected []registry.Skill
+			for _, s := range skills {
+				if searchIDs[s.ID] {
+					intersected = append(intersected, s)
+				}
+			}
+			skills = intersected
+		} else {
+			// Search is the only SQL filter; path is applied post-search if set.
+			skills = searchSkills
+			if p.Path != "" {
+				skills = filterByPath(skills, p.Path)
+			}
+		}
+	} else if !hasClassicFilters {
+		// Path is the only filter.
 		skills, err = e.reg.QueryByPath(p.Path)
 		if err != nil {
 			return nil, err
@@ -159,10 +195,23 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		return e.noMatchResponse(p)
 	}
 
+	// Determine effective format:
+	// FormatDefault → summary when search is active (discovery mode), content otherwise.
+	effectiveFormat := p.Format
+	if effectiveFormat == FormatDefault {
+		if p.Search != "" {
+			effectiveFormat = FormatSummary
+		} else {
+			effectiveFormat = FormatContent
+		}
+	}
+
 	results := make([]Result, 0, len(skills))
 	for _, s := range skills {
 		r := Result{
 			Path:           s.Path,
+			Name:           s.Name,
+			Description:    s.Description,
 			PackageName:    s.PackageName,
 			PackageVersion: s.PackageVersion,
 			Visibility:     s.Visibility,
@@ -171,7 +220,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 			Tags:           s.Tags,
 			Scopes:         s.Scopes,
 		}
-		if p.Format == FormatContent || p.Format == "" {
+		if effectiveFormat == FormatContent {
 			r.Content = s.Content
 		}
 		results = append(results, r)
@@ -206,8 +255,6 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 // the vocabulary falls back to the full registry — the global set is the only
 // reasonable hint when there is no scope to narrow against.
 func (e *Engine) noMatchResponse(p Params) (*Response, error) {
-	// Scope the vocabulary to skills reachable from the given path, if any.
-	// Use QueryByPath so the same SQL prefix index is applied here as in Execute.
 	var vocab []registry.Skill
 	if p.Path != "" {
 		scoped, err := e.reg.QueryByPath(p.Path)
@@ -217,8 +264,6 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 		if len(scoped) > 0 {
 			vocab = scoped
 		}
-		// If no skills are reachable from this path, fall back to the full
-		// registry so the agent still has useful hints.
 	}
 	if vocab == nil {
 		all, err := e.reg.AllSkills()
@@ -235,6 +280,7 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 			Topics:  p.Topics,
 			Tags:    p.Tags,
 			Package: p.Package,
+			Search:  p.Search,
 		},
 		Vocabulary: buildVocabulary(vocab),
 	}, nil

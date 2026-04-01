@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is incremented whenever a migration is added.
 // Registry.Open sets this on all databases it manages.
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 // migrateSchema applies any pending schema migrations.
 //
@@ -66,6 +66,25 @@ func migrateSchema(db *sql.DB) error {
 		db.Exec("ROLLBACK") //nolint:errcheck
 		return fmt.Errorf("creating prefix index: %w", err)
 	}
+	// v3: add name and description columns to skills for keyword search (ATH-170).
+	skillCols, err := columnNames(db, "skills")
+	if err != nil {
+		db.Exec("ROLLBACK") //nolint:errcheck
+		return err
+	}
+	if !skillCols["name"] {
+		if _, err := db.Exec(`ALTER TABLE skills ADD COLUMN name TEXT`); err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("adding name column: %w", err)
+		}
+	}
+	if !skillCols["description"] {
+		if _, err := db.Exec(`ALTER TABLE skills ADD COLUMN description TEXT`); err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("adding description column: %w", err)
+		}
+	}
+
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)); err != nil {
 		db.Exec("ROLLBACK") //nolint:errcheck
 		return fmt.Errorf("setting schema version: %w", err)

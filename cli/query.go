@@ -19,15 +19,20 @@ func newQueryCmd() *cobra.Command {
 		topicFlag   string
 		tagsFlag    string
 		packageFlag string
+		searchFlag  string
 		formatFlag  string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "query",
 		Short: "Query skills from the registry",
-		Long: `Query skills by path, topic, tags, or package.
+		Long: `Query skills by path, topic, tags, package, or keyword search.
 
 All filters are intersected — only skills matching all specified criteria are returned.
+
+Use --search for intent-based discovery when you don't know the topic/tag taxonomy.
+Each space or comma-separated term is matched independently against skill names and
+descriptions, so multiple concepts can be found in one call.
 
 When no filters are provided, a vocabulary response is returned listing the available
 topics, tags, and packages you can filter by.
@@ -36,6 +41,8 @@ When filters are provided but no skills match, a no_match response is returned w
 the same vocabulary as a hint to help reformulate the query.
 
 Examples:
+  skillex query --search "pagination card search"
+  skillex query --search "auth" --topic security
   skillex query --path packages/app-a/src/auth.ts
   skillex query --topic error-handling
   skillex query --tags migration,breaking-change
@@ -77,9 +84,15 @@ Examples:
 				}
 			}
 
-			format := query.FormatContent
-			if formatFlag == "summary" {
+			// Resolve format: explicit flag overrides default; empty means auto.
+			var format query.Format
+			switch formatFlag {
+			case "content":
+				format = query.FormatContent
+			case "summary":
 				format = query.FormatSummary
+			default:
+				format = query.FormatDefault
 			}
 
 			params := query.Params{
@@ -87,6 +100,7 @@ Examples:
 				Topics:  topics,
 				Tags:    tags,
 				Package: packageFlag,
+				Search:  searchFlag,
 				Format:  format,
 			}
 
@@ -103,7 +117,16 @@ Examples:
 
 			switch resp.Type {
 			case query.ResponseTypeResults:
-				if format == query.FormatContent {
+				// Determine what format was actually used (mirrors Execute logic).
+				effectiveFormat := format
+				if effectiveFormat == query.FormatDefault {
+					if searchFlag != "" {
+						effectiveFormat = query.FormatSummary
+					} else {
+						effectiveFormat = query.FormatContent
+					}
+				}
+				if effectiveFormat == query.FormatContent {
 					out := query.ContentString(resp.Results)
 					fmt.Print(out)
 					if !strings.HasSuffix(out, "\n") {
@@ -132,7 +155,8 @@ Examples:
 	cmd.Flags().StringVar(&topicFlag, "topic", "", "Comma-separated topic filters")
 	cmd.Flags().StringVar(&tagsFlag, "tags", "", "Comma-separated tag filters")
 	cmd.Flags().StringVar(&packageFlag, "package", "", "Package name filter")
-	cmd.Flags().StringVar(&formatFlag, "format", "content", "Output format: content or summary")
+	cmd.Flags().StringVar(&searchFlag, "search", "", "Keyword search across skill names and descriptions (space/comma-separated terms)")
+	cmd.Flags().StringVar(&formatFlag, "format", "", "Output format: content (default) or summary")
 
 	return cmd
 }
@@ -140,6 +164,17 @@ Examples:
 func printSummary(results []query.Result) {
 	for _, r := range results {
 		fmt.Printf("%s\n", styleSuccess.Render(r.Path))
+
+		if r.Name != "" {
+			fmt.Printf("  %s\n", r.Name)
+		}
+		if r.Description != "" {
+			desc := r.Description
+			if len(desc) > 120 {
+				desc = desc[:117] + "..."
+			}
+			fmt.Printf("  %s\n", styleDim.Render(desc))
+		}
 
 		var meta []string
 		if r.PackageName != "" {
@@ -198,6 +233,9 @@ func printNoMatch(resp *query.Response) {
 	var parts []string
 	if resp.Query != nil {
 		q := resp.Query
+		if q.Search != "" {
+			parts = append(parts, fmt.Sprintf("search=%q", q.Search))
+		}
 		if len(q.Topics) > 0 {
 			parts = append(parts, fmt.Sprintf("topic=%s", strings.Join(q.Topics, ",")))
 		}

@@ -166,7 +166,7 @@ func initPackage(root string, yes bool) error {
 	// Create starter skill files
 	publicSkill := filepath.Join(root, "skillex/public/consumer.md")
 	if _, err := os.Stat(publicSkill); os.IsNotExist(err) {
-		content := "---\ntopics: []\ntags: []\n---\n\n# Consumer Guide\n\nDocument how consumers should use this package.\n"
+		content := "---\nname: Consumer Guide\ndescription: How to install, configure, and use this package as a dependency.\ntopics: []\ntags: []\n---\n\n# Consumer Guide\n\nDocument how consumers should use this package.\n"
 		if err := os.WriteFile(publicSkill, []byte(content), 0o644); err != nil {
 			return err
 		}
@@ -174,7 +174,7 @@ func initPackage(root string, yes bool) error {
 
 	privateSkill := filepath.Join(root, "skillex/private/dev-workflow.md")
 	if _, err := os.Stat(privateSkill); os.IsNotExist(err) {
-		content := "---\ntopics: []\ntags: []\n---\n\n# Development Workflow\n\nDocument how contributors work on this package.\n"
+		content := "---\nname: Development Workflow\ndescription: How contributors set up, build, test, and submit changes to this package.\ntopics: []\ntags: []\n---\n\n# Development Workflow\n\nDocument how contributors work on this package.\n"
 		if err := os.WriteFile(privateSkill, []byte(content), 0o644); err != nil {
 			return err
 		}
@@ -248,6 +248,8 @@ func createSkillsDir(root string) error {
 	repoSkill := filepath.Join(dir, "repo.md")
 	if _, err := os.Stat(repoSkill); os.IsNotExist(err) {
 		content := `---
+name: Repository Conventions
+description: Coding standards, branch naming, commit message format, and PR process for this repository.
 topics: [repo-conventions]
 tags: [getting-started]
 ---
