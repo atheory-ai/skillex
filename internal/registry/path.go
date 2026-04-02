@@ -149,7 +149,7 @@ func (r *Registry) QueryByPath(path string) ([]Skill, error) {
 	}
 	return r.querySkills(
 		fmt.Sprintf(
-			`SELECT id, path, content, COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+			`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
 			 FROM skills WHERE id IN (%s) ORDER BY path`,
 			strings.Join(placeholders, ","),
 		),

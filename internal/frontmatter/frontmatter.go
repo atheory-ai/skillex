@@ -9,10 +9,12 @@ import (
 
 // Frontmatter holds the YAML frontmatter metadata from a skill file.
 type Frontmatter struct {
-	Topics   []string `yaml:"topics"`
-	Tags     []string `yaml:"tags"`
-	Source   string   `yaml:"source"`
-	Reviewed string   `yaml:"reviewed"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Topics      []string `yaml:"topics"`
+	Tags        []string `yaml:"tags"`
+	Source      string   `yaml:"source"`
+	Reviewed    string   `yaml:"reviewed"`
 }
 
 // Parse separates YAML frontmatter from Markdown body.

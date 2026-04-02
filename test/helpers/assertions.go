@@ -9,6 +9,8 @@ import (
 // SkillSummary mirrors a single result entry in a skillex query --json response.
 type SkillSummary struct {
 	Path        string   `json:"path"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
 	PackageName string   `json:"package"`
 	Version     string   `json:"version"`
 	Visibility  string   `json:"visibility"`
@@ -60,6 +62,7 @@ type QueryEcho struct {
 	Topics  []string `json:"topics"`
 	Tags    []string `json:"tags"`
 	Package string   `json:"package"`
+	Search  string   `json:"search"`
 }
 
 // RunQueryJSON executes skillex query with --json and unmarshals the response envelope.

@@ -26,7 +26,10 @@ func Serve(reg *registry.Registry, version string) error {
 	queryTool := mcplib.NewTool(
 		"skillex_query",
 		mcplib.WithDescription(
-			"Query skillex skills by path, topic, tags, or package. "+
+			"Query skillex skills by path, topic, tags, package, or keyword search. "+
+				"Use 'search' for intent-based discovery when you don't know the skill taxonomy — "+
+				"pass space or comma-separated concepts and all matching skills are returned in one call. "+
+				"Use topic/tags for structured filtering when you know the organization. "+
 				"Returns skill content or metadata for agent consumption.",
 		),
 		mcplib.WithString("path",
@@ -41,8 +44,16 @@ func Serve(reg *registry.Registry, version string) error {
 		mcplib.WithString("package",
 			mcplib.Description("Package name filter (e.g. @acme/foo)"),
 		),
+		mcplib.WithString("search",
+			mcplib.Description(
+				"Keyword search across skill names and descriptions. "+
+					"Space or comma-separated terms are each matched independently — "+
+					"use this to find skills by concept when you don't know the topic/tag taxonomy. "+
+					"Example: 'search card pagination' finds all skills related to any of those terms.",
+			),
+		),
 		mcplib.WithString("format",
-			mcplib.Description("Output format: 'content' (default) or 'summary'"),
+			mcplib.Description("Output format: 'content' or 'summary' (default: summary when using search, content otherwise)"),
 			mcplib.Enum("content", "summary"),
 		),
 	)
@@ -85,6 +96,7 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 	topicVal, _ := req.Params.Arguments["topic"].(string)
 	tagsVal, _ := req.Params.Arguments["tags"].(string)
 	pkgVal, _ := req.Params.Arguments["package"].(string)
+	searchVal, _ := req.Params.Arguments["search"].(string)
 	formatVal, _ := req.Params.Arguments["format"].(string)
 
 	var topics []string
@@ -101,9 +113,14 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 		}
 	}
 
-	format := query.FormatContent
-	if formatVal == "summary" {
+	var format query.Format
+	switch formatVal {
+	case "content":
+		format = query.FormatContent
+	case "summary":
 		format = query.FormatSummary
+	default:
+		format = query.FormatDefault
 	}
 
 	eng := query.New(reg)
@@ -112,6 +129,7 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 		Topics:  topics,
 		Tags:    tags,
 		Package: pkgVal,
+		Search:  searchVal,
 		Format:  format,
 	})
 	if err != nil {
@@ -125,12 +143,27 @@ func handleQuery(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.Ca
 
 	switch resp.Type {
 	case query.ResponseTypeResults:
+		// Determine the effective format to decide how to render the results.
+		effectiveFormat := format
+		if effectiveFormat == query.FormatDefault {
+			if searchVal != "" {
+				effectiveFormat = query.FormatSummary
+			} else {
+				effectiveFormat = query.FormatContent
+			}
+		}
 		var sb strings.Builder
-		if format == query.FormatContent {
+		if effectiveFormat == query.FormatContent {
 			sb.WriteString(query.ContentString(resp.Results))
 		} else {
 			for _, r := range resp.Results {
 				sb.WriteString(fmt.Sprintf("**%s**\n", r.Path))
+				if r.Name != "" {
+					sb.WriteString(fmt.Sprintf("  Name: %s\n", r.Name))
+				}
+				if r.Description != "" {
+					sb.WriteString(fmt.Sprintf("  Description: %s\n", r.Description))
+				}
 				if r.PackageName != "" {
 					sb.WriteString(fmt.Sprintf("  Package: %s@%s\n", r.PackageName, r.PackageVersion))
 				}
@@ -176,7 +209,18 @@ func skillURI(s registry.Skill) string {
 }
 
 func skillDescription(s registry.Skill) string {
-	parts := []string{fmt.Sprintf("visibility=%s", s.Visibility)}
+	var parts []string
+	if s.Name != "" {
+		parts = append(parts, s.Name)
+	}
+	if s.Description != "" {
+		desc := s.Description
+		if len(desc) > 120 {
+			desc = desc[:117] + "..."
+		}
+		parts = append(parts, desc)
+	}
+	parts = append(parts, fmt.Sprintf("visibility=%s", s.Visibility))
 	if s.PackageName != "" {
 		parts = append(parts, fmt.Sprintf("package=%s@%s", s.PackageName, s.PackageVersion))
 	}

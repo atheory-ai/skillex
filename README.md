@@ -76,7 +76,7 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 - **Version-correct** — skills are read from the resolved package install, not from the internet.
 - **Scope-aware** — skills are linked to the paths where they apply. A query for `packages/app-a/**` never returns skills for `packages/app-b`.
 - **Public and private** — packages export consumer-facing skills (public) and contributor-facing skills (private). Visibility is enforced automatically.
-- **Instant retrieval** — SQLite index with structured queries. No document browsing, no semantic search overhead.
+- **Instant retrieval** — SQLite index with structured queries plus keyword search over skill `name` and `description`. No document browsing, no embeddings.
 - **MCP native** — first-class Model Context Protocol server. Agents with MCP support get typed tool calls and resource discovery.
 - **CLI fallback** — every agent harness can call the CLI. Works in CI, scripts, and terminals.
 - **AGENTS.md manifest** — auto-generated fallback for agents that can't run MCP or shell commands.
@@ -235,6 +235,8 @@ A skill is a Markdown file with optional YAML frontmatter.
 
 ```markdown
 ---
+name: Error Handling
+description: How to handle errors and validation when using FooClient in @acme/foo.
 topics: [error-handling, validation]
 tags: [v2, breaking-change]
 ---
@@ -248,12 +250,14 @@ When using FooClient, all API calls return a Result type...
 
 | Field | Description |
 |---|---|
+| `name` | Short title for the skill. Recommended; used by `--search` and result summaries. |
+| `description` | One-line summary. Recommended; used by `--search`. |
 | `topics` | Semantic categories. Used for `--topic` queries. |
 | `tags` | Freeform labels. Used for `--tags` queries. |
 | `source` | (Vendor skills) URL the skill was imported from. |
 | `reviewed` | (Vendor skills) Timestamp of last agent review. |
 
-Both fields are optional. Skills without frontmatter are still indexed and queryable by path, scope, and package.
+`topics` and `tags` are optional. Skills without frontmatter are still indexed and queryable by path, scope, and package. Skills without `name` or `description` are not matched by `--search`; `skillex doctor` warns about missing fields.
 
 ---
 
@@ -376,7 +380,8 @@ Parameters:
   topic   string    Comma-separated topic filters
   tags    string    Comma-separated tag filters
   package string    Package name filter
-  format  string    "content" (default) or "summary"
+  search  string    Keyword search over skill name and description (space/comma tokens, OR)
+  format  string    "content" or "summary" (default: summary when search is set, else content)
 ```
 
 **Resources**
@@ -416,10 +421,12 @@ skillex refresh --dry-run         # Preview without writing
 ### `skillex query`
 
 ```bash
+skillex query --search "<concepts>"
 skillex query --path <filepath>
 skillex query --topic <topic>
 skillex query --tags <tag1,tag2>
 skillex query --package <name>
+skillex query --search "auth" --topic security
 skillex query --path <glob> --topic <topic> --format content
 skillex query --format summary --json
 ```
@@ -439,7 +446,7 @@ skillex doctor                    # Full diagnostics report
 skillex doctor --json             # Machine-readable report
 ```
 
-Checks: configuration validity, registry health, test coverage, topic/tag distribution, AGENTS.md presence, vendor skill provenance.
+Checks: configuration validity, registry health, test coverage, topic/tag distribution, skills missing `name`/`description` (search discoverability), AGENTS.md presence, vendor skill provenance.
 
 ### `skillex get`
 
@@ -519,7 +526,7 @@ skillex import ./legacy-docs/ --batch
 ```
 
 Vendored skills land in `skillex/vendor/<source>/` with:
-- Normalized frontmatter (topics, tags)
+- Normalized frontmatter (name, description when present, topics, tags)
 - Source URL recorded for provenance
 - Auto-generated test stubs
 
@@ -538,8 +545,11 @@ if available (preferred), otherwise use the CLI commands below.
 
 ### MCP (preferred)
 ...
+- `skillex_query` parameters include `search` for intent-based discovery.
 
 ### CLI (fallback)
+...
+- `skillex query --search "<concepts>"`
 ...
 
 ### Available scopes

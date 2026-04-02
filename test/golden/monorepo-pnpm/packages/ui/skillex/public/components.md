@@ -1,4 +1,6 @@
 ---
+name: UI Components
+description: How to import and use Button, Input, and Modal components from the @test/ui design system.
 topics:
   - components
   - react

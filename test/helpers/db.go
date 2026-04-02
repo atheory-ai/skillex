@@ -83,6 +83,36 @@ func QueryTagsFor(t *testing.T, db *sql.DB, pathFragment string) []string {
 	return queryStringList(t, db, `SELECT tag FROM skill_tags WHERE skill_id = ? ORDER BY tag`, id)
 }
 
+// QueryNameFor returns the name stored for a skill whose path contains the given substring.
+func QueryNameFor(t *testing.T, db *sql.DB, pathFragment string) string {
+	t.Helper()
+	id := skillIDByFragment(t, db, pathFragment)
+	if id == 0 {
+		t.Fatalf("no skill found with path containing %q", pathFragment)
+	}
+	var name string
+	err := db.QueryRow(`SELECT COALESCE(name,'') FROM skills WHERE id = ?`, id).Scan(&name)
+	if err != nil {
+		t.Fatalf("querying name for skill %d: %v", id, err)
+	}
+	return name
+}
+
+// QueryDescriptionFor returns the description stored for a skill whose path contains the given substring.
+func QueryDescriptionFor(t *testing.T, db *sql.DB, pathFragment string) string {
+	t.Helper()
+	id := skillIDByFragment(t, db, pathFragment)
+	if id == 0 {
+		t.Fatalf("no skill found with path containing %q", pathFragment)
+	}
+	var desc string
+	err := db.QueryRow(`SELECT COALESCE(description,'') FROM skills WHERE id = ?`, id).Scan(&desc)
+	if err != nil {
+		t.Fatalf("querying description for skill %d: %v", id, err)
+	}
+	return desc
+}
+
 // QueryScopesFor returns scopes for a skill whose path contains the given substring.
 func QueryScopesFor(t *testing.T, db *sql.DB, pathFragment string) []string {
 	t.Helper()

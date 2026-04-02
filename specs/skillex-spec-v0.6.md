@@ -31,7 +31,7 @@ Current approaches leave agents to hunt through layered documentation. We need a
 - Full multi-ecosystem dependency graph support (Python, Java, etc.).
 - Agent runtime dependency resolution.
 - Embedding an LLM in the CLI — agents are the test runtime, the CLI validates structure and serves queries.
-- Natural language search or vector embeddings — retrieval is structured, not semantic.
+- Natural language search or vector embeddings — retrieval is structured keyword matching against `name`/`description`, not semantic.
 
 ## 3. Architecture Overview
 
@@ -237,12 +237,14 @@ To initialize the client...
 
 Fields:
 
+- `name` — a short human-readable title for the skill. Used by `--search` queries and included in result metadata. Recommended for all skills.
+- `description` — a one-sentence summary of what the skill covers. Used by `--search` queries. Recommended for all skills.
 - `topics` — semantic categories describing what the skill covers. Used for `--topic` queries.
 - `tags` — freeform labels for filtering. Used for `--tags` queries.
 - `source` (vendor skills only) — the URL or path the skill was imported from, for provenance tracking.
 - `reviewed` (vendor skills only) — timestamp of the last agent review.
 
-Both `topics` and `tags` are optional. Skills without frontmatter are still indexed and queryable by path, scope, and package — they just won't appear in topic or tag queries.
+Both `topics` and `tags` are optional. Skills without frontmatter are still indexed and queryable by path, scope, and package — they just won't appear in topic or tag queries. Skills without `name` or `description` are not discoverable via `--search`; `skillex doctor` warns about these.
 
 ### 5.5 Skill Test File Format
 
@@ -407,6 +409,18 @@ skillex query --package @acme/foo
 ```
 
 Returns all skills exported by a package (respecting visibility for the current scope).
+
+```
+skillex query --search "button accessible keyboard"
+```
+
+Returns skills whose `name` or `description` matches any of the whitespace or comma-separated tokens. Each token is matched independently (OR) so multi-concept queries find all relevant skills in one call. Defaults to `--format summary`. Skills without `name`/`description` are not matched by this filter.
+
+```
+skillex query --search "auth" --topic security
+```
+
+All filters compose as intersection — `--search` can be combined with `--topic`, `--tags`, `--package`, and `--path`.
 
 ```
 skillex query --path packages/app-a/** --topic auth,errors --tags v2
@@ -914,6 +928,7 @@ Potential future improvements:
 - Conditional skill inclusion (e.g., only link migration skills when upgrading)
 - Table-of-contents skills for two-phase retrieval
 - Test coverage reporting and nondeterminism tracking
+- Full-text search upgrade (FTS5) for relevance ranking and stemming across name/description (ATH-198)
 - Semantic search as an optional query mode alongside structured queries
 - Remote skill registries for cross-repo skill sharing
 - Skill analysis tooling: automated detection of overlapping skills, context pollution measurement, and split recommendations

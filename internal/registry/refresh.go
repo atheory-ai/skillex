@@ -91,6 +91,8 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		dbSkill := Skill{
 			Path:           ls.RelPath,
 			Content:        ls.Body,
+			Name:           ls.Frontmatter.Name,
+			Description:    ls.Frontmatter.Description,
 			PackageName:    ls.PackageName,
 			PackageVersion: ls.PackageVersion,
 			Visibility:     ls.Visibility,
