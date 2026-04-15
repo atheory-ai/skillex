@@ -3,7 +3,7 @@ VERSION ?= $(BASE_VERSION)-dev
 PACKAGE_VERSION ?= $(BASE_VERSION)
 LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
 
-.PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor version-sync verify
+.PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor version-sync verify release-tag
 
 verify:
 	go test $$(go list ./... | grep -v '/test/acceptance$$')
@@ -95,6 +95,35 @@ refresh:
 
 doctor:
 	go run $(LDFLAGS) ./cmd/skillex doctor
+
+release-tag:
+	@version=$$(cat VERSION); \
+	tag="v$$version"; \
+	branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" != "main" ]; then \
+		echo "release-tag must be run from the main branch."; \
+		exit 1; \
+	fi; \
+	if [ -n "$$(git status --short)" ]; then \
+		echo "release-tag requires a clean worktree."; \
+		exit 1; \
+	fi; \
+	git fetch origin main --tags; \
+	if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then \
+		echo "release-tag requires HEAD to match origin/main."; \
+		exit 1; \
+	fi; \
+	if git rev-parse -q --verify "refs/tags/$$tag" >/dev/null; then \
+		echo "Tag $$tag already exists locally."; \
+		exit 1; \
+	fi; \
+	if git ls-remote --tags --exit-code origin "refs/tags/$$tag" >/dev/null 2>&1; then \
+		echo "Tag $$tag already exists on origin."; \
+		exit 1; \
+	fi; \
+	git tag "$$tag"; \
+	git push origin "$$tag"; \
+	echo "Pushed $$tag. GitHub Actions will run the release workflow."
 
 # ── Acceptance tests ──────────────────────────────────────────────────────────
 

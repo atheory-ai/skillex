@@ -708,8 +708,10 @@ To prepare a release:
 
 1. Update `VERSION` in a pull request.
 2. Merge the PR to `main`.
-3. Create and push a tag that matches the file exactly, for example `v0.6.0`.
+3. From a clean local checkout of `main`, run `make release-tag`.
 4. GitHub Actions verifies the tag, rebuilds the artifacts, and publishes to npm after release approval.
+
+`make release-tag` reads `VERSION`, creates the matching `v*` tag, and pushes it. It refuses to run unless you are on `main`, your worktree is clean, `HEAD` matches `origin/main`, and the tag does not already exist.
 
 To build release tarballs locally for inspection:
 

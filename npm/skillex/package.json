@@ -1,8 +1,12 @@
 {
   "name": "@atheory-ai/skillex",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Skill management for AI agents in Node.js projects",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/atheory-ai/skillex#readme",
+  "bugs": {
+    "url": "https://github.com/atheory-ai/skillex/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/atheory-ai/skillex"
@@ -16,11 +20,19 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "ai",
+    "agent",
+    "skills",
+    "mcp",
+    "cli",
+    "monorepo"
+  ],
   "optionalDependencies": {
-    "@atheory-ai/skillex-darwin-arm64": "0.6.0",
-    "@atheory-ai/skillex-darwin-x64": "0.6.0",
-    "@atheory-ai/skillex-linux-x64": "0.6.0",
-    "@atheory-ai/skillex-linux-arm64": "0.6.0",
-    "@atheory-ai/skillex-win32-x64": "0.6.0"
+    "@atheory-ai/skillex-darwin-arm64": "0.6.1",
+    "@atheory-ai/skillex-darwin-x64": "0.6.1",
+    "@atheory-ai/skillex-linux-x64": "0.6.1",
+    "@atheory-ai/skillex-linux-arm64": "0.6.1",
+    "@atheory-ai/skillex-win32-x64": "0.6.1"
   }
 }
