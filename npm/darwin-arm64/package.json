@@ -1,6 +1,6 @@
 {
   "name": "@atheory-ai/skillex-darwin-arm64",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "macOS arm64 binary for @atheory-ai/skillex",
   "license": "Apache-2.0",
   "repository": {
