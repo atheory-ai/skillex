@@ -119,7 +119,7 @@ jobs:
       - name: Inspect downloaded tarballs
         shell: bash
         run: |
-          tar_dir="${{ steps.download_tarballs.outputs.download-path }}"
+          tar_dir="$(realpath "${{ steps.download_tarballs.outputs.download-path }}")"
           echo "Downloaded artifact path: $tar_dir"
           ls -lah "$tar_dir"
           find "$tar_dir" -maxdepth 2 -type f -name '*.tgz' -print | sort
@@ -135,7 +135,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.verify_release.outputs.version }}
         run: |
-          tar_dir="${{ steps.download_tarballs.outputs.download-path }}"
+          tar_dir="$(realpath "${{ steps.download_tarballs.outputs.download-path }}")"
           for tarball in \
             "$tar_dir/atheory-ai-skillex-darwin-arm64-${VERSION}.tgz" \
             "$tar_dir/atheory-ai-skillex-darwin-x64-${VERSION}.tgz" \
@@ -154,7 +154,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.verify_release.outputs.version }}
         run: |
-          tar_dir="${{ steps.download_tarballs.outputs.download-path }}"
+          tar_dir="$(realpath "${{ steps.download_tarballs.outputs.download-path }}")"
           tarball="$tar_dir/atheory-ai-skillex-${VERSION}.tgz"
           if [ ! -f "$tarball" ]; then
             echo "Missing tarball: $tarball"
