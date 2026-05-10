@@ -1,6 +1,6 @@
 {
   "name": "@atheory-ai/skillex-win32-x64",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Windows x64 binary for @atheory-ai/skillex",
   "license": "Apache-2.0",
   "repository": {
