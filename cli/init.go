@@ -283,8 +283,8 @@ func configureMCP(root, harness string) error {
 	mcpConfig := `{
   "mcpServers": {
     "skillex": {
-      "command": "skillex",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "@atheory-ai/skillex", "mcp"]
     }
   }
 }

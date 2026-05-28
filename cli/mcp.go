@@ -26,11 +26,14 @@ Configure in your agent harness:
   {
     "mcpServers": {
       "skillex": {
-        "command": "skillex",
-        "args": ["mcp"]
+        "command": "npx",
+        "args": ["-y", "@atheory-ai/skillex", "mcp"]
       }
     }
-  }`,
+  }
+
+npx resolves ./node_modules/.bin first, so it works with --save-dev installs,
+global installs, and version managers (nvm, fnm, volta) alike.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
 			dbPath := filepath.Join(root, ".skillex", "index.db")
