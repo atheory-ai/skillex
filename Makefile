@@ -3,7 +3,7 @@ VERSION ?= $(BASE_VERSION)-dev
 PACKAGE_VERSION ?= $(BASE_VERSION)
 LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
 
-.PHONY: build install test lint clean dist npm-stage npm-pack npm-publish refresh doctor version-sync verify release-tag
+.PHONY: build install test lint clean dist release-assets npm-stage npm-pack npm-publish refresh doctor version-sync verify release-tag
 
 verify:
 	go test $$(go list ./... | grep -v '/test/acceptance$$')
@@ -47,6 +47,9 @@ dist: clean
 	GOOS=linux   GOARCH=amd64 go build $(LDFLAGS) -o dist/skillex-linux-x64       ./cmd/skillex
 	GOOS=linux   GOARCH=arm64 go build $(LDFLAGS) -o dist/skillex-linux-arm64     ./cmd/skillex
 	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/skillex-win32-x64.exe   ./cmd/skillex
+
+release-assets: dist
+	./scripts/package-release-assets.sh
 
 # ── npm packaging ────────────────────────────────────────────────────────────
 

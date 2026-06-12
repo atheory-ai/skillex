@@ -87,7 +87,27 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 
 ## Installation
 
-### npm (recommended for Node.js projects)
+### Global binary install (recommended)
+
+Install Skillex as a platform utility that works in any repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh | sh
+```
+
+To install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh | SKILLEX_VERSION=0.6.4 sh
+```
+
+The installer downloads the correct binary for your platform from GitHub Releases
+and installs it to `~/.local/bin` by default. Set `SKILLEX_INSTALL_DIR` to choose
+a different install directory.
+
+### npm dev dependency (Node.js projects)
+
+Node projects can pin Skillex as a local dev dependency:
 
 ```bash
 npm install --save-dev @atheory-ai/skillex
@@ -99,7 +119,7 @@ yarn add -D @atheory-ai/skillex
 
 The package automatically installs the correct binary for your platform (macOS arm64/x64, Linux arm64/x64, Windows x64) via npm's `optionalDependencies` mechanism — only the binary for your OS is downloaded.
 
-### go install
+### Go install
 
 ```bash
 go install github.com/atheory-ai/skillex/cmd/skillex@latest
@@ -502,8 +522,7 @@ Recommended `package.json` scripts:
   "scripts": {
     "skillex:refresh": "skillex refresh",
     "skillex:test":    "skillex test validate",
-    "skillex:doctor":  "skillex doctor",
-    "postinstall":     "skillex refresh"
+    "skillex:doctor":  "skillex doctor"
   }
 }
 ```
@@ -684,6 +703,7 @@ make install    # $GOPATH/bin/skillex
 make test       # go test ./...
 make lint       # go vet ./...
 make dist       # cross-compile for all platforms → dist/
+make release-assets # package GitHub release archives + checksums
 ```
 
 **Cross-compiled targets:**
@@ -709,14 +729,20 @@ To prepare a release:
 1. Update `VERSION` in a pull request.
 2. Merge the PR to `main`.
 3. From a clean local checkout of `main`, run `make release-tag`.
-4. GitHub Actions verifies the tag, rebuilds the artifacts, and publishes to npm after release approval.
+4. GitHub Actions verifies the tag, publishes GitHub release assets, and publishes to npm after release approval.
 
 `make release-tag` reads `VERSION`, creates the matching `v*` tag, and pushes it. It refuses to run unless you are on `main`, your worktree is clean, `HEAD` matches `origin/main`, and the tag does not already exist.
 
-To build release tarballs locally for inspection:
+To build npm tarballs locally for inspection:
 
 ```bash
 make npm-pack
+```
+
+To build GitHub release assets locally for inspection:
+
+```bash
+make release-assets
 ```
 
 `make npm-publish` still exists as a manual fallback, but the intended release path is the GitHub Actions release workflow.

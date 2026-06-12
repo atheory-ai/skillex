@@ -7,7 +7,8 @@ This document is for maintainers.
 - `main` is the release branch.
 - Releases are created from a tagged commit on `main`.
 - The tag must match the root `VERSION` file exactly, for example `v0.6.1`.
-- GitHub Actions performs the verified build and publishes to npm after approval through the `npm-release` environment.
+- GitHub Actions performs the verified build, publishes GitHub release assets,
+  and publishes to npm after approval through the `npm-release` environment.
 
 ## Release Steps
 
@@ -26,8 +27,8 @@ make release-tag
 
 7. Wait for the `Release` workflow to complete verification.
 8. Approve the `npm-release` environment when prompted.
-9. Confirm the npm packages were published successfully.
-10. Create GitHub release notes if needed.
+9. Confirm the GitHub release assets were attached successfully.
+10. Confirm the npm packages were published successfully.
 
 `make release-tag` is the intended path. It refuses to run unless:
 
@@ -40,10 +41,16 @@ The GitHub release workflow starts only when the `v*` tag is pushed.
 
 ## Local Packaging Check
 
-If you need to inspect release tarballs before tagging:
+If you need to inspect npm tarballs before tagging:
 
 ```bash
 make npm-pack
+```
+
+If you need to inspect GitHub release assets before tagging:
+
+```bash
+make release-assets
 ```
 
 This is for inspection only. The normal release path is GitHub Actions, not local `npm publish`.

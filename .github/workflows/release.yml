@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
@@ -102,6 +102,61 @@ jobs:
           name: npm-tarballs-${{ steps.release_version.outputs.version }}
           path: dist/*.tgz
           if-no-files-found: error
+
+      - name: Check installer scripts
+        shell: bash
+        run: |
+          sh -n install.sh
+          sh -n scripts/package-release-assets.sh
+
+      - name: Build GitHub release assets
+        run: VERSION=${{ steps.release_version.outputs.version }} make release-assets
+
+      - name: Upload GitHub release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ steps.release_version.outputs.version }}
+          path: |
+            dist/skillex-*.tar.gz
+            dist/skillex-*.zip
+            dist/checksums.txt
+          if-no-files-found: error
+
+  publish_github_release:
+    runs-on: ubuntu-latest
+    needs: verify_release
+
+    steps:
+      - name: Download GitHub release assets
+        id: download_release_assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets-${{ needs.verify_release.outputs.version }}
+          path: dist
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.verify_release.outputs.version }}
+        shell: bash
+        run: |
+          asset_dir="$(realpath "${{ steps.download_release_assets.outputs.download-path }}")"
+          assets=(
+            "$asset_dir/skillex-darwin-arm64.tar.gz"
+            "$asset_dir/skillex-darwin-x64.tar.gz"
+            "$asset_dir/skillex-linux-arm64.tar.gz"
+            "$asset_dir/skillex-linux-x64.tar.gz"
+            "$asset_dir/skillex-win32-x64.zip"
+            "$asset_dir/checksums.txt"
+          )
+          for asset in "${assets[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "Missing release asset: $asset"
+              exit 1
+            fi
+          done
+          gh release create "$TAG" "${assets[@]}" --verify-tag --title "$TAG" --generate-notes ||
+            gh release upload "$TAG" "${assets[@]}" --clobber
 
   publish_npm:
     runs-on: ubuntu-latest

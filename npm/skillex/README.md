@@ -1,6 +1,6 @@
 # Skillex
 
-Skill management for AI agents in Node.js projects.
+Skill management for AI agents.
 
 Skillex helps agents load the right guidance for the code they are working on without dumping an entire repo's docs into context. It indexes repo skills, package skills, scope rules, and installed package versions, then answers targeted queries in microseconds.
 
@@ -12,13 +12,26 @@ Skillex helps agents load the right guidance for the code they are working on wi
 - Exposes the index through both MCP and a CLI fallback
 - Generates `AGENTS.md` instructions for agents that cannot use MCP directly
 
-## Install
+## Recommended install
+
+For cross-ecosystem use, install Skillex as a global platform utility. See the
+main project README for the universal installer.
+
+## Node dev dependency
+
+Use this npm package when a Node.js project wants Skillex pinned as local dev
+tooling:
 
 ```bash
 npm install --save-dev @atheory-ai/skillex
+# or
+pnpm add -D @atheory-ai/skillex
+# or
+yarn add -D @atheory-ai/skillex
 ```
 
-The wrapper package installs the correct native binary for your platform through npm `optionalDependencies`.
+The wrapper package installs the correct native binary for your platform through
+npm `optionalDependencies`.
 
 ## Quick start
 
