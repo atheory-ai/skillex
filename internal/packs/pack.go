@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gobwas/glob"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,6 +38,13 @@ type Pack struct {
 	Path     string
 	Dir      string
 	Manifest Manifest
+}
+
+// ActivatedSkill is a manifest skill whose activation rules matched the repo.
+type ActivatedSkill struct {
+	Pack   *Pack
+	Skill  SkillRef
+	Scopes []string
 }
 
 // Load reads and validates a pack manifest.
@@ -105,4 +113,163 @@ func isSafeRelativePath(path string) bool {
 	}
 	clean := filepath.Clean(path)
 	return clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+// ActivateProject discovers and activates project-local packs for a repo root.
+func ActivateProject(root string) ([]ActivatedSkill, []error) {
+	var activated []ActivatedSkill
+	var errs []error
+
+	for _, manifestPath := range ProjectManifestPaths(root) {
+		pack, err := Load(manifestPath)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		for _, skill := range pack.Manifest.Skills {
+			scopes, err := ActivateSkill(root, skill)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("activating pack %s skill %s: %w", pack.Manifest.Name, skill.File, err))
+				continue
+			}
+			if len(scopes) == 0 {
+				continue
+			}
+
+			activated = append(activated, ActivatedSkill{
+				Pack:   pack,
+				Skill:  skill,
+				Scopes: scopes,
+			})
+		}
+	}
+
+	return activated, errs
+}
+
+// ProjectManifestPaths returns supported project-local pack manifest paths.
+func ProjectManifestPaths(root string) []string {
+	var paths []string
+
+	rootPack := filepath.Join(root, "skillex", Filename)
+	if fileExists(rootPack) {
+		paths = append(paths, rootPack)
+	}
+
+	packsDir := filepath.Join(root, "skillex", "packs")
+	entries, err := os.ReadDir(packsDir)
+	if err != nil {
+		return paths
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(packsDir, entry.Name(), Filename)
+		if fileExists(path) {
+			paths = append(paths, path)
+		}
+	}
+
+	return paths
+}
+
+// ActivateSkill resolves the scopes created by one skill activation rule.
+func ActivateSkill(root string, skill SkillRef) ([]string, error) {
+	var scopes []string
+	for _, pattern := range skill.ActivateWhen.FilesPresent {
+		matches, err := MatchRepoFiles(root, pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, match := range matches {
+			scopes = appendUnique(scopes, ScopeForMatch(match, skill.Scope)...)
+		}
+	}
+	return scopes, nil
+}
+
+// MatchRepoFiles matches a glob against repository files.
+func MatchRepoFiles(root string, pattern string) ([]string, error) {
+	normPattern := filepath.ToSlash(pattern)
+	g, err := glob.Compile(normPattern, '/')
+	if err != nil {
+		return nil, err
+	}
+
+	var matches []string
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && shouldSkipActivationDir(d.Name()) {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if g.Match(rel) || g.Match(filepath.Base(rel)) {
+			matches = append(matches, rel)
+		}
+		return nil
+	})
+	return matches, err
+}
+
+func shouldSkipActivationDir(name string) bool {
+	switch name {
+	case ".git", ".skillex", "node_modules":
+		return true
+	default:
+		return false
+	}
+}
+
+// ScopeForMatch maps a matching file path to the scope requested by a skill.
+func ScopeForMatch(match string, scope string) []string {
+	switch scope {
+	case "repo":
+		return []string{"**"}
+	case "directory":
+		dir := filepath.ToSlash(filepath.Dir(match))
+		if dir == "." {
+			return []string{"*"}
+		}
+		return []string{filepath.ToSlash(filepath.Join(dir, "*"))}
+	case "", "subtree":
+		dir := filepath.ToSlash(filepath.Dir(match))
+		if dir == "." {
+			return []string{"**"}
+		}
+		return []string{filepath.ToSlash(filepath.Join(dir, "**"))}
+	default:
+		return nil
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func appendUnique(slice []string, items ...string) []string {
+	seen := map[string]bool{}
+	for _, s := range slice {
+		seen[s] = true
+	}
+	for _, item := range items {
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		slice = append(slice, item)
+	}
+	return slice
 }

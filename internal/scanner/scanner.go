@@ -9,7 +9,6 @@ import (
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/frontmatter"
 	"github.com/atheory-ai/skillex/internal/packs"
-	"github.com/gobwas/glob"
 )
 
 // SkillFile represents a discovered skill file and its parsed metadata.
@@ -259,188 +258,49 @@ func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion,
 
 func (s *Scanner) scanProjectPacks() ([]SkillFile, []error) {
 	var skills []SkillFile
-	var errs []error
 
-	for _, manifestPath := range s.projectPackManifestPaths() {
-		pack, err := packs.Load(manifestPath)
+	activated, errs := packs.ActivateProject(s.root)
+	for _, activation := range activated {
+		absPath := filepath.Join(activation.Pack.Dir, activation.Skill.File)
+		relPath, _ := filepath.Rel(s.root, absPath)
+		sfs, err := s.readSkillFileWithScopes(
+			absPath,
+			filepath.ToSlash(relPath),
+			"",
+			"",
+			"repo",
+			"pack",
+			"",
+			"",
+			activation.Scopes,
+		)
 		if err != nil {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("pack skill %s: %w", relPath, err))
 			continue
 		}
+		skills = append(skills, sfs...)
 
-		for _, skill := range pack.Manifest.Skills {
-			scopes, err := s.activatePackSkill(skill)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("activating pack %s skill %s: %w", pack.Manifest.Name, skill.File, err))
-				continue
-			}
-			if len(scopes) == 0 {
-				continue
-			}
-
-			absPath := filepath.Join(pack.Dir, skill.File)
-			relPath, _ := filepath.Rel(s.root, absPath)
-			sfs, err := s.readSkillFileWithScopes(
-				absPath,
-				filepath.ToSlash(relPath),
-				"",
-				"",
-				"repo",
-				"pack",
-				"",
-				"",
-				scopes,
-			)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("pack skill %s: %w", relPath, err))
-				continue
-			}
-			skills = append(skills, sfs...)
-
-			testAbsPath := strings.TrimSuffix(absPath, ".md") + ".test.md"
-			testRelPath, _ := filepath.Rel(s.root, testAbsPath)
-			testSfs, err := s.readSkillFileWithScopes(
-				testAbsPath,
-				filepath.ToSlash(testRelPath),
-				"",
-				"",
-				"repo",
-				"pack",
-				"",
-				"",
-				nil,
-			)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("pack test %s: %w", testRelPath, err))
-				continue
-			}
-			skills = append(skills, testSfs...)
+		testAbsPath := strings.TrimSuffix(absPath, ".md") + ".test.md"
+		testRelPath, _ := filepath.Rel(s.root, testAbsPath)
+		testSfs, err := s.readSkillFileWithScopes(
+			testAbsPath,
+			filepath.ToSlash(testRelPath),
+			"",
+			"",
+			"repo",
+			"pack",
+			"",
+			"",
+			nil,
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pack test %s: %w", testRelPath, err))
+			continue
 		}
+		skills = append(skills, testSfs...)
 	}
 
 	return skills, errs
-}
-
-func (s *Scanner) projectPackManifestPaths() []string {
-	var paths []string
-
-	rootPack := filepath.Join(s.root, "skillex", packs.Filename)
-	if fileExists(rootPack) {
-		paths = append(paths, rootPack)
-	}
-
-	packsDir := filepath.Join(s.root, "skillex", "packs")
-	entries, err := os.ReadDir(packsDir)
-	if err != nil {
-		return paths
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		path := filepath.Join(packsDir, entry.Name(), packs.Filename)
-		if fileExists(path) {
-			paths = append(paths, path)
-		}
-	}
-
-	return paths
-}
-
-func (s *Scanner) activatePackSkill(skill packs.SkillRef) ([]string, error) {
-	var scopes []string
-	for _, pattern := range skill.ActivateWhen.FilesPresent {
-		matches, err := s.matchRepoFiles(pattern)
-		if err != nil {
-			return nil, err
-		}
-		for _, match := range matches {
-			scopes = appendUnique(scopes, scopeForMatch(match, skill.Scope)...)
-		}
-	}
-	return scopes, nil
-}
-
-func (s *Scanner) matchRepoFiles(pattern string) ([]string, error) {
-	normPattern := filepath.ToSlash(pattern)
-	g, err := glob.Compile(normPattern, '/')
-	if err != nil {
-		return nil, err
-	}
-
-	var matches []string
-	err = filepath.WalkDir(s.root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && shouldSkipPackActivationDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		rel, err := filepath.Rel(s.root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if g.Match(rel) || g.Match(filepath.Base(rel)) {
-			matches = append(matches, rel)
-		}
-		return nil
-	})
-	return matches, err
-}
-
-func shouldSkipPackActivationDir(name string) bool {
-	switch name {
-	case ".git", ".skillex", "node_modules":
-		return true
-	default:
-		return false
-	}
-}
-
-func scopeForMatch(match string, scope string) []string {
-	switch scope {
-	case "repo":
-		return []string{"**"}
-	case "directory":
-		dir := filepath.ToSlash(filepath.Dir(match))
-		if dir == "." {
-			return []string{"*"}
-		}
-		return []string{filepath.ToSlash(filepath.Join(dir, "*"))}
-	case "", "subtree":
-		dir := filepath.ToSlash(filepath.Dir(match))
-		if dir == "." {
-			return []string{"**"}
-		}
-		return []string{filepath.ToSlash(filepath.Join(dir, "**"))}
-	default:
-		return nil
-	}
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func appendUnique(slice []string, items ...string) []string {
-	seen := map[string]bool{}
-	for _, s := range slice {
-		seen[s] = true
-	}
-	for _, item := range items {
-		if item == "" || seen[item] {
-			continue
-		}
-		seen[item] = true
-		slice = append(slice, item)
-	}
-	return slice
 }
 
 // ScanDirectory scans a specific directory for skill files (used by init --package).
