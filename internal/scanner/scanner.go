@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,32 +38,28 @@ type SkillFile struct {
 	PackageRoot string
 }
 
-// PackageJSON represents the relevant fields from a package.json file.
-type PackageJSON struct {
-	Name            string            `json:"name"`
-	Version         string            `json:"version"`
-	Dependencies    map[string]string `json:"dependencies"`
-	DevDependencies map[string]string `json:"devDependencies"`
-	Skillex         json.RawMessage   `json:"skillex"`
-}
-
-// SkilexExport holds the skillex config extracted from a package.json.
-type SkilexExport struct {
-	Enabled bool
-	Path    string // custom path, defaults to "skillex"
-}
-
 // Scanner discovers skill files within a repository.
 type Scanner struct {
-	root string
-	cfg  *config.Config
+	root      string
+	cfg       *config.Config
+	resolvers []Resolver
 	// devMode includes devDependencies
 	devMode bool
 }
 
 // New creates a new Scanner.
 func New(root string, cfg *config.Config, devMode bool) *Scanner {
-	return &Scanner{root: root, cfg: cfg, devMode: devMode}
+	return NewWithResolvers(root, cfg, devMode, DefaultResolvers())
+}
+
+// NewWithResolvers creates a scanner with an explicit resolver set.
+func NewWithResolvers(root string, cfg *config.Config, devMode bool, resolvers []Resolver) *Scanner {
+	return &Scanner{
+		root:      root,
+		cfg:       cfg,
+		devMode:   devMode,
+		resolvers: resolvers,
+	}
 }
 
 // ScanResult holds the complete output of a scan.
@@ -103,7 +98,7 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 		}
 		seen[boundaryPath] = true
 
-		depSkills, errs := s.scanBoundary(boundaryPath, rule.DependencyBoundary)
+		depSkills, errs := s.scanDependencyBoundary(boundaryPath, rule.DependencyBoundary)
 		result.DepSkills = append(result.DepSkills, depSkills...)
 		result.Errors = append(result.Errors, errs...)
 	}
@@ -111,51 +106,61 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	return result, nil
 }
 
-// scanBoundary resolves dependencies at a boundary package.json and scans for skillex exports.
-func (s *Scanner) scanBoundary(boundaryPath, boundaryRel string) ([]SkillFile, []error) {
+// scanDependencyBoundary resolves dependencies at a configured boundary and scans exported skills.
+func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]SkillFile, []error) {
 	var skills []SkillFile
 	var errs []error
 
-	pkgJSON, err := readPackageJSON(filepath.Join(boundaryPath, "package.json"))
-	if err != nil {
-		return nil, []error{fmt.Errorf("reading boundary package.json at %s: %w", boundaryPath, err)}
-	}
-
-	deps := pkgJSON.Dependencies
+	mode := DependencyModeProd
 	if s.devMode {
-		for k, v := range pkgJSON.DevDependencies {
-			deps[k] = v
-		}
+		mode = DependencyModeDev
 	}
 
-	// Find node_modules root (walk up from boundary)
-	nmRoot := findNodeModules(boundaryPath)
-
-	for pkgName := range deps {
-		pkgRoot := filepath.Join(nmRoot, pkgName)
-		// Handle scoped packages like @acme/foo -> node_modules/@acme/foo
-		depPkgJSON, err := readPackageJSON(filepath.Join(pkgRoot, "package.json"))
-		if err != nil {
-			// Not installed or doesn't have package.json — skip silently
+	for _, resolver := range s.resolvers {
+		boundary, ok, detectErrs := resolver.DetectBoundary(s.root, boundaryRel)
+		errs = append(errs, detectErrs...)
+		if !ok {
 			continue
 		}
-
-		export := parseSkilexExport(depPkgJSON.Skillex)
-		if !export.Enabled {
-			continue
+		if boundary.RootAbs == "" {
+			boundary.RootAbs = boundaryPath
+		}
+		if boundary.RootRel == "" {
+			boundary.RootRel = filepath.ToSlash(boundaryRel)
+		}
+		if boundary.RepoRootAbs == "" {
+			boundary.RepoRootAbs = s.root
 		}
 
-		skilexDir := filepath.Join(pkgRoot, export.Path)
-		pkgRootRel, _ := filepath.Rel(s.root, pkgRoot)
-		depSkills, depErrs := s.scanSkilexDir(
-			skilexDir,
-			depPkgJSON.Name,
-			depPkgJSON.Version,
-			filepath.ToSlash(boundaryRel),
-			filepath.ToSlash(pkgRootRel),
-		)
-		skills = append(skills, depSkills...)
+		deps, depErrs := resolver.Dependencies(*boundary, mode)
 		errs = append(errs, depErrs...)
+		if len(depErrs) > 0 {
+			continue
+		}
+
+		roots, rootErrs := resolver.ResolvePackageRoots(*boundary, deps)
+		errs = append(errs, rootErrs...)
+
+		for _, pkgRoot := range roots {
+			exports, exportErrs := resolver.Exports(pkgRoot)
+			errs = append(errs, exportErrs...)
+
+			for _, export := range exports {
+				if export.Format != SkillExportFormatLegacyDir {
+					continue
+				}
+
+				depSkills, depErrs := s.scanSkilexDir(
+					export.Path,
+					pkgRoot.Dependency.Name,
+					pkgRoot.Dependency.Version,
+					filepath.ToSlash(boundary.RootRel),
+					filepath.ToSlash(pkgRoot.RootRel),
+				)
+				skills = append(skills, depSkills...)
+				errs = append(errs, depErrs...)
+			}
+		}
 	}
 
 	return skills, errs
@@ -287,62 +292,4 @@ func ScanDirectory(dir, relBase, pkgName, pkgVersion, visibility, sourceType str
 	})
 
 	return skills, err
-}
-
-// readPackageJSON parses a package.json file.
-func readPackageJSON(path string) (*PackageJSON, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var pkg PackageJSON
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return nil, err
-	}
-	if pkg.Dependencies == nil {
-		pkg.Dependencies = map[string]string{}
-	}
-	if pkg.DevDependencies == nil {
-		pkg.DevDependencies = map[string]string{}
-	}
-	return &pkg, nil
-}
-
-// parseSkilexExport extracts the skillex export config from a package.json skillex field.
-func parseSkilexExport(raw json.RawMessage) SkilexExport {
-	if raw == nil {
-		return SkilexExport{}
-	}
-	s := strings.TrimSpace(string(raw))
-	if s == "true" {
-		return SkilexExport{Enabled: true, Path: "skillex"}
-	}
-	if s == "false" || s == "null" {
-		return SkilexExport{}
-	}
-	// Try object form: {"path": "docs/skillex"}
-	var obj struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(raw, &obj); err == nil && obj.Path != "" {
-		return SkilexExport{Enabled: true, Path: obj.Path}
-	}
-	return SkilexExport{}
-}
-
-// findNodeModules walks up from the given directory to find node_modules.
-func findNodeModules(start string) string {
-	dir := start
-	for {
-		nm := filepath.Join(dir, "node_modules")
-		if info, err := os.Stat(nm); err == nil && info.IsDir() {
-			return nm
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return filepath.Join(start, "node_modules")
 }
