@@ -38,7 +38,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 **Steps:**
 
-1. Install skillex (npm wrapper or binary download).
+1. Install skillex (global binary installer or npm wrapper).
    - Is the installation documented clearly?
    - Does `skillex version` work immediately?
 

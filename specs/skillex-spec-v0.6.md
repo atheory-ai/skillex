@@ -879,13 +879,8 @@ Recommended scripts:
 }
 ```
 
-Optional:
-
-```json
-{
-  "postinstall": "skillex refresh"
-}
-```
+Avoid running `skillex refresh` from `postinstall` unless a repository
+deliberately opts into install-time file mutation.
 
 CI:
 
