@@ -281,6 +281,52 @@ When using FooClient, all API calls return a Result type...
 
 ---
 
+## Project-local packs
+
+A pack bundles skill files with activation rules. The first supported pack type
+is a project-local pack that activates during `skillex refresh` when files are
+present in the repository.
+
+Skillex discovers project-local pack manifests at:
+
+```
+skillex/pack.yaml
+skillex/packs/*/pack.yaml
+```
+
+Example:
+
+```yaml
+name: docker
+version: 1.0.0
+description: Docker guidance for repositories with Dockerfiles.
+
+skills:
+  - file: docker.md
+    activate-when:
+      files-present:
+        - Dockerfile
+        - Dockerfile.*
+    scope: subtree
+```
+
+The skill file path is relative to the pack manifest. A co-located
+`docker.test.md` file is discovered automatically.
+
+Supported activation and scope fields in this initial pack implementation:
+
+| Field | Description |
+|---|---|
+| `activate-when.files-present` | Glob patterns matched against repository files. |
+| `scope: repo` | Activate the skill for the whole repository (`**`). |
+| `scope: subtree` | Activate for the directory containing the matched file and below. Default. |
+| `scope: directory` | Activate for files immediately inside the matched file's directory. |
+
+Pack skills are indexed individually with `source_type: pack`. Existing projects
+with no pack manifests behave exactly as before.
+
+---
+
 ## Exporting skills from a package
 
 Any npm package can export skills by adding a `skillex` field to its `package.json`:
