@@ -133,6 +133,9 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 	if err := agents.UpdateFile(agentsPath, section); err != nil {
 		return err
 	}
+	if _, err := agents.UpdateBridgeFiles(root); err != nil {
+		return err
+	}
 
 	if !flagQuiet {
 		fmt.Fprintf(os.Stderr, "\n%s Repository initialized! %d skills indexed.\n",

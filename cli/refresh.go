@@ -103,6 +103,9 @@ Use --dry-run to preview what would change without writing.`,
 				if err := agents.UpdateFile(agentsPath, section); err != nil {
 					return fmt.Errorf("updating AGENTS.md: %w", err)
 				}
+				if _, err := agents.UpdateBridgeFiles(root); err != nil {
+					return fmt.Errorf("updating agent bridge files: %w", err)
+				}
 				if !flagQuiet {
 					fmt.Fprintln(os.Stderr, styleSuccess.Render("✓")+" AGENTS.md updated")
 				}

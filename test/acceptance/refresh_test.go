@@ -30,6 +30,91 @@ func TestRefresh_AgentsMdUpdated(t *testing.T) {
 	}
 }
 
+func TestRefresh_DoesNotCreateAgentBridgesWithoutMarkers(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", res.Stderr)
+	}
+
+	for _, name := range []string{"CLAUDE.md", "GEMINI.md"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s should not be created without tool markers", name)
+		}
+	}
+}
+
+func TestRefresh_UpdatesClaudeBridge(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(claudePath, []byte("# Claude\n\nExisting guidance.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", res.Stderr)
+	}
+
+	content, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "Existing guidance.") {
+		t.Fatalf("CLAUDE.md did not preserve existing content:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "@AGENTS.md") {
+		t.Fatalf("CLAUDE.md missing AGENTS import:\n%s", contentStr)
+	}
+}
+
+func TestRefresh_UpdatesClaudeDirBridge(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", res.Stderr)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, ".claude", "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "@../AGENTS.md") {
+		t.Fatalf(".claude/CLAUDE.md missing relative AGENTS import:\n%s", content)
+	}
+}
+
+func TestRefresh_UpdatesGeminiBridge(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+	geminiPath := filepath.Join(dir, "GEMINI.md")
+	if err := os.WriteFile(geminiPath, []byte("# Gemini\n\nExisting guidance.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", res.Stderr)
+	}
+
+	content, err := os.ReadFile(geminiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "Existing guidance.") {
+		t.Fatalf("GEMINI.md did not preserve existing content:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "@AGENTS.md") {
+		t.Fatalf("GEMINI.md missing AGENTS import:\n%s", contentStr)
+	}
+}
+
 func TestRefresh_CheckDetectsStale(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 

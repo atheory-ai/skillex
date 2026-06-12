@@ -122,8 +122,12 @@ func UpdateFile(agentsPath string, section string) error {
 
 // replaceSection replaces the content between markers, or appends if not found.
 func replaceSection(existing, section string) string {
-	startIdx := strings.Index(existing, markerStart)
-	endIdx := strings.Index(existing, markerEnd)
+	return replaceMarkedSection(existing, section, markerStart, markerEnd)
+}
+
+func replaceMarkedSection(existing, section string, startMarker string, endMarker string) string {
+	startIdx := strings.Index(existing, startMarker)
+	endIdx := strings.Index(existing, endMarker)
 
 	if startIdx == -1 || endIdx == -1 {
 		// Markers not found — append
@@ -134,7 +138,7 @@ func replaceSection(existing, section string) string {
 	}
 
 	before := existing[:startIdx]
-	after := existing[endIdx+len(markerEnd):]
+	after := existing[endIdx+len(endMarker):]
 	if strings.HasPrefix(after, "\n") {
 		after = after[1:]
 	}
