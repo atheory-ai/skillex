@@ -26,11 +26,13 @@ type SkillRef struct {
 	File         string       `yaml:"file"`
 	ActivateWhen ActivateWhen `yaml:"activate-when"`
 	Scope        string       `yaml:"scope"`
+	Files        []string     `yaml:"files"`
 }
 
 // ActivateWhen contains refresh-time activation conditions.
 type ActivateWhen struct {
-	FilesPresent []string `yaml:"files-present"`
+	FilesPresent  []string `yaml:"files-present"`
+	FilesMatching []string `yaml:"files-matching"`
 }
 
 // Pack is a parsed manifest with its filesystem location.
@@ -90,14 +92,14 @@ func (p *Pack) Validate() error {
 			errs = append(errs, fmt.Sprintf("%s.file %q not found", prefix, skill.File))
 		}
 
-		if len(skill.ActivateWhen.FilesPresent) == 0 {
-			errs = append(errs, prefix+".activate-when.files-present must contain at least one pattern")
+		if len(skill.ActivateWhen.FilesPresent) == 0 && len(skill.ActivateWhen.FilesMatching) == 0 {
+			errs = append(errs, prefix+".activate-when must contain files-present or files-matching")
 		}
 
 		switch skill.Scope {
-		case "", "subtree", "repo", "directory":
+		case "", "subtree", "repo", "directory", "matching-files", "nearest-ancestor":
 		default:
-			errs = append(errs, prefix+".scope must be one of: repo, subtree, directory")
+			errs = append(errs, prefix+".scope must be one of: repo, subtree, directory, matching-files, nearest-ancestor")
 		}
 	}
 
@@ -177,17 +179,40 @@ func ProjectManifestPaths(root string) []string {
 
 // ActivateSkill resolves the scopes created by one skill activation rule.
 func ActivateSkill(root string, skill SkillRef) ([]string, error) {
+	matches, err := ActivationMatches(root, skill)
+	if err != nil {
+		return nil, err
+	}
+
+	if skill.Scope == "matching-files" && len(skill.Files) > 0 {
+		matches = nil
+		for _, pattern := range skill.Files {
+			fileMatches, err := MatchRepoFiles(root, pattern)
+			if err != nil {
+				return nil, err
+			}
+			matches = appendUnique(matches, fileMatches...)
+		}
+	}
+
 	var scopes []string
-	for _, pattern := range skill.ActivateWhen.FilesPresent {
-		matches, err := MatchRepoFiles(root, pattern)
+	for _, match := range matches {
+		scopes = appendUnique(scopes, ScopeForMatch(match, skill.Scope)...)
+	}
+	return scopes, nil
+}
+
+// ActivationMatches returns repo files that satisfy a skill's file activation rules.
+func ActivationMatches(root string, skill SkillRef) ([]string, error) {
+	var matches []string
+	for _, pattern := range append(skill.ActivateWhen.FilesPresent, skill.ActivateWhen.FilesMatching...) {
+		fileMatches, err := MatchRepoFiles(root, pattern)
 		if err != nil {
 			return nil, err
 		}
-		for _, match := range matches {
-			scopes = appendUnique(scopes, ScopeForMatch(match, skill.Scope)...)
-		}
+		matches = appendUnique(matches, fileMatches...)
 	}
-	return scopes, nil
+	return matches, nil
 }
 
 // MatchRepoFiles matches a glob against repository files.
@@ -243,6 +268,14 @@ func ScopeForMatch(match string, scope string) []string {
 			return []string{"*"}
 		}
 		return []string{filepath.ToSlash(filepath.Join(dir, "*"))}
+	case "matching-files":
+		return []string{filepath.ToSlash(match)}
+	case "nearest-ancestor":
+		dir := filepath.ToSlash(filepath.Dir(match))
+		if dir == "." {
+			return []string{"**"}
+		}
+		return []string{filepath.ToSlash(filepath.Join(dir, "**"))}
 	case "", "subtree":
 		dir := filepath.ToSlash(filepath.Dir(match))
 		if dir == "." {
