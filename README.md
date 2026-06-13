@@ -326,8 +326,10 @@ Supported activation and scope fields in this initial pack implementation:
 |---|---|
 | `activate-when.files-present` | Glob patterns matched against repository files. |
 | `activate-when.files-matching` | Glob patterns matched against repository files. |
+| `activate-when.dependency-declared` | Dependency conditions matched against the boundary that resolved a package-shipped pack. |
 | `files` | Optional glob patterns for `scope: matching-files`; when omitted, the activation matches are used. |
 | `scope: repo` | Activate the skill for the whole repository (`**`). |
+| `scope: boundary` | Activate for the dependency boundary that resolved a package-shipped pack. |
 | `scope: subtree` | Activate for the directory containing the matched file and below. Default. |
 | `scope: directory` | Activate for files immediately inside the matched file's directory. |
 | `scope: matching-files` | Activate for the exact files matched by the activation or `files` patterns. |
@@ -371,6 +373,32 @@ skillex init --package
 
 **Public skills** are linked when the package appears as a dependency of the current scope.
 **Private skills** are linked when the agent's working path is inside the package's source tree.
+
+Packages can also ship a pack manifest alongside the legacy directories:
+
+```text
+skillex/
+  pack.yaml
+  usage.md
+  public/
+    consumer.md
+```
+
+```yaml
+name: "@acme/foo"
+version: 1.0.0
+skills:
+  - file: usage.md
+    activate-when:
+      dependency-declared:
+        - source: npm-package
+          name: "@acme/foo"
+    scope: boundary
+```
+
+When `skillex/pack.yaml` is present, Skillex activates matching pack skills at
+refresh time and indexes them individually with package metadata. The existing
+`skillex/public` and `skillex/private` behavior remains supported.
 
 ### Custom skill directory
 

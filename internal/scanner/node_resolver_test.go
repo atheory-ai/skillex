@@ -127,6 +127,79 @@ func TestNodeResolverExportsSkillexTrueAndCustomPath(t *testing.T) {
 	}
 }
 
+func TestNodeResolverExportsPackManifestWhenPresent(t *testing.T) {
+	root := t.TempDir()
+	resolver := NewNodeResolver()
+
+	pkgRoot := filepath.Join(root, "node_modules", "with-pack")
+	writeFile(t, filepath.Join(pkgRoot, "package.json"), `{
+		"name": "with-pack",
+		"version": "1.0.0",
+		"skillex": true
+	}`)
+	writeFile(t, filepath.Join(pkgRoot, "skillex", "pack.yaml"), `name: with-pack
+skills:
+  - file: usage.md
+    activate-when:
+      dependency-declared:
+        - source: npm-package
+          name: with-pack
+    scope: boundary
+`)
+
+	exports, errs := resolver.Exports(PackageRoot{RootAbs: pkgRoot})
+	if len(errs) > 0 {
+		t.Fatalf("Exports() errs=%v", errs)
+	}
+	if len(exports) != 2 {
+		t.Fatalf("exports = %#v, want legacy dir and pack manifest", exports)
+	}
+	if exports[0].Format != SkillExportFormatLegacyDir {
+		t.Fatalf("first export format = %q, want legacy", exports[0].Format)
+	}
+	if exports[1].Format != SkillExportFormatPackManifest {
+		t.Fatalf("second export format = %q, want pack manifest", exports[1].Format)
+	}
+	if exports[1].Path != filepath.Join(pkgRoot, "skillex", "pack.yaml") {
+		t.Fatalf("pack manifest path = %q", exports[1].Path)
+	}
+}
+
+func TestNodeResolverExportsExplicitPackManifestPath(t *testing.T) {
+	root := t.TempDir()
+	resolver := NewNodeResolver()
+
+	pkgRoot := filepath.Join(root, "node_modules", "with-pack")
+	writeFile(t, filepath.Join(pkgRoot, "package.json"), `{
+		"name": "with-pack",
+		"version": "1.0.0",
+		"skillex": { "pack": "docs/pack.yaml" }
+	}`)
+	writeFile(t, filepath.Join(pkgRoot, "docs", "pack.yaml"), `name: with-pack
+skills:
+  - file: usage.md
+    activate-when:
+      dependency-declared:
+        - source: npm-package
+          name: with-pack
+    scope: boundary
+`)
+
+	exports, errs := resolver.Exports(PackageRoot{RootAbs: pkgRoot})
+	if len(errs) > 0 {
+		t.Fatalf("Exports() errs=%v", errs)
+	}
+	if len(exports) != 2 {
+		t.Fatalf("exports = %#v, want legacy dir and explicit pack manifest", exports)
+	}
+	if exports[1].Format != SkillExportFormatPackManifest {
+		t.Fatalf("second export format = %q, want pack manifest", exports[1].Format)
+	}
+	if exports[1].Path != filepath.Join(pkgRoot, "docs", "pack.yaml") {
+		t.Fatalf("pack manifest path = %q", exports[1].Path)
+	}
+}
+
 func TestNodeResolverExportsSkipsMissingFalseNullAndInvalidConfig(t *testing.T) {
 	root := t.TempDir()
 	resolver := NewNodeResolver()

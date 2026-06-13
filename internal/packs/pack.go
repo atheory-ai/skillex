@@ -31,8 +31,29 @@ type SkillRef struct {
 
 // ActivateWhen contains refresh-time activation conditions.
 type ActivateWhen struct {
-	FilesPresent  []string `yaml:"files-present"`
-	FilesMatching []string `yaml:"files-matching"`
+	FilesPresent       []string              `yaml:"files-present"`
+	FilesMatching      []string              `yaml:"files-matching"`
+	DependencyDeclared []DependencyCondition `yaml:"dependency-declared"`
+}
+
+// DependencyCondition matches a declared dependency fact.
+type DependencyCondition struct {
+	Source  string `yaml:"source"`
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
+}
+
+// ActivationContext provides non-file facts used during activation.
+type ActivationContext struct {
+	Dependency  DependencyFact
+	BoundaryRel string
+}
+
+// DependencyFact identifies a dependency available in the current boundary.
+type DependencyFact struct {
+	Source  string
+	Name    string
+	Version string
 }
 
 // Pack is a parsed manifest with its filesystem location.
@@ -92,14 +113,16 @@ func (p *Pack) Validate() error {
 			errs = append(errs, fmt.Sprintf("%s.file %q not found", prefix, skill.File))
 		}
 
-		if len(skill.ActivateWhen.FilesPresent) == 0 && len(skill.ActivateWhen.FilesMatching) == 0 {
-			errs = append(errs, prefix+".activate-when must contain files-present or files-matching")
+		if len(skill.ActivateWhen.FilesPresent) == 0 &&
+			len(skill.ActivateWhen.FilesMatching) == 0 &&
+			len(skill.ActivateWhen.DependencyDeclared) == 0 {
+			errs = append(errs, prefix+".activate-when must contain files-present, files-matching, or dependency-declared")
 		}
 
 		switch skill.Scope {
-		case "", "subtree", "repo", "directory", "matching-files", "nearest-ancestor":
+		case "", "subtree", "repo", "directory", "matching-files", "nearest-ancestor", "boundary":
 		default:
-			errs = append(errs, prefix+".scope must be one of: repo, subtree, directory, matching-files, nearest-ancestor")
+			errs = append(errs, prefix+".scope must be one of: repo, subtree, directory, matching-files, nearest-ancestor, boundary")
 		}
 	}
 
@@ -179,9 +202,18 @@ func ProjectManifestPaths(root string) []string {
 
 // ActivateSkill resolves the scopes created by one skill activation rule.
 func ActivateSkill(root string, skill SkillRef) ([]string, error) {
+	return ActivateSkillWithContext(root, skill, ActivationContext{})
+}
+
+// ActivateSkillWithContext resolves scopes using file and dependency activation facts.
+func ActivateSkillWithContext(root string, skill SkillRef, ctx ActivationContext) ([]string, error) {
 	matches, err := ActivationMatches(root, skill)
 	if err != nil {
 		return nil, err
+	}
+	dependencyMatched := DependencyMatches(ctx.Dependency, skill.ActivateWhen.DependencyDeclared)
+	if len(matches) == 0 && !dependencyMatched {
+		return nil, nil
 	}
 
 	if skill.Scope == "matching-files" && len(skill.Files) > 0 {
@@ -195,11 +227,38 @@ func ActivateSkill(root string, skill SkillRef) ([]string, error) {
 		}
 	}
 
+	if skill.Scope == "boundary" {
+		return ScopeForContext(ctx, skill.Scope), nil
+	}
+
 	var scopes []string
+	if len(matches) == 0 {
+		return ScopeForContext(ctx, skill.Scope), nil
+	}
 	for _, match := range matches {
 		scopes = appendUnique(scopes, ScopeForMatch(match, skill.Scope)...)
 	}
 	return scopes, nil
+}
+
+// DependencyMatches reports whether a dependency fact satisfies any condition.
+func DependencyMatches(dep DependencyFact, conditions []DependencyCondition) bool {
+	if len(conditions) == 0 {
+		return false
+	}
+	for _, condition := range conditions {
+		if condition.Source != "" && condition.Source != dep.Source {
+			continue
+		}
+		if condition.Name != "" && condition.Name != dep.Name {
+			continue
+		}
+		if condition.Version != "" && condition.Version != dep.Version {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // ActivationMatches returns repo files that satisfy a skill's file activation rules.
@@ -262,6 +321,8 @@ func ScopeForMatch(match string, scope string) []string {
 	switch scope {
 	case "repo":
 		return []string{"**"}
+	case "boundary":
+		return nil
 	case "directory":
 		dir := filepath.ToSlash(filepath.Dir(match))
 		if dir == "." {
@@ -282,6 +343,26 @@ func ScopeForMatch(match string, scope string) []string {
 			return []string{"**"}
 		}
 		return []string{filepath.ToSlash(filepath.Join(dir, "**"))}
+	default:
+		return nil
+	}
+}
+
+// ScopeForContext maps non-file activation context to a scope.
+func ScopeForContext(ctx ActivationContext, scope string) []string {
+	switch scope {
+	case "repo":
+		return []string{"**"}
+	case "boundary", "", "subtree", "nearest-ancestor":
+		if ctx.BoundaryRel == "" || ctx.BoundaryRel == "." {
+			return []string{"**"}
+		}
+		return []string{filepath.ToSlash(filepath.Join(ctx.BoundaryRel, "**"))}
+	case "directory":
+		if ctx.BoundaryRel == "" || ctx.BoundaryRel == "." {
+			return []string{"*"}
+		}
+		return []string{filepath.ToSlash(filepath.Join(ctx.BoundaryRel, "*"))}
 	default:
 		return nil
 	}

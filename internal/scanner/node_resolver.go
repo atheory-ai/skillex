@@ -2,7 +2,10 @@ package scanner
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+
+	"github.com/atheory-ai/skillex/internal/packs"
 )
 
 // NodeResolver resolves npm-package dependencies from package.json boundaries.
@@ -103,10 +106,24 @@ func (r *NodeResolver) Exports(pkg PackageRoot) ([]SkillExport, []error) {
 		return nil, nil
 	}
 
-	return []SkillExport{
+	exports := []SkillExport{
 		{
 			Path:   filepath.Join(pkg.RootAbs, export.Path),
 			Format: SkillExportFormatLegacyDir,
 		},
-	}, nil
+	}
+
+	packPath := export.PackPath
+	if packPath == "" {
+		packPath = filepath.Join(export.Path, packs.Filename)
+	}
+	packManifestPath := filepath.Join(pkg.RootAbs, packPath)
+	if info, err := os.Stat(packManifestPath); err == nil && !info.IsDir() {
+		exports = append(exports, SkillExport{
+			Path:   packManifestPath,
+			Format: SkillExportFormatPackManifest,
+		})
+	}
+
+	return exports, nil
 }
