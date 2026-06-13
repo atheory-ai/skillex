@@ -23,6 +23,12 @@ func (r *NodeResolver) Name() string {
 func (r *NodeResolver) DetectBoundary(root string, boundaryRel string) (*Boundary, bool, []error) {
 	boundaryPath := filepath.Join(root, boundaryRel)
 	manifestPath := filepath.Join(boundaryPath, "package.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, []error{fmt.Errorf("reading boundary package.json at %s: %w", boundaryPath, err)}
+	}
 	if _, err := readPackageJSON(manifestPath); err != nil {
 		return nil, false, []error{fmt.Errorf("reading boundary package.json at %s: %w", boundaryPath, err)}
 	}
