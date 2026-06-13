@@ -113,6 +113,125 @@ skills:
 	}
 }
 
+func TestActivateProjectWithPackDefinedDetector(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	writePackTestFile(t, filepath.Join(root, "cmd", "app", "main.go"), "package main\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "go.md"), "# Go\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", Filename), `name: go-pack
+detectors:
+  go-app:
+    matches:
+      - file:
+          path: go.mod
+skills:
+  - file: go.md
+    activate-when:
+      detector: go-app
+    scope: matching-files
+    files:
+      - "**/*.go"
+`)
+
+	activated, errs := ActivateProject(root)
+	if len(errs) > 0 {
+		t.Fatalf("ActivateProject() errors = %v", errs)
+	}
+	if len(activated) != 1 {
+		t.Fatalf("ActivateProject() activated = %d, want 1", len(activated))
+	}
+	if got, want := activated[0].Scopes, []string{"cmd/app/main.go"}; !sameStrings(got, want) {
+		t.Fatalf("scopes = %v, want %v", got, want)
+	}
+}
+
+func TestActivateProjectCanUseDetectorFromAnotherLoadedPack(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "detectors", "detector.md"), "# Detector\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "detectors", Filename), `name: detectors
+detectors:
+  go-app:
+    matches:
+      - file:
+          path: go.mod
+skills:
+  - file: detector.md
+    activate-when:
+      files-present:
+        - never-matches
+`)
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "skills", "go.md"), "# Go\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "skills", Filename), `name: skills
+skills:
+  - file: go.md
+    activate-when:
+      detector: go-app
+    scope: repo
+`)
+
+	activated, errs := ActivateProject(root)
+	if len(errs) > 0 {
+		t.Fatalf("ActivateProject() errors = %v", errs)
+	}
+	if len(activated) != 1 {
+		t.Fatalf("ActivateProject() activated = %d, want 1", len(activated))
+	}
+	if activated[0].Pack.Manifest.Name != "skills" {
+		t.Fatalf("activated pack = %q, want skills", activated[0].Pack.Manifest.Name)
+	}
+}
+
+func TestActivateProjectReportsUnknownDetector(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "skillex", "go.md"), "# Go\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", Filename), `name: go-pack
+skills:
+  - file: go.md
+    activate-when:
+      detector: missing
+    scope: repo
+`)
+
+	_, errs := ActivateProject(root)
+	if len(errs) == 0 {
+		t.Fatal("ActivateProject() errors = nil, want unknown detector error")
+	}
+	if !strings.Contains(errs[0].Error(), `unknown detector "missing"`) {
+		t.Fatalf("error = %v, want unknown detector", errs[0])
+	}
+}
+
+func TestDetectorRegistryConflicts(t *testing.T) {
+	registry, err := NewDetectorRegistry()
+	if err != nil {
+		t.Fatalf("NewDetectorRegistry() error = %v", err)
+	}
+	conflictingGo := Detectors{
+		"go": {Matches: []DetectorMatch{{File: &FileCondition{Path: "other.mod"}}}},
+	}
+	if err := registry.RegisterAll(conflictingGo, "go-pack", false); err == nil {
+		t.Fatal("RegisterAll() error = nil, want built-in conflict")
+	}
+
+	registry = &DetectorRegistry{}
+	first := Detectors{
+		"gin": {Matches: []DetectorMatch{{Dependency: &DependencyCondition{Source: "go-module", Name: "github.com/gin-gonic/gin"}}}},
+	}
+	second := Detectors{
+		"gin": {Matches: []DetectorMatch{{Dependency: &DependencyCondition{Source: "go-module", Name: "example.com/other/gin"}}}},
+	}
+	if err := registry.RegisterAll(first, "gin-pack-a", false); err != nil {
+		t.Fatalf("RegisterAll(first) error = %v", err)
+	}
+	if err := registry.RegisterAll(first, "gin-pack-b", false); err != nil {
+		t.Fatalf("identical RegisterAll() error = %v", err)
+	}
+	if err := registry.RegisterAll(second, "gin-pack-c", false); err == nil {
+		t.Fatal("RegisterAll(second) error = nil, want pack conflict")
+	}
+}
+
 func TestActivateSkillSupportsFilesMatching(t *testing.T) {
 	root := t.TempDir()
 	writePackTestFile(t, filepath.Join(root, "services", "api", "main.ts"), "export {}\n")
@@ -152,6 +271,40 @@ func TestActivateSkillMatchingFilesCanUseSeparateFilePatterns(t *testing.T) {
 	want := []string{"app/page.tsx"}
 	if !sameStrings(scopes, want) {
 		t.Fatalf("scopes = %v, want %v", scopes, want)
+	}
+}
+
+func TestActivateSkillWithDependencyBackedDetector(t *testing.T) {
+	root := t.TempDir()
+	pack := &Pack{
+		Manifest: Manifest{
+			Name: "gin-pack",
+			Detectors: Detectors{
+				"gin": {Matches: []DetectorMatch{{Dependency: &DependencyCondition{Source: "go-module", Name: "github.com/gin-gonic/gin"}}}},
+			},
+		},
+	}
+	ctx, errs := ContextForPack(root, pack, ActivationContext{
+		BoundaryRel: "services/api",
+		Dependency: DependencyFact{
+			Source:  "go-module",
+			Name:    "github.com/gin-gonic/gin",
+			Version: "v1.10.0",
+		},
+	})
+	if len(errs) > 0 {
+		t.Fatalf("ContextForPack() errors = %v", errs)
+	}
+
+	scopes, err := ActivateSkillWithContext(root, SkillRef{
+		ActivateWhen: ActivateWhen{Detector: "gin"},
+		Scope:        "boundary",
+	}, ctx)
+	if err != nil {
+		t.Fatalf("ActivateSkillWithContext() error = %v", err)
+	}
+	if got, want := scopes, []string{"services/api/**"}; !sameStrings(got, want) {
+		t.Fatalf("scopes = %v, want %v", got, want)
 	}
 }
 
