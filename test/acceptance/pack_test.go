@@ -158,3 +158,33 @@ Use package-shipped pack guidance.
 		t.Fatalf("PackageName = %q, want with-pack", skills[0].PackageName)
 	}
 }
+
+func TestPack_GoFixtureActivatesProjectAndModulePacks(t *testing.T) {
+	dir := helpers.CopyFixture(t, "go-basic")
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
+
+	projectSkills := queryResults(t, dir, "--path", "main.go", "--topic", "go", "--format", "summary")
+	helpers.AssertSkillPresent(t, projectSkills, "modules.md")
+	if len(projectSkills) != 1 {
+		t.Fatalf("go project results = %d, want 1", len(projectSkills))
+	}
+	if projectSkills[0].SourceType != "pack" {
+		t.Fatalf("project SourceType = %q, want pack", projectSkills[0].SourceType)
+	}
+
+	moduleSkills := queryResults(t, dir, "--path", "main.go", "--package", "example.com/with-skillex", "--format", "summary")
+	helpers.AssertSkillPresent(t, moduleSkills, "usage.md")
+	if len(moduleSkills) != 1 {
+		t.Fatalf("go module results = %d, want 1", len(moduleSkills))
+	}
+	if moduleSkills[0].SourceType != "pack" {
+		t.Fatalf("module SourceType = %q, want pack", moduleSkills[0].SourceType)
+	}
+	if moduleSkills[0].PackageName != "example.com/with-skillex" {
+		t.Fatalf("PackageName = %q, want example.com/with-skillex", moduleSkills[0].PackageName)
+	}
+}

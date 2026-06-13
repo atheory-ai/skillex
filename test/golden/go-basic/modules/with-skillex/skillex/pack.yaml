@@ -1,0 +1,16 @@
+name: example-go-module
+version: 1.0.0
+description: Guidance shipped with a Go module.
+
+detectors:
+  with-skillex:
+    matches:
+      - dependency:
+          source: go-module
+          name: example.com/with-skillex
+
+skills:
+  - file: usage.md
+    activate-when:
+      detector: with-skillex
+    scope: boundary
