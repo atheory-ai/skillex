@@ -195,6 +195,8 @@ func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkg
 			Version: pkgRoot.Dependency.Version,
 		},
 	}
+	ctx, detectorErrs := packs.ContextForPack(s.root, pack, ctx)
+	errs = append(errs, detectorErrs...)
 
 	for _, skill := range pack.Manifest.Skills {
 		scopes, err := packs.ActivateSkillWithContext(s.root, skill, ctx)

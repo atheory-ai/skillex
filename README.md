@@ -301,12 +301,18 @@ name: docker
 version: 1.0.0
 description: Docker guidance for repositories with Dockerfiles.
 
+detectors:
+  docker:
+    matches:
+      - file:
+          path: Dockerfile
+      - file:
+          path: Dockerfile.*
+
 skills:
   - file: docker.md
     activate-when:
-      files-present:
-        - Dockerfile
-        - Dockerfile.*
+      detector: docker
     scope: subtree
 
   - file: typescript.md
@@ -327,6 +333,8 @@ Supported activation and scope fields in this initial pack implementation:
 | `activate-when.files-present` | Glob patterns matched against repository files. |
 | `activate-when.files-matching` | Glob patterns matched against repository files. |
 | `activate-when.dependency-declared` | Dependency conditions matched against the boundary that resolved a package-shipped pack. |
+| `activate-when.detector` | Friendly detector name registered by Skillex core or a loaded pack. |
+| `detectors` | Optional detector definitions registered by the pack while it is loaded. |
 | `files` | Optional glob patterns for `scope: matching-files`; when omitted, the activation matches are used. |
 | `scope: repo` | Activate the skill for the whole repository (`**`). |
 | `scope: boundary` | Activate for the dependency boundary that resolved a package-shipped pack. |
@@ -337,6 +345,12 @@ Supported activation and scope fields in this initial pack implementation:
 
 Pack skills are indexed individually with `source_type: pack`. Existing projects
 with no pack manifests behave exactly as before.
+
+Detector names are extensible. Skillex core includes only a small baseline of
+stable detectors, such as `docker`, `go`, `javascript`, and `typescript`. Packs
+can register framework, library, or ecosystem-specific detector names for the
+current refresh run. Conflicting detector definitions are rejected unless they
+are identical, so core does not need to own every possible term.
 
 ---
 
