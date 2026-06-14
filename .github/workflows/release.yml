@@ -127,6 +127,9 @@ jobs:
     needs: verify_release
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
       - name: Download GitHub release assets
         id: download_release_assets
         uses: actions/download-artifact@v4
