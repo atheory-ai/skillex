@@ -54,6 +54,115 @@ skills:
 	}
 }
 
+func TestProjectManifestPathsFindsSupportedLocations(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "skillex", "root.md"), "# Root\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", Filename), `name: root
+skills:
+  - file: root.md
+    activate-when:
+      files-present:
+        - Dockerfile
+`)
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "docker", "docker.md"), "# Docker\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "packs", "docker", Filename), `name: docker
+skills:
+  - file: docker.md
+    activate-when:
+      files-present:
+        - Dockerfile
+`)
+
+	paths := ProjectManifestPaths(root)
+	if len(paths) != 2 {
+		t.Fatalf("ProjectManifestPaths() = %v, want 2 paths", paths)
+	}
+	if paths[0] != filepath.Join(root, "skillex", Filename) {
+		t.Fatalf("first path = %q, want root pack first", paths[0])
+	}
+	if paths[1] != filepath.Join(root, "skillex", "packs", "docker", Filename) {
+		t.Fatalf("second path = %q, want nested pack", paths[1])
+	}
+}
+
+func TestActivateProjectReturnsMatchedSkills(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "services", "api", "Dockerfile"), "FROM scratch\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", "docker.md"), "# Docker\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", Filename), `name: docker
+skills:
+  - file: docker.md
+    activate-when:
+      files-present:
+        - Dockerfile
+    scope: directory
+`)
+
+	activated, errs := ActivateProject(root)
+	if len(errs) > 0 {
+		t.Fatalf("ActivateProject() errors = %v", errs)
+	}
+	if len(activated) != 1 {
+		t.Fatalf("ActivateProject() activated = %d, want 1", len(activated))
+	}
+	if activated[0].Pack.Manifest.Name != "docker" {
+		t.Fatalf("pack name = %q, want docker", activated[0].Pack.Manifest.Name)
+	}
+	if got, want := activated[0].Scopes, []string{"services/api/*"}; !sameStrings(got, want) {
+		t.Fatalf("scopes = %v, want %v", got, want)
+	}
+}
+
+func TestMatchRepoFilesSkipsGeneratedDirectories(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "Dockerfile"), "FROM scratch\n")
+	writePackTestFile(t, filepath.Join(root, "node_modules", "pkg", "Dockerfile"), "FROM scratch\n")
+	writePackTestFile(t, filepath.Join(root, ".skillex", "Dockerfile"), "FROM scratch\n")
+
+	matches, err := MatchRepoFiles(root, "Dockerfile")
+	if err != nil {
+		t.Fatalf("MatchRepoFiles() error = %v", err)
+	}
+	if got, want := matches, []string{"Dockerfile"}; !sameStrings(got, want) {
+		t.Fatalf("matches = %v, want %v", got, want)
+	}
+}
+
+func TestScopeForMatch(t *testing.T) {
+	tests := []struct {
+		name  string
+		match string
+		scope string
+		want  []string
+	}{
+		{name: "repo", match: "services/api/Dockerfile", scope: "repo", want: []string{"**"}},
+		{name: "directory", match: "services/api/Dockerfile", scope: "directory", want: []string{"services/api/*"}},
+		{name: "subtree", match: "services/api/Dockerfile", scope: "subtree", want: []string{"services/api/**"}},
+		{name: "default root", match: "Dockerfile", scope: "", want: []string{"**"}},
+		{name: "directory root", match: "Dockerfile", scope: "directory", want: []string{"*"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ScopeForMatch(tt.match, tt.scope); !sameStrings(got, tt.want) {
+				t.Fatalf("ScopeForMatch() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func sameStrings(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func writePackTestFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
