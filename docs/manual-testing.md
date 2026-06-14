@@ -22,6 +22,8 @@ Manual tests run against real projects, not the golden fixtures. Prepare two env
 
 **Environment B: Established monorepo.** A real or realistic project with existing dependencies, some of which have skillex exports. This is the "adopter" environment. Ideally, use the skillex repo itself (dogfooding).
 
+**Environment C: Polyglot pack fixture.** A real or realistic repo with at least one Node package boundary and one Go module boundary. Include a project-local pack and one dependency/module-shipped pack. This is the "pack adoption" environment.
+
 Both environments should have at least one agent harness available (Cursor, Claude Code, or similar) for testing the MCP and agent integration journeys.
 
 ## 4. User Journeys
@@ -113,7 +115,47 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 ---
 
-### Journey 3: Agent Integration (MCP)
+### Journey 3: Authoring and Consuming Packs
+
+**Persona:** Ecosystem maintainer or framework author who wants to ship skills with code.
+
+**Starting state:** Environment C, or Environment A with a small local package/module added.
+
+**Steps:**
+
+1. Create a project-local pack at `skillex/pack.yaml`.
+   - Does the README explain the schema well enough to write it without reading source code?
+   - Does the pack activate from `files-present` or `files-matching`?
+
+2. Add a detector to the pack.
+   - Can you define a friendly detector name without changing Skillex core?
+   - Does `activate-when.detector` feel clearer than repeating low-level file/dependency rules?
+
+3. Add one skill scoped to `matching-files` and query a matching file path.
+   - Does the skill appear only for relevant files?
+   - Does the result make the pack origin understandable?
+
+4. Add a package/module-shipped pack.
+   - For Node, place `skillex/pack.yaml` inside an installed package.
+   - For Go, use `go.mod` with a local `replace` module containing `skillex/pack.yaml`.
+
+5. Run `skillex refresh`.
+   - Does refresh complete without network access or dependency mutation?
+   - Are validation errors for malformed pack manifests actionable?
+
+6. Query by path and package/module name.
+   - Does the dependency/module-shipped pack skill appear in the correct boundary?
+   - Does it stay out of unrelated sibling scopes?
+
+**What to look for:**
+- Whether packs feel like a practical way for communities to ship guidance.
+- Whether detector naming and conflict errors are understandable.
+- Whether the docs make it clear that Skillex core does not need to own every framework/library detector.
+- Whether the Go path feels like a first-class non-Node flow rather than a special case.
+
+---
+
+### Journey 4: Agent Integration (MCP)
 
 **Persona:** Developer using Cursor (or similar) who wants the agent to use skillex.
 
@@ -152,7 +194,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 ---
 
-### Journey 4: Agent Integration (CLI Fallback)
+### Journey 5: Agent Integration (CLI Fallback)
 
 **Persona:** Developer using an agent harness that doesn't support MCP.
 
@@ -179,7 +221,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 ---
 
-### Journey 5: Importing External Skills
+### Journey 6: Importing External Skills
 
 **Persona:** Developer who found useful skills online and wants to adopt them.
 
@@ -213,7 +255,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 ---
 
-### Journey 6: CI Integration
+### Journey 7: CI Integration
 
 **Persona:** Team lead adding skillex checks to the CI pipeline.
 
@@ -242,7 +284,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 ---
 
-### Journey 7: Day-Two Maintenance
+### Journey 8: Day-Two Maintenance
 
 **Persona:** Developer returning to the project after weeks away.
 
@@ -398,4 +440,7 @@ Before any release, verify:
 - [ ] No open "blocking" or "annoying" issues from dogfooding log.
 - [ ] Automated acceptance suite is green on all platforms.
 - [ ] README quickstart tested by someone who hasn't used skillex before.
+- [ ] Pack authoring docs tested by someone who has not worked on the implementation.
+- [ ] Project-local pack and package/module-shipped pack flows tested manually.
+- [ ] Go module pack flow tested without network access or `go mod` mutation.
 - [ ] `skillex version` reports the correct version number.
