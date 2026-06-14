@@ -18,8 +18,9 @@ type PackageJSON struct {
 
 // SkilexExport holds the skillex config extracted from a package.json.
 type SkilexExport struct {
-	Enabled bool
-	Path    string // custom path, defaults to "skillex"
+	Enabled  bool
+	Path     string // custom path, defaults to "skillex"
+	PackPath string
 }
 
 // readPackageJSON parses a package.json file.
@@ -56,9 +57,14 @@ func parseSkilexExport(raw json.RawMessage) SkilexExport {
 	// Try object form: {"path": "docs/skillex"}
 	var obj struct {
 		Path string `json:"path"`
+		Pack string `json:"pack"`
 	}
-	if err := json.Unmarshal(raw, &obj); err == nil && obj.Path != "" {
-		return SkilexExport{Enabled: true, Path: obj.Path}
+	if err := json.Unmarshal(raw, &obj); err == nil && (obj.Path != "" || obj.Pack != "") {
+		export := SkilexExport{Enabled: true, Path: obj.Path, PackPath: obj.Pack}
+		if export.Path == "" {
+			export.Path = "skillex"
+		}
+		return export
 	}
 	return SkilexExport{}
 }

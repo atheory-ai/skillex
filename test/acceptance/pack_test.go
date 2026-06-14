@@ -3,6 +3,7 @@ package acceptance
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/atheory-ai/skillex/test/helpers"
@@ -86,5 +87,74 @@ skills:
 	resp, _ := helpers.RunQueryJSON(t, dir, "query", "--topic", "docker", "--format", "summary")
 	if resp.Type != "no_match" {
 		t.Fatalf("response type = %q, want no_match", resp.Type)
+	}
+}
+
+func TestPack_NodeDependencyShippedPackActivation(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+
+	appPkgPath := filepath.Join(dir, "packages", "app-a", "package.json")
+	data, err := os.ReadFile(appPkgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), `"@test/utils": "workspace:*"`, `"@test/utils": "workspace:*",
+    "with-pack": "1.0.0"`, 1)
+	if err := os.WriteFile(appPkgPath, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgRoot := filepath.Join(dir, "packages", "app-a", "node_modules", "with-pack")
+	if err := os.MkdirAll(filepath.Join(pkgRoot, "skillex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{
+  "name": "with-pack",
+  "version": "1.0.0",
+  "skillex": true
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "skillex", "pack.yaml"), []byte(`name: with-pack
+version: 1.0.0
+skills:
+  - file: usage.md
+    activate-when:
+      dependency-declared:
+        - source: npm-package
+          name: with-pack
+    scope: boundary
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "skillex", "usage.md"), []byte(`---
+name: With Pack
+description: Guidance shipped from a dependency pack.
+topics: [with-pack]
+tags: [dependency-pack]
+---
+
+# With Pack
+
+Use package-shipped pack guidance.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := helpers.Run(t, dir, "refresh")
+	if res.ExitCode != 0 {
+		t.Fatalf("refresh failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
+
+	skills := queryResults(t, dir, "--path", "packages/app-a/src/index.ts", "--topic", "with-pack", "--format", "summary")
+	helpers.AssertSkillPresent(t, skills, "usage.md")
+	if len(skills) != 1 {
+		t.Fatalf("with-pack results = %d, want 1", len(skills))
+	}
+	if skills[0].SourceType != "pack" {
+		t.Fatalf("SourceType = %q, want pack", skills[0].SourceType)
+	}
+	if skills[0].PackageName != "with-pack" {
+		t.Fatalf("PackageName = %q, want with-pack", skills[0].PackageName)
 	}
 }

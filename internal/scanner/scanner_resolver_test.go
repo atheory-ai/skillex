@@ -97,6 +97,101 @@ tags: []
 	}
 }
 
+func TestScannerUsesResolverPackManifestExports(t *testing.T) {
+	root := t.TempDir()
+	packDir := filepath.Join(root, "deps", "example", "skillex")
+	writeFile(t, filepath.Join(packDir, "usage.md"), `---
+name: Usage
+description: Use the example package.
+topics: [example]
+tags: []
+---
+
+# Usage
+`)
+	writeFile(t, filepath.Join(packDir, "pack.yaml"), `name: example
+skills:
+  - file: usage.md
+    activate-when:
+      dependency-declared:
+        - source: fake-package
+          name: example
+    scope: boundary
+`)
+
+	cfg := &config.Config{
+		Version: 4,
+		Rules: []config.Rule{
+			{Scope: "app/**", DependencyBoundary: "app"},
+		},
+	}
+
+	resolver := &fakeResolver{
+		boundary: Boundary{
+			RootRel:     "app",
+			RootAbs:     filepath.Join(root, "app"),
+			RepoRootAbs: root,
+		},
+		deps: []Dependency{
+			{
+				Source:      "fake-package",
+				Name:        "example",
+				Version:     "1.0.0",
+				Direct:      true,
+				BoundaryRel: "app",
+			},
+		},
+		roots: []PackageRoot{
+			{
+				RootRel: filepath.ToSlash(filepath.Join("deps", "example")),
+				RootAbs: filepath.Join(root, "deps", "example"),
+				Dependency: Dependency{
+					Source:      "fake-package",
+					Name:        "example",
+					Version:     "1.0.0",
+					Direct:      true,
+					BoundaryRel: "app",
+				},
+			},
+		},
+		exports: []SkillExport{
+			{
+				Path:   filepath.Join(packDir, "pack.yaml"),
+				Format: SkillExportFormatPackManifest,
+			},
+		},
+	}
+
+	sc := NewWithResolvers(root, cfg, true, []Resolver{resolver})
+	result, err := sc.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if len(result.Errors) > 0 {
+		t.Fatalf("Scan() result errors = %v", result.Errors)
+	}
+	if len(result.DepSkills) != 1 {
+		t.Fatalf("dep skills = %d, want 1", len(result.DepSkills))
+	}
+
+	got := result.DepSkills[0]
+	if got.PackageName != "example" {
+		t.Fatalf("PackageName = %q, want example", got.PackageName)
+	}
+	if got.PackageVersion != "1.0.0" {
+		t.Fatalf("PackageVersion = %q, want 1.0.0", got.PackageVersion)
+	}
+	if got.SourceType != "pack" {
+		t.Fatalf("SourceType = %q, want pack", got.SourceType)
+	}
+	if got.DependencyBoundary != "app" {
+		t.Fatalf("DependencyBoundary = %q, want app", got.DependencyBoundary)
+	}
+	if len(got.ExplicitScopes) != 1 || got.ExplicitScopes[0] != "app/**" {
+		t.Fatalf("ExplicitScopes = %v, want [app/**]", got.ExplicitScopes)
+	}
+}
+
 type fakeResolver struct {
 	boundary Boundary
 	deps     []Dependency

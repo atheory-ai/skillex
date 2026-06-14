@@ -50,7 +50,8 @@ const (
 
 	DependencySourceNPM = "npm-package"
 
-	SkillExportFormatLegacyDir = "legacy-skillex-dir"
+	SkillExportFormatLegacyDir    = "legacy-skillex-dir"
+	SkillExportFormatPackManifest = "pack-manifest"
 )
 
 // Resolver maps one dependency ecosystem into Skillex's scanner model.

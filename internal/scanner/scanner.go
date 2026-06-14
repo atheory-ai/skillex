@@ -153,21 +153,96 @@ func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]Sk
 			errs = append(errs, exportErrs...)
 
 			for _, export := range exports {
-				if export.Format != SkillExportFormatLegacyDir {
+				switch export.Format {
+				case SkillExportFormatLegacyDir:
+					depSkills, depErrs := s.scanSkilexDir(
+						export.Path,
+						pkgRoot.Dependency.Name,
+						pkgRoot.Dependency.Version,
+						filepath.ToSlash(boundary.RootRel),
+						filepath.ToSlash(pkgRoot.RootRel),
+					)
+					skills = append(skills, depSkills...)
+					errs = append(errs, depErrs...)
+				case SkillExportFormatPackManifest:
+					depSkills, depErrs := s.scanDependencyPack(export.Path, *boundary, pkgRoot)
+					skills = append(skills, depSkills...)
+					errs = append(errs, depErrs...)
+				default:
 					continue
 				}
-
-				depSkills, depErrs := s.scanSkilexDir(
-					export.Path,
-					pkgRoot.Dependency.Name,
-					pkgRoot.Dependency.Version,
-					filepath.ToSlash(boundary.RootRel),
-					filepath.ToSlash(pkgRoot.RootRel),
-				)
-				skills = append(skills, depSkills...)
-				errs = append(errs, depErrs...)
 			}
 		}
+	}
+
+	return skills, errs
+}
+
+func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkgRoot PackageRoot) ([]SkillFile, []error) {
+	var skills []SkillFile
+	var errs []error
+
+	pack, err := packs.Load(manifestPath)
+	if err != nil {
+		return nil, []error{err}
+	}
+
+	ctx := packs.ActivationContext{
+		BoundaryRel: filepath.ToSlash(boundary.RootRel),
+		Dependency: packs.DependencyFact{
+			Source:  pkgRoot.Dependency.Source,
+			Name:    pkgRoot.Dependency.Name,
+			Version: pkgRoot.Dependency.Version,
+		},
+	}
+
+	for _, skill := range pack.Manifest.Skills {
+		scopes, err := packs.ActivateSkillWithContext(s.root, skill, ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("activating pack %s skill %s: %w", pack.Manifest.Name, skill.File, err))
+			continue
+		}
+		if len(scopes) == 0 {
+			continue
+		}
+
+		absPath := filepath.Join(pack.Dir, skill.File)
+		relPath, _ := filepath.Rel(s.root, absPath)
+		sfs, err := s.readSkillFileWithScopes(
+			absPath,
+			filepath.ToSlash(relPath),
+			pkgRoot.Dependency.Name,
+			pkgRoot.Dependency.Version,
+			"public",
+			"pack",
+			filepath.ToSlash(boundary.RootRel),
+			filepath.ToSlash(pkgRoot.RootRel),
+			scopes,
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pack skill %s: %w", relPath, err))
+			continue
+		}
+		skills = append(skills, sfs...)
+
+		testAbsPath := strings.TrimSuffix(absPath, ".md") + ".test.md"
+		testRelPath, _ := filepath.Rel(s.root, testAbsPath)
+		testSfs, err := s.readSkillFileWithScopes(
+			testAbsPath,
+			filepath.ToSlash(testRelPath),
+			pkgRoot.Dependency.Name,
+			pkgRoot.Dependency.Version,
+			"public",
+			"pack",
+			filepath.ToSlash(boundary.RootRel),
+			filepath.ToSlash(pkgRoot.RootRel),
+			nil,
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pack test %s: %w", testRelPath, err))
+			continue
+		}
+		skills = append(skills, testSfs...)
 	}
 
 	return skills, errs

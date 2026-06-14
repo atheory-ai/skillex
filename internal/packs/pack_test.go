@@ -154,6 +154,32 @@ func TestActivateSkillMatchingFilesCanUseSeparateFilePatterns(t *testing.T) {
 		t.Fatalf("scopes = %v, want %v", scopes, want)
 	}
 }
+func TestActivateSkillWithDependencyDeclaredScopesToBoundary(t *testing.T) {
+	root := t.TempDir()
+
+	scopes, err := ActivateSkillWithContext(root, SkillRef{
+		ActivateWhen: ActivateWhen{
+			DependencyDeclared: []DependencyCondition{
+				{Source: "npm-package", Name: "next", Version: "15.0.0"},
+			},
+		},
+		Scope: "boundary",
+	}, ActivationContext{
+		BoundaryRel: "apps/web",
+		Dependency: DependencyFact{
+			Source:  "npm-package",
+			Name:    "next",
+			Version: "15.0.0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ActivateSkillWithContext() error = %v", err)
+	}
+	want := []string{"apps/web/**"}
+	if !sameStrings(scopes, want) {
+		t.Fatalf("scopes = %v, want %v", scopes, want)
+	}
+}
 func TestMatchRepoFilesSkipsGeneratedDirectories(t *testing.T) {
 	root := t.TempDir()
 	writePackTestFile(t, filepath.Join(root, "Dockerfile"), "FROM scratch\n")
@@ -177,6 +203,7 @@ func TestScopeForMatch(t *testing.T) {
 		want  []string
 	}{
 		{name: "repo", match: "services/api/Dockerfile", scope: "repo", want: []string{"**"}},
+		{name: "boundary cannot map file match", match: "services/api/Dockerfile", scope: "boundary", want: nil},
 		{name: "directory", match: "services/api/Dockerfile", scope: "directory", want: []string{"services/api/*"}},
 		{name: "matching files", match: "services/api/main.ts", scope: "matching-files", want: []string{"services/api/main.ts"}},
 		{name: "nearest ancestor", match: "services/api/Dockerfile", scope: "nearest-ancestor", want: []string{"services/api/**"}},
