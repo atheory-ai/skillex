@@ -293,6 +293,15 @@ func TestNodeResolverMalformedBoundaryPackageJSONReportsError(t *testing.T) {
 	}
 }
 
+func TestNodeResolverMissingPackageJSONDoesNotApply(t *testing.T) {
+	root := t.TempDir()
+
+	boundary, ok, errs := NewNodeResolver().DetectBoundary(root, ".")
+	if ok || boundary != nil || len(errs) > 0 {
+		t.Fatalf("DetectBoundary() boundary=%#v ok=%v errs=%v, want no match", boundary, ok, errs)
+	}
+}
+
 func depVersion(deps []Dependency, name string) string {
 	for _, dep := range deps {
 		if dep.Name == name {

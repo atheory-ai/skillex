@@ -414,6 +414,11 @@ When `skillex/pack.yaml` is present, Skillex activates matching pack skills at
 refresh time and indexes them individually with package metadata. The existing
 `skillex/public` and `skillex/private` behavior remains supported.
 
+Go modules can ship the same `skillex/pack.yaml` convention. The Go resolver
+detects `go.mod` dependency boundaries, reads declared modules, and resolves
+local `replace` or `vendor` module roots without downloading dependencies or
+mutating module state.
+
 ### Custom skill directory
 
 ```json
