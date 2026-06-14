@@ -92,6 +92,9 @@ copy_golden multi-version-local
   npm install --silent 2>/dev/null || npm install
 )
 
+# Fixture F: Go module with local replace dependency and pack fixtures
+copy_golden go-basic
+
 echo "Standard fixtures ready in $FIXTURES_DIR"
 
 # ── performance fixture ────────────────────────────────────────────────────────

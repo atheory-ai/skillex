@@ -1,0 +1,12 @@
+name: go-project
+version: 1.0.0
+description: Go project guidance.
+
+skills:
+  - file: modules.md
+    activate-when:
+      detector: go
+    scope: matching-files
+    files:
+      - "*.go"
+      - "**/*.go"
