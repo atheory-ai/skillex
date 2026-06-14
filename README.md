@@ -308,6 +308,13 @@ skills:
         - Dockerfile
         - Dockerfile.*
     scope: subtree
+
+  - file: typescript.md
+    activate-when:
+      files-matching:
+        - "**/*.ts"
+        - "**/*.tsx"
+    scope: matching-files
 ```
 
 The skill file path is relative to the pack manifest. A co-located
@@ -318,9 +325,13 @@ Supported activation and scope fields in this initial pack implementation:
 | Field | Description |
 |---|---|
 | `activate-when.files-present` | Glob patterns matched against repository files. |
+| `activate-when.files-matching` | Glob patterns matched against repository files. |
+| `files` | Optional glob patterns for `scope: matching-files`; when omitted, the activation matches are used. |
 | `scope: repo` | Activate the skill for the whole repository (`**`). |
 | `scope: subtree` | Activate for the directory containing the matched file and below. Default. |
 | `scope: directory` | Activate for files immediately inside the matched file's directory. |
+| `scope: matching-files` | Activate for the exact files matched by the activation or `files` patterns. |
+| `scope: nearest-ancestor` | Activate for the nearest containing directory and below. |
 
 Pack skills are indexed individually with `source_type: pack`. Existing projects
 with no pack manifests behave exactly as before.

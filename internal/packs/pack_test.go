@@ -113,6 +113,47 @@ skills:
 	}
 }
 
+func TestActivateSkillSupportsFilesMatching(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "services", "api", "main.ts"), "export {}\n")
+	writePackTestFile(t, filepath.Join(root, "services", "worker", "main.ts"), "export {}\n")
+
+	scopes, err := ActivateSkill(root, SkillRef{
+		ActivateWhen: ActivateWhen{
+			FilesMatching: []string{"**/*.ts"},
+		},
+		Scope: "nearest-ancestor",
+	})
+	if err != nil {
+		t.Fatalf("ActivateSkill() error = %v", err)
+	}
+	want := []string{"services/api/**", "services/worker/**"}
+	if !sameStrings(scopes, want) {
+		t.Fatalf("scopes = %v, want %v", scopes, want)
+	}
+}
+
+func TestActivateSkillMatchingFilesCanUseSeparateFilePatterns(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "package.json"), `{"dependencies":{"next":"latest"}}`)
+	writePackTestFile(t, filepath.Join(root, "app", "page.tsx"), "export default function Page() { return null }\n")
+	writePackTestFile(t, filepath.Join(root, "app", "route.ts"), "export async function GET() {}\n")
+
+	scopes, err := ActivateSkill(root, SkillRef{
+		ActivateWhen: ActivateWhen{
+			FilesPresent: []string{"package.json"},
+		},
+		Scope: "matching-files",
+		Files: []string{"**/*.tsx"},
+	})
+	if err != nil {
+		t.Fatalf("ActivateSkill() error = %v", err)
+	}
+	want := []string{"app/page.tsx"}
+	if !sameStrings(scopes, want) {
+		t.Fatalf("scopes = %v, want %v", scopes, want)
+	}
+}
 func TestMatchRepoFilesSkipsGeneratedDirectories(t *testing.T) {
 	root := t.TempDir()
 	writePackTestFile(t, filepath.Join(root, "Dockerfile"), "FROM scratch\n")
@@ -137,6 +178,8 @@ func TestScopeForMatch(t *testing.T) {
 	}{
 		{name: "repo", match: "services/api/Dockerfile", scope: "repo", want: []string{"**"}},
 		{name: "directory", match: "services/api/Dockerfile", scope: "directory", want: []string{"services/api/*"}},
+		{name: "matching files", match: "services/api/main.ts", scope: "matching-files", want: []string{"services/api/main.ts"}},
+		{name: "nearest ancestor", match: "services/api/Dockerfile", scope: "nearest-ancestor", want: []string{"services/api/**"}},
 		{name: "subtree", match: "services/api/Dockerfile", scope: "subtree", want: []string{"services/api/**"}},
 		{name: "default root", match: "Dockerfile", scope: "", want: []string{"**"}},
 		{name: "directory root", match: "Dockerfile", scope: "directory", want: []string{"*"}},
