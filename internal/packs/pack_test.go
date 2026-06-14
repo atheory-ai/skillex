@@ -154,7 +154,6 @@ func TestActivateSkillMatchingFilesCanUseSeparateFilePatterns(t *testing.T) {
 		t.Fatalf("scopes = %v, want %v", scopes, want)
 	}
 }
-
 func TestMatchRepoFilesSkipsGeneratedDirectories(t *testing.T) {
 	root := t.TempDir()
 	writePackTestFile(t, filepath.Join(root, "Dockerfile"), "FROM scratch\n")
