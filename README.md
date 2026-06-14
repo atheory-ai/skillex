@@ -427,12 +427,14 @@ Add to your harness's MCP config (e.g. `.cursor/mcp.json`):
 {
   "mcpServers": {
     "skillex": {
-      "command": "skillex",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "@atheory-ai/skillex", "mcp"]
     }
   }
 }
 ```
+
+Using `npx` rather than the bare `skillex` binary ensures the config works regardless of how skillex is installed. Agent harnesses spawn MCP servers as subprocesses with a stripped PATH, so a bare `skillex` command fails silently when skillex is installed locally via `--save-dev` or when using a version manager like nvm or fnm. `npx` resolves `./node_modules/.bin` first, so it picks up the locally-pinned version when available and falls back to a global install otherwise.
 
 Or let `skillex init --harness <name>` write this for you.
 

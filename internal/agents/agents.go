@@ -52,11 +52,11 @@ func GenerateSection(reg *registry.Registry) (string, error) {
 	sb.WriteString("### CLI (fallback)\n\n")
 	sb.WriteString("If MCP is not available, query skills via the command line:\n\n")
 	sb.WriteString("```\n")
-	sb.WriteString("  skillex query --search \"<concepts>\"\n")
-	sb.WriteString("  skillex query --path <filepath>\n")
-	sb.WriteString("  skillex query --topic <topic> --tags <tags>\n")
-	sb.WriteString("  skillex query --package <package>\n")
-	sb.WriteString("  skillex query --path <glob> --topic <topic> --format content\n")
+	sb.WriteString(" npx @atheory-ai/skillex query --search \"<concepts>\"\n")
+	sb.WriteString(" npx @atheory-ai/skillex query --path <filepath>\n")
+	sb.WriteString(" npx @atheory-ai/skillex query --topic <topic> --tags <tags>\n")
+	sb.WriteString(" npx @atheory-ai/skillex query --package <package>\n")
+	sb.WriteString(" npx @atheory-ai/skillex query --path <glob> --topic <topic> --format content\n")
 	sb.WriteString("```\n\n")
 
 	if len(scopes) > 0 {
