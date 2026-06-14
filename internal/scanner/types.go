@@ -47,8 +47,10 @@ type SkillExport struct {
 
 const (
 	ManifestKindPackageJSON = "package-json"
+	ManifestKindGoMod       = "go-mod"
 
 	DependencySourceNPM = "npm-package"
+	DependencySourceGo  = "go-module"
 
 	SkillExportFormatLegacyDir    = "legacy-skillex-dir"
 	SkillExportFormatPackManifest = "pack-manifest"
@@ -67,5 +69,6 @@ type Resolver interface {
 func DefaultResolvers() []Resolver {
 	return []Resolver{
 		NewNodeResolver(),
+		NewGoResolver(),
 	}
 }
