@@ -170,7 +170,7 @@ To also configure MCP for your agent harness:
 
 ```bash
 skillex init --harness cursor       # writes .cursor/mcp.json
-skillex init --harness claude-code  # writes .claude/mcp.json
+skillex init --harness claude-code  # writes .mcp.json (project root)
 skillex init --harness windsurf     # writes .windsurf/mcp.json
 ```
 
