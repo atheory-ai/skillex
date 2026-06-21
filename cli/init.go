@@ -297,7 +297,7 @@ func configureMCP(root, harness string) error {
 	case "cursor":
 		configPath = filepath.Join(root, ".cursor", "mcp.json")
 	case "claude-code":
-		configPath = filepath.Join(root, ".claude", "mcp.json")
+		configPath = filepath.Join(root, ".mcp.json")
 	case "windsurf":
 		configPath = filepath.Join(root, ".windsurf", "mcp.json")
 	default:
