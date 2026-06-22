@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.7.1]
+
+### Fixed
+
+- **Init:** write Claude Code MCP configuration to `.mcp.json` at the project root.
+- **Release:** check out the repository before publishing GitHub release assets.
+
+## [0.7.0]
+
 ### Added
 
 - **Packs:** added `skillex/pack.yaml` as a new skill distribution and activation unit for project-local, package-shipped, and module-shipped skills.
