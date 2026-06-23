@@ -86,6 +86,19 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 				continue
 			}
 			result.RepoSkills = append(result.RepoSkills, sf...)
+
+			// Discover the sibling .test.md, consistent with pack scanning (scanProjectPacks /
+			// scanDependencyPack). Without this, test scenarios for config-listed repo skills were
+			// never scanned, so `refresh` always reported "0 test scenarios". A missing test file
+			// is skipped silently (readSkillFile returns nil for a non-existent optional file).
+			testRel := strings.TrimSuffix(skillPath, ".md") + ".test.md"
+			testAbs := filepath.Join(s.root, testRel)
+			testSf, err := s.readSkillFile(testAbs, testRel, "", "", "repo", "repo", "", "")
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("repo test %s: %w", testRel, err))
+			} else {
+				result.RepoSkills = append(result.RepoSkills, testSf...)
+			}
 		}
 	}
 

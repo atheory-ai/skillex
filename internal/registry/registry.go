@@ -149,7 +149,7 @@ func (r *Registry) Clear() error {
 // InsertSkill inserts a skill into the registry.
 func (r *Registry) InsertSkill(s Skill) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := r.db.Exec(
+	if _, err := r.db.Exec(
 		`INSERT INTO skills (path, content, name, description, package_name, package_ver, visibility, source_type, indexed_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(path) DO UPDATE SET
@@ -164,18 +164,18 @@ func (r *Registry) InsertSkill(s Skill) (int64, error) {
 		s.Path, s.Content, nullStr(s.Name), nullStr(s.Description),
 		nullStr(s.PackageName), nullStr(s.PackageVersion),
 		s.Visibility, s.SourceType, now,
-	)
-	if err != nil {
+	); err != nil {
 		return 0, fmt.Errorf("inserting skill %s: %w", s.Path, err)
 	}
 
-	id, err := res.LastInsertId()
+	// Resolve the id authoritatively by the unique path. res.LastInsertId() is unreliable after
+	// an `ON CONFLICT(path) DO UPDATE`: when the statement performs an UPDATE (a duplicate path,
+	// e.g. the same skill listed under several scope rules), it returns a zero/stale rowid with no
+	// error. The previous code only fell back to a path lookup on a non-nil error, so the child
+	// inserts below ran with an invalid skill_id and tripped FOREIGN KEY constraints.
+	id, err := r.getSkillIDByPath(s.Path)
 	if err != nil {
-		// ON CONFLICT path: get the existing ID
-		id, err = r.getSkillIDByPath(s.Path)
-		if err != nil {
-			return 0, err
-		}
+		return 0, err
 	}
 
 	// Delete and re-insert topics, tags, scopes
