@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.7.2]
+
+### Fixed
+
+- **Refresh:** deduplicate repository skills so `skills_added` counts unique skills.
+- **Registry:** correct upsert ID resolution when indexing repository skills.
+
 ## [0.7.1]
 
 ### Fixed
