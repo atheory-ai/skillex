@@ -96,9 +96,9 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 			testSf, err := s.readSkillFile(testAbs, testRel, "", "", "repo", "repo", "", "")
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("repo test %s: %w", testRel, err))
-				continue
+			} else {
+				result.RepoSkills = append(result.RepoSkills, testSf...)
 			}
-			result.RepoSkills = append(result.RepoSkills, testSf...)
 		}
 	}
 
