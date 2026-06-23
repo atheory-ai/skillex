@@ -50,10 +50,17 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		}
 	}
 
-	// Build a map for test files: skillRelPath -> []SkillFile (tests)
+	// Build a map for test files: skillRelPath -> []SkillFile (tests). Dedupe by the test
+	// file's own path: a skill listed under several scope rules is scanned once per rule,
+	// so the same .test.md can appear in allSkillFiles multiple times.
 	testMap := map[string][]scanner.SkillFile{}
+	seenTest := map[string]bool{}
 	for _, sf := range allSkillFiles {
 		if sf.IsTest {
+			if seenTest[sf.RelPath] {
+				continue
+			}
+			seenTest[sf.RelPath] = true
 			testMap[sf.TestFor] = append(testMap[sf.TestFor], sf)
 		}
 	}

@@ -34,8 +34,15 @@ func (l *Linker) Link(result *scanner.ScanResult) []LinkedSkill {
 	// Map from skill relPath -> scopes for repo-level skills
 	repoSkillScopes := l.resolveRepoSkillScopes(result.RepoSkills)
 
-	// Add repo-level skills
+	// Add repo-level skills deduplicated by relPath. A skill listed under several scope
+	// rules appears in RepoSkills once per rule; repoSkillScopes already merged all scopes
+	// across rules, so the first occurrence carries the full scope set.
+	seenRepo := map[string]bool{}
 	for _, sf := range result.RepoSkills {
+		if seenRepo[sf.RelPath] {
+			continue
+		}
+		seenRepo[sf.RelPath] = true
 		if sf.IsTest {
 			// Tests are linked via skill_tests, not as regular scoped skills
 			linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: []string{}})
@@ -45,8 +52,7 @@ func (l *Linker) Link(result *scanner.ScanResult) []LinkedSkill {
 			linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: sf.ExplicitScopes})
 			continue
 		}
-		scopes := repoSkillScopes[sf.RelPath]
-		linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: scopes})
+		linked = append(linked, LinkedSkill{SkillFile: sf, Scopes: repoSkillScopes[sf.RelPath]})
 	}
 
 	// For dependency skills, determine scopes from the specific boundary that
