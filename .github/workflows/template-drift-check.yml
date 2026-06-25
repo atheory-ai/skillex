@@ -1,0 +1,163 @@
+name: Template Drift Check
+
+# Templated from atheory-ai/release-template
+# This workflow is NOT templated per-consumer — copy it as-is. It runs
+# in the CONSUMER repo, checks out the template head, and warns when
+# any templated file diverges from the template (after un-substituting
+# placeholders).
+#
+# Never blocks — intentional specialization is allowed. The point is
+# visibility: if a templated file has drifted, you should know.
+
+on:
+  pull_request:
+    paths:
+      - '.goreleaser.yaml'
+      - 'install.sh'
+      - '.golangci.yml'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-full.yml'
+      - 'npm/**/package.json'
+      - 'npm/**/bin/*.js'
+  schedule:
+    - cron: '0 14 * * MON'   # weekly, Mondays 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  drift:
+    name: Compare against release-template head
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out consumer repo
+        uses: actions/checkout@v5
+        with:
+          path: consumer
+
+      - name: Check out release-template head
+        id: checkout_template
+        uses: actions/checkout@v5
+        continue-on-error: true
+        with:
+          repository: atheory-ai/release-template
+          path: template
+          ref: main
+          # Provide ATHEORY_TEMPLATE_TOKEN secret (PAT with read access
+          # to release-template) if the template repo is private.
+          # Without it, this step fails silently and drift-check skips.
+          token: ${{ secrets.ATHEORY_TEMPLATE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Skip if template repo inaccessible
+        if: steps.checkout_template.outcome == 'failure'
+        run: |
+          echo "::warning::Could not check out atheory-ai/release-template (likely a private-repo access issue)."
+          echo "::warning::Add ATHEORY_TEMPLATE_TOKEN secret if the template repo is private. Skipping drift check."
+          exit 0
+
+      - name: Compare templated files
+        id: drift
+        if: steps.checkout_template.outcome == 'success'
+        shell: bash
+        run: |
+          set -u
+
+          # Read the consumer's substitution config so we can reverse the
+          # @VAR@ → value mapping for a meaningful diff.
+          if [ ! -f consumer/.release-template-config ]; then
+            echo "::warning::No .release-template-config in consumer repo; skipping drift check."
+            exit 0
+          fi
+
+          # shellcheck disable=SC1091
+          set -a
+          . consumer/.release-template-config
+          set +a
+
+          REQUIRED=(PROJECT_NAME BINARY_NAME REPO_OWNER REPO_NAME ENV_PREFIX NPM_SCOPE)
+          for var in "${REQUIRED[@]}"; do
+            if [ -z "${!var:-}" ]; then
+              echo "::warning::Missing required template var: $var"
+              exit 0
+            fi
+          done
+
+          # Files to compare: (template-path, consumer-path). Templates
+          # with .tmpl suffix are substituted; others compare verbatim.
+          # Edit this list when the template adds files.
+          declare -a PAIRS=(
+            "templates/.goreleaser.yaml.tmpl:.goreleaser.yaml"
+            "templates/install.sh.tmpl:install.sh"
+            "templates/.golangci.yml:.golangci.yml"
+            "templates/.github/workflows/ci.yml.tmpl:.github/workflows/ci.yml"
+            "templates/.github/workflows/release.yml.tmpl:.github/workflows/release.yml"
+            "templates/.github/workflows/release-full.yml.tmpl:.github/workflows/release-full.yml"
+            "templates/npm/wrapper-package.json.tmpl:npm/${PROJECT_NAME}/package.json"
+            "templates/npm/wrapper-bin.js.tmpl:npm/${PROJECT_NAME}/bin/${BINARY_NAME}.js"
+          )
+
+          drift_count=0
+          drift_report=""
+
+          for pair in "${PAIRS[@]}"; do
+            tmpl_path="${pair%%:*}"
+            consumer_path="${pair##*:}"
+
+            if [ ! -f "consumer/$consumer_path" ]; then
+              continue   # consumer opted out of this file
+            fi
+
+            if [ ! -f "template/$tmpl_path" ]; then
+              continue   # template doesn't ship this file
+            fi
+
+            # Substitute @VAR@ in the template, then diff.
+            expanded="$(mktemp)"
+            cp "template/$tmpl_path" "$expanded"
+            for var in "${REQUIRED[@]}" PROJECT_HOMEPAGE PROJECT_DESCRIPTION PROJECT_LICENSE VERSION_LDFLAG_PATH CI_APT_DEPS; do
+              val="${!var:-}"
+              # escape sed metachars in the value
+              esc_val="$(printf '%s\n' "$val" | sed -e 's/[\/&]/\\&/g')"
+              sed -i "s/@${var}@/${esc_val}/g" "$expanded"
+            done
+
+            if ! diff -q "$expanded" "consumer/$consumer_path" >/dev/null 2>&1; then
+              drift_count=$((drift_count + 1))
+              drift_report+=$'\n### '"$consumer_path"$'\n```diff\n'
+              drift_report+="$(diff -u "$expanded" "consumer/$consumer_path" | head -50)"$'\n```\n'
+            fi
+          done
+
+          if [ "$drift_count" -eq 0 ]; then
+            echo "No drift detected."
+            echo "drift=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "Drift detected in $drift_count file(s)."
+            echo "drift=1" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Template drift detected"
+              echo ""
+              echo "These files differ from atheory-ai/release-template head."
+              echo "This is informational only — intentional specialization is fine."
+              echo "If you intend to take the template version, run the apply script."
+              echo "$drift_report"
+            } > drift-report.md
+          fi
+
+      - name: Comment on PR (if drift)
+        if: steps.checkout_template.outcome == 'success' && github.event_name == 'pull_request' && steps.drift.outputs.drift == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('drift-report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });

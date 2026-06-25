@@ -102,6 +102,8 @@ func (r *Registry) QueryByPath(path string) ([]Skill, error) {
 			placeholders[i] = "?"
 			args[i] = p
 		}
+		// #nosec G201 -- placeholders is `?, ?, ?` built from the
+		// arity of `prefixes`; values are bound separately via args.
 		prefixQuery := fmt.Sprintf(
 			`SELECT DISTINCT skill_id FROM skill_scopes
 			 WHERE pattern_type IN ('prefix', 'exact') AND path_prefix IN (%s)`,

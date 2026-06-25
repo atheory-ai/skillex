@@ -2,62 +2,103 @@ BASE_VERSION := $(shell cat VERSION)
 VERSION ?= $(BASE_VERSION)-dev
 PACKAGE_VERSION ?= $(BASE_VERSION)
 LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
+GO ?= go
+GORELEASER ?= goreleaser
 
-.PHONY: build install test lint clean dist release-assets npm-stage npm-pack npm-publish refresh doctor version-sync verify release-tag
+UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v '/test/acceptance$$')
 
-verify:
-	go test $$(go list ./... | grep -v '/test/acceptance$$')
-	go vet ./...
-	@files=$$(git ls-files '*.go'); \
-	if [ -n "$$files" ]; then \
-		unformatted=$$(gofmt -l $$files); \
-		if [ -n "$$unformatted" ]; then \
-			echo "These files need gofmt:"; \
-			echo "$$unformatted"; \
-			exit 1; \
-		fi; \
-	fi
-	$(MAKE) build
+.PHONY: build install test test-unit test-race \
+        fmt fmt-check vet lint vuln \
+        verify verify-unit \
+        dist release-snapshot \
+        npm-stage npm-pack npm-publish version-sync \
+        refresh doctor \
+        release-tag clean \
+        test-setup test-acceptance test-perf test-clean \
+        help
+
+# ── Build ─────────────────────────────────────────────────────────────
 
 build:
-	go build $(LDFLAGS) -o skillex ./cmd/skillex
+	$(GO) build $(LDFLAGS) -o skillex ./cmd/skillex
 
 install:
-	go install $(LDFLAGS) ./cmd/skillex
+	$(GO) install $(LDFLAGS) ./cmd/skillex
+
+# ── Test ──────────────────────────────────────────────────────────────
 
 test:
-	go test $$(go list ./... | grep -v '/test/acceptance$$')
+	$(GO) test $(UNIT_PACKAGES)
 
+test-unit:
+	$(GO) test $(UNIT_PACKAGES)
+
+test-race:
+	$(GO) test -race $(UNIT_PACKAGES)
+
+# ── Lint / static analysis ────────────────────────────────────────────
+
+fmt:
+	@files=$$(git ls-files '*.go'); \
+	if [ -n "$$files" ]; then gofmt -w $$files; fi
+
+fmt-check:
+	@files=$$(git ls-files '*.go'); \
+	if [ -z "$$files" ]; then exit 0; fi; \
+	unformatted=$$(gofmt -l $$files); \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files need gofmt:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
+vet:
+	$(GO) vet ./...
+
+# Requires .golangci.yml at repo root (from release-template).
 lint:
-	go vet ./...
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "golangci-lint not installed; see https://golangci-lint.run/usage/install/"; exit 1; }
+	golangci-lint run
 
-lint-fix:
-	gofmt -w .
+vuln:
+	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
 
-clean:
-	rm -f skillex skillex.exe
-	rm -rf dist/
+# ── Verify aggregates ─────────────────────────────────────────────────
 
-# ── Cross-compilation ────────────────────────────────────────────────────────
+# Faster pre-PR / CI-unit gate.
+verify-unit: fmt-check vet test-unit build
 
-# Build all platform binaries into dist/
+# Full release gate (includes acceptance + lint).
+verify: fmt-check vet lint test-unit test-acceptance build
+
+# ── Cross-compilation (for npm packaging) ─────────────────────────────
+
+# Local cross-compile; produces binaries at dist/skillex-<os>-<arch>{.exe}
+# for use by npm-stage. Goreleaser handles release archive production
+# separately (see release-snapshot).
 dist: clean
-	GOOS=darwin  GOARCH=amd64 go build $(LDFLAGS) -o dist/skillex-darwin-x64      ./cmd/skillex
-	GOOS=darwin  GOARCH=arm64 go build $(LDFLAGS) -o dist/skillex-darwin-arm64    ./cmd/skillex
-	GOOS=linux   GOARCH=amd64 go build $(LDFLAGS) -o dist/skillex-linux-x64       ./cmd/skillex
-	GOOS=linux   GOARCH=arm64 go build $(LDFLAGS) -o dist/skillex-linux-arm64     ./cmd/skillex
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/skillex-win32-x64.exe   ./cmd/skillex
+	GOOS=darwin  GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/skillex-darwin-x64      ./cmd/skillex
+	GOOS=darwin  GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/skillex-darwin-arm64    ./cmd/skillex
+	GOOS=linux   GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/skillex-linux-x64       ./cmd/skillex
+	GOOS=linux   GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/skillex-linux-arm64     ./cmd/skillex
+	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/skillex-win32-x64.exe   ./cmd/skillex
 
-release-assets: dist
-	./scripts/package-release-assets.sh
+# ── Release ───────────────────────────────────────────────────────────
 
-# ── npm packaging ────────────────────────────────────────────────────────────
+# Local goreleaser snapshot (no publish). Produces archives + checksums
+# in dist/. Replaces the old hand-rolled scripts/package-release-assets.sh.
+release-snapshot:
+	$(GORELEASER) release --snapshot --clean --skip=publish
+
+# ── npm packaging ─────────────────────────────────────────────────────
 
 version-sync:
 	node scripts/set-npm-version.mjs $(PACKAGE_VERSION)
 
-# Stage: copy dist/ binaries into each platform package's bin/ directory.
-# Run `make dist` first, then `make npm-stage`.
+# Stage: copy dist/ binaries (from `make dist`) into each platform
+# package's bin/ directory.
 npm-stage: version-sync dist
 	cp dist/skillex-darwin-arm64   npm/darwin-arm64/bin/skillex
 	cp dist/skillex-darwin-x64     npm/darwin-x64/bin/skillex
@@ -80,24 +121,23 @@ npm-pack: npm-stage
 	cd npm/skillex      && npm pack --pack-destination ../../dist
 	@echo "Tarballs written to dist/. Inspect before publishing."
 
-# Publish all packages to npm (manual fallback only).
-# The normal release path is the GitHub Actions release workflow.
+# Manual fallback. Normal release path is the GitHub Actions release
+# workflow with cosign signing.
 npm-publish: npm-stage
-	cd npm/darwin-arm64 && npm publish --access public
-	cd npm/darwin-x64   && npm publish --access public
-	cd npm/linux-x64    && npm publish --access public
-	cd npm/linux-arm64  && npm publish --access public
-	cd npm/win32-x64    && npm publish --access public
-	cd npm/skillex      && npm publish --access public
-	@echo "Published @atheory-ai/skillex@$(VERSION) and all platform packages."
+	cd npm/darwin-arm64 && npm publish --access public --provenance
+	cd npm/darwin-x64   && npm publish --access public --provenance
+	cd npm/linux-x64    && npm publish --access public --provenance
+	cd npm/linux-arm64  && npm publish --access public --provenance
+	cd npm/win32-x64    && npm publish --access public --provenance
+	cd npm/skillex      && npm publish --access public --provenance
 
-# ── Repo workflow ────────────────────────────────────────────────────────────
+# ── Repo workflow ─────────────────────────────────────────────────────
 
 refresh:
-	go run $(LDFLAGS) ./cmd/skillex refresh
+	$(GO) run $(LDFLAGS) ./cmd/skillex refresh
 
 doctor:
-	go run $(LDFLAGS) ./cmd/skillex doctor
+	$(GO) run $(LDFLAGS) ./cmd/skillex doctor
 
 release-tag:
 	@version=$$(cat VERSION); \
@@ -128,19 +168,38 @@ release-tag:
 	git push origin "$$tag"; \
 	echo "Pushed $$tag. GitHub Actions will run the release workflow."
 
-# ── Acceptance tests ──────────────────────────────────────────────────────────
-
-.PHONY: test-setup test-acceptance test-perf test-clean
+# ── Acceptance tests ──────────────────────────────────────────────────
 
 test-setup:
 	./test/setup.sh
 
 test-acceptance: test-setup build
-	go test ./test/acceptance/... -v -timeout 300s
+	$(GO) test ./test/acceptance/... -v -timeout 300s
 
 test-perf: build
 	./test/setup.sh --perf
-	go test ./test/acceptance/ -run "TestPerformance" -v -timeout 600s
+	$(GO) test ./test/acceptance/ -run "TestPerformance" -v -timeout 600s
 
 test-clean:
 	./test/setup.sh --clean
+
+# ── Cleanup ───────────────────────────────────────────────────────────
+
+clean:
+	rm -f skillex skillex.exe
+	rm -rf dist/
+
+# ── Help ──────────────────────────────────────────────────────────────
+
+help:
+	@echo "Common targets:"
+	@echo "  make build             Build ./skillex"
+	@echo "  make verify-unit       fmt-check + vet + unit tests + build"
+	@echo "  make verify            full pre-PR gate (+ lint + acceptance)"
+	@echo "  make test-race         Run tests with the race detector"
+	@echo "  make lint              golangci-lint"
+	@echo "  make vuln              govulncheck"
+	@echo "  make release-snapshot  Local goreleaser snapshot"
+	@echo "  make npm-pack          Stage + pack npm wrappers"
+	@echo "  make test-acceptance   Run fixture acceptance suite"
+	@echo "  make clean             Remove build artifacts"
