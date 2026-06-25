@@ -40,14 +40,28 @@ jobs:
           path: consumer
 
       - name: Check out release-template head
+        id: checkout_template
         uses: actions/checkout@v5
+        continue-on-error: true
         with:
           repository: atheory-ai/release-template
           path: template
           ref: main
+          # Provide ATHEORY_TEMPLATE_TOKEN secret (PAT with read access
+          # to release-template) if the template repo is private.
+          # Without it, this step fails silently and drift-check skips.
+          token: ${{ secrets.ATHEORY_TEMPLATE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Skip if template repo inaccessible
+        if: steps.checkout_template.outcome == 'failure'
+        run: |
+          echo "::warning::Could not check out atheory-ai/release-template (likely a private-repo access issue)."
+          echo "::warning::Add ATHEORY_TEMPLATE_TOKEN secret if the template repo is private. Skipping drift check."
+          exit 0
 
       - name: Compare templated files
         id: drift
+        if: steps.checkout_template.outcome == 'success'
         shell: bash
         run: |
           set -u
@@ -135,7 +149,7 @@ jobs:
           fi
 
       - name: Comment on PR (if drift)
-        if: github.event_name == 'pull_request' && steps.drift.outputs.drift == '1'
+        if: steps.checkout_template.outcome == 'success' && github.event_name == 'pull_request' && steps.drift.outputs.drift == '1'
         uses: actions/github-script@v7
         with:
           script: |

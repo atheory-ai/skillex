@@ -38,7 +38,8 @@ linters-settings:
   govet:
     enable-all: true
     disable:
-      - fieldalignment
+      - fieldalignment   # opt in per project; noisy on most codebases
+      - shadow           # flags idiomatic `if err := f(); err != nil` patterns
 
   revive:
     rules:
