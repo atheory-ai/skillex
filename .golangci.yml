@@ -1,0 +1,90 @@
+# Shared lint config from atheory-ai/release-template v0.2.0.
+# Copy as-is — no placeholders. Run with `make lint` or
+# `golangci-lint run`.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck       # unchecked errors
+    - gosec          # security checks (CWE-aware)
+    - govet          # standard go vet
+    - ineffassign    # unused assignments
+    - revive         # style + correctness (replaces golint)
+    - staticcheck    # comprehensive static analysis
+    - unused         # unused code
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - (io.Closer).Close
+      - (*os.File).Close
+      - fmt.Fprintln
+      - fmt.Fprintf
+      - fmt.Fprint
+
+  gosec:
+    excludes:
+      - G104   # duplicates errcheck
+      - G304   # file inclusion via variable — too noisy in CLIs
+    severity: medium
+    confidence: medium
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+        arguments: ["sayRepetitiveInsteadOfStutters"]
+      - name: if-return
+      - name: increment-decrement
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+        disabled: true
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+  staticcheck:
+    checks:
+      - all
+      - "-ST1000"
+      - "-ST1020"
+      - "-ST1021"
+      - "-ST1022"
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters: [errcheck, gosec, revive]
+    - path: \.pb\.go
+      linters: [errcheck, gosec, revive, staticcheck, unused]
+    - source: "^//go:generate "
+      linters: [revive]
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false

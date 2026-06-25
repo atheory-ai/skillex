@@ -1,5 +1,13 @@
 name: CI
 
+# Derived from atheory-ai/release-template v0.2.0.
+# Adds: golangci-lint, govulncheck, race detector. Preserves skillex's
+# acceptance test job (which needs Node.js + pnpm/yarn for fixture
+# packages) and npm packaging smoke test.
+#
+# Skipped vs. template: coverage gate (no test/coverage/ infrastructure
+# yet — follow-up).
+
 on:
   pull_request:
   push:
@@ -16,21 +24,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  format:
+    name: Format
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Check Go formatting
-        shell: bash
+      - name: Check formatting
         run: |
           files=$(git ls-files '*.go')
           if [ -z "$files" ]; then
@@ -43,91 +46,111 @@ jobs:
             exit 1
           fi
 
-      - name: Run go vet
-        run: go vet ./...
-
-      - name: Run unit tests
-        shell: bash
-        run: go test $(go list ./... | grep -v '/test/acceptance$')
-
-      - name: Build CLI
-        run: make build
-
-      - name: Check installer scripts
-        shell: bash
-        run: |
-          sh -n install.sh
-          sh -n scripts/package-release-assets.sh
-
-  acceptance:
+  lint:
+    name: Lint (golangci-lint)
     runs-on: ubuntu-latest
-    needs: verify
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+  vuln:
+    name: Vuln Scan (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  unit:
+    name: Unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run unit tests
+        run: go test $(go list ./... | grep -v '/test/acceptance$')
+      - name: Build CLI
+        run: make build
+      - name: Check installer
+        run: sh -n install.sh
+
+  race:
+    name: Race Detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Race test
+        run: go test -race $(go list ./... | grep -v '/test/acceptance$')
+
+  acceptance:
+    name: Acceptance
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-
       - name: Enable pnpm and yarn
         run: |
           corepack enable
           corepack prepare pnpm@latest --activate
           corepack prepare yarn@1.22.22 --activate
-
       - name: Run fixture acceptance tests
         run: make test-acceptance
 
   npm_packages:
+    name: npm Packaging Smoke Test
     runs-on: ubuntu-latest
     needs: acceptance
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+          version: "~> v2"
+      - name: Build snapshot archives
+        run: goreleaser build --snapshot --clean
       - name: Sync npm package versions
-        run: node scripts/set-npm-version.mjs
-
+        run: node scripts/set-npm-version.mjs $(cat VERSION)
       - name: Build npm tarballs
         run: VERSION=$(cat VERSION) PACKAGE_VERSION=$(cat VERSION) make npm-pack
-
       - name: Upload npm tarballs
         uses: actions/upload-artifact@v4
         with:
           name: npm-tarballs-ci
           path: dist/*.tgz
-          if-no-files-found: error
-
-      - name: Build release assets
-        run: VERSION=$(cat VERSION) make release-assets
-
-      - name: Upload release assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-assets-ci
-          path: |
-            dist/skillex-*.tar.gz
-            dist/skillex-*.zip
-            dist/checksums.txt
           if-no-files-found: error

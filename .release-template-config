@@ -1,0 +1,23 @@
+# Consumed by atheory-ai/release-template's apply-template.sh and
+# .github/workflows/template-drift-check.yml.
+#
+# Update this file when the project's identity changes; do NOT
+# template-substitute the live files by hand.
+
+PROJECT_NAME=skillex
+BINARY_NAME=skillex
+REPO_OWNER=atheory-ai
+REPO_NAME=skillex
+ENV_PREFIX=SKILLEX
+NPM_SCOPE=@atheory-ai
+
+PROJECT_HOMEPAGE=https://github.com/atheory-ai/skillex
+PROJECT_DESCRIPTION=Skill management for AI agents — versioned, dependency-aware documentation surfaced via CLI and MCP
+PROJECT_LICENSE=Apache-2.0
+
+# Skillex stamps its version into cli.Version (see .goreleaser.yaml ldflags).
+# No second injection target needed.
+VERSION_LDFLAG_PATH=
+
+# CI apt deps (none currently needed).
+CI_APT_DEPS=

@@ -1,0 +1,76 @@
+# Derived from atheory-ai/release-template v0.2.0
+# See .release-template-config for substitution values.
+
+version: 2
+
+project_name: skillex
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: skillex
+    main: ./cmd/skillex
+    binary: skillex
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Skip windows/arm64: skillex doesn't ship for that platform today.
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+        -X github.com/atheory-ai/skillex/cli.Version={{.Version}}
+
+archives:
+  - id: skillex
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: atheory-ai
+    name: skillex
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: skillex
+    repository:
+      owner: atheory-ai
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/atheory-ai/skillex"
+    description: "Skill management for AI agents — versioned, dependency-aware documentation surfaced via CLI and MCP"
+    license: "Apache-2.0"
+    install: |
+      bin.install "skillex"
+    test: |
+      system "#{bin}/skillex", "version"
