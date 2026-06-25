@@ -74,7 +74,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		}
 		for _, tests := range testMap {
 			for _, tf := range tests {
-				parsed, _, _ := validator.ParseTestFile(tf.AbsPath)
+				parsed, _, _ := validator.ParseTestFile(tf.AbsPath) //nolint:errcheck // best-effort scenario count; parse errors are surfaced by the validator command
 				if parsed != nil {
 					result.TestsAdded += len(parsed.Scenarios)
 				}

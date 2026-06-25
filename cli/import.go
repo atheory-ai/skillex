@@ -113,8 +113,10 @@ func runImport(root, filePath, dest, visibility string, topics []string, skipRev
 	skillPath := filepath.Join(dest, filename)
 	testPath := filepath.Join(dest, strings.TrimSuffix(filename, ".md")+".test.md")
 
-	// Normalize content with frontmatter
-	fm, body, _ := frontmatter.Parse(data)
+	// Normalize content with frontmatter. Parse errors leave fm
+	// zero-valued and body as the original data — acceptable since
+	// the source file was already on disk and we're re-writing it as-is.
+	fm, body, _ := frontmatter.Parse(data) //nolint:errcheck // see comment above
 	if len(topics) > 0 && len(fm.Topics) == 0 {
 		fm.Topics = topics
 	}
@@ -133,10 +135,11 @@ func runImport(root, filePath, dest, visibility string, topics []string, skipRev
 		return fmt.Errorf("writing skill: %w", err)
 	}
 
-	// Test stub
+	// Test stub. Best-effort — the main skill write already
+	// succeeded; failing here would be confusing UX.
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		stub := generateTestStub(filename)
-		_ = os.WriteFile(testPath, []byte(stub), 0o644)
+		_ = os.WriteFile(testPath, []byte(stub), 0o644) //nolint:errcheck // see comment above
 	}
 
 	if !flagQuiet {

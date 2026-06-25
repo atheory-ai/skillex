@@ -38,11 +38,11 @@ type Response struct {
 	Type       ResponseType `json:"type"`
 	Results    []Result     `json:"results,omitempty"`
 	Vocabulary *Vocabulary  `json:"vocabulary,omitempty"`
-	Query      *QueryEcho   `json:"query,omitempty"`
+	Query      *Echo        `json:"query,omitempty"`
 }
 
-// QueryEcho captures the filters that were searched, included in no_match responses.
-type QueryEcho struct {
+// Echo captures the filters that were searched, included in no_match responses.
+type Echo struct {
 	Path    string   `json:"path,omitempty"`
 	Topics  []string `json:"topics,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
@@ -275,7 +275,7 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 
 	return &Response{
 		Type: ResponseTypeNoMatch,
-		Query: &QueryEcho{
+		Query: &Echo{
 			Path:    p.Path,
 			Topics:  p.Topics,
 			Tags:    p.Tags,

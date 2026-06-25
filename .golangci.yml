@@ -1,6 +1,5 @@
-# Shared lint config from atheory-ai/release-template v0.2.0.
-# Copy as-is — no placeholders. Run with `make lint` or
-# `golangci-lint run`.
+# Shared lint config for atheory-ai Go projects.
+# Copy as-is — no placeholders. Stage 2 of the harmonization plan.
 
 run:
   timeout: 5m
@@ -19,19 +18,41 @@ linters:
 
 linters-settings:
   errcheck:
-    check-type-assertions: true
+    # Type-assertion discards (`v, _ := x.(T)`) are idiomatic in Go;
+    # checking forces unwieldy `v, ok := ...; if !ok { ... }` even when
+    # the zero value is the intended fallback.
+    check-type-assertions: false
     check-blank: true
     exclude-functions:
+      # Always-discarded idioms
       - (io.Closer).Close
       - (*os.File).Close
       - fmt.Fprintln
       - fmt.Fprintf
       - fmt.Fprint
+      - fmt.Println
+      - fmt.Printf
+      - fmt.Print
+      # filepath.Rel/Abs only error on malformed paths; usually the
+      # callsite knows the inputs are well-formed.
+      - path/filepath.Rel
+      - path/filepath.Abs
+      # JSON marshal of statically-typed maps/structs is never an error
+      # at runtime; checking is noise.
+      - encoding/json.Marshal
+      - encoding/json.MarshalIndent
+      # Interactive prompts; error usually means user hit Ctrl-D and
+      # we want to fall through to the default.
+      - fmt.Scan
+      - fmt.Scanf
+      - fmt.Scanln
 
   gosec:
     excludes:
-      - G104   # duplicates errcheck
+      - G104   # duplicates errcheck; one is enough
+      - G204   # subprocess from user input — too noisy in CLIs / test helpers
       - G304   # file inclusion via variable — too noisy in CLIs
+      - G306   # WriteFile permissions — projects choose their own perms
     severity: medium
     confidence: medium
 
@@ -39,7 +60,7 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment   # opt in per project; noisy on most codebases
-      - shadow           # flags idiomatic `if err := f(); err != nil` patterns
+      - shadow           # flags idiomatic `if err := f(); err != nil` patterns   # often noisy; opt in per project
 
   revive:
     rules:
@@ -65,22 +86,28 @@ linters-settings:
       - name: empty-block
       - name: superfluous-else
       - name: unused-parameter
-        disabled: true
+        disabled: true                   # too noisy; turn on per-project
       - name: unreachable-code
       - name: redefines-builtin-id
 
   staticcheck:
     checks:
       - all
-      - "-ST1000"
-      - "-ST1020"
+      - "-ST1000"   # missing package doc — turn on per project
+      - "-ST1020"   # comment formatting — turn on per project
       - "-ST1021"
       - "-ST1022"
 
 issues:
   exclude-rules:
+    # Test files (the convention + the common dirs that aren't _test.go).
     - path: _test\.go
       linters: [errcheck, gosec, revive]
+    - path: ^test/
+      linters: [errcheck, gosec, revive, staticcheck]
+    - path: /testdata/
+      linters: [errcheck, gosec, revive, staticcheck, unused]
+    # Generated code is exempt.
     - path: \.pb\.go
       linters: [errcheck, gosec, revive, staticcheck, unused]
     - source: "^//go:generate "

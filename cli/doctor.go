@@ -83,13 +83,16 @@ func runDoctor(root string) error {
 			defer reg.Close()
 			report.RegistryOK = true
 
-			count, _ := reg.SkillCount()
+			// doctor is best-effort diagnostic; downstream queries
+			// fall through to empty results on error, which surfaces
+			// as the "no skills/topics/tags" warnings below.
+			count, _ := reg.SkillCount() //nolint:errcheck
 			report.SkillCount = count
 			printCheck(true, "registry", fmt.Sprintf("%d skills indexed", count))
 
-			topics, _ := reg.AllTopics()
+			topics, _ := reg.AllTopics() //nolint:errcheck
 			report.Topics = topics
-			tags, _ := reg.AllTags()
+			tags, _ := reg.AllTags() //nolint:errcheck
 			report.Tags = tags
 
 			if len(topics) > 0 {
@@ -103,14 +106,14 @@ func runDoctor(root string) error {
 			}
 
 			// Warn about skills missing name or description (reduces search discoverability).
-			if missing, _ := reg.CountMissingNameOrDescription(); missing > 0 {
+			if missing, _ := reg.CountMissingNameOrDescription(); missing > 0 { //nolint:errcheck
 				warns = append(warns, fmt.Sprintf(
 					"%d skill(s) missing 'name' or 'description' frontmatter — add them to improve --search discoverability",
 					missing,
 				))
 			}
 
-			packages, _ := reg.AllPackages()
+			packages, _ := reg.AllPackages() //nolint:errcheck
 			if len(packages) > 0 {
 				for _, p := range packages {
 					printInfo(fmt.Sprintf("package %s", p.Name),

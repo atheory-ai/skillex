@@ -58,7 +58,9 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pinned to v1.x — the v2 config schema is incompatible.
+          # Migration to v2 is a separate cross-project task.
+          version: v1.64.0
           args: --timeout=5m
 
   vuln:
