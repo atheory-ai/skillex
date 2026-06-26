@@ -84,6 +84,19 @@ jobs:
             exit 0
           fi
 
+          # Whitelist of template variables we'll honour. Anything else
+          # the consumer's config tries to set is dropped — preventing
+          # a PR-controlled config from clobbering PATH, IFS, or
+          # similar to redirect later mktemp/cp/sed/diff/head calls.
+          is_allowed_template_var() {
+            case "$1" in
+              PROJECT_NAME|BINARY_NAME|REPO_OWNER|REPO_NAME|ENV_PREFIX|NPM_SCOPE|PROJECT_HOMEPAGE|PROJECT_DESCRIPTION|PROJECT_LICENSE|VERSION_LDFLAG_PATH|CI_APT_DEPS)
+                return 0 ;;
+              *)
+                return 1 ;;
+            esac
+          }
+
           declare -A CONFIG
           while IFS= read -r line || [ -n "$line" ]; do
             # Skip comments + blanks.
@@ -103,10 +116,13 @@ jobs:
               case "$raw" in
                 *'$('*|*'`'*)
                   echo "::warning::Refusing suspicious value for $key; skipping drift check."
-                  exit 0
-                  ;;
+                  exit 0 ;;
               esac
-              CONFIG["$key"]="$raw"
+              if is_allowed_template_var "$key"; then
+                CONFIG["$key"]="$raw"
+              else
+                echo "::warning::Ignoring unsupported template var: $key (not on whitelist)"
+              fi
             else
               echo "::warning::Ignoring malformed line in .release-template-config: $line"
             fi
