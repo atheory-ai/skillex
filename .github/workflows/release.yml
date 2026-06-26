@@ -127,7 +127,7 @@ jobs:
           upload-release-assets: false
 
       - name: Attest build provenance (SLSA L2)
-        uses: actions/attest-build-provenance@92c65d2898f1f53cfdc910b962cecff86e7f8fcc  # v1.4.4
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018  # v1.4.4
         with:
           subject-path: 'dist/skillex_*.tar.gz,dist/skillex_*.zip'
 
