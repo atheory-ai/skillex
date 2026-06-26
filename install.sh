@@ -28,7 +28,22 @@ VERSION="${SKILLEX_VERSION:-latest}"
 DRY_RUN=0
 
 usage() {
-  sed -n '3,18p' "$0"
+  cat <<'USAGE_EOF'
+Install skillex.
+
+Usage:
+  curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh | sh
+
+Environment:
+  SKILLEX_VERSION         Version to install, e.g. 0.7.2 or v0.7.2 (default: latest)
+  SKILLEX_INSTALL_DIR     Directory to install into (default: ~/.local/bin)
+  SKILLEX_BASE_URL        Override release asset base URL (used by tests)
+  SKILLEX_REQUIRE_COSIGN  Set to 1 to fail if cosign verification can't run
+
+Options:
+  --dry-run        Print what would be installed without downloading
+  --help           Show this help
+USAGE_EOF
 }
 
 while [ "$#" -gt 0 ]; do
@@ -129,8 +144,12 @@ verify_cosign() {
   bundle="$tmp/${archive_name}.bundle"
 
   if ! download "$bundle_url" "$bundle" 2>/dev/null; then
+    if [ "${SKILLEX_REQUIRE_COSIGN:-0}" = "1" ]; then
+      echo "skillex installer: cosign bundle missing at $bundle_url — refusing install (SKILLEX_REQUIRE_COSIGN=1)" >&2
+      exit 1
+    fi
     echo "skillex installer: cosign bundle not found at $bundle_url" >&2
-    echo "  (older releases predate cosign signing; skipping)" >&2
+    echo "  (older releases predate cosign signing; skipping verification)" >&2
     return 0
   fi
 

@@ -11,9 +11,9 @@ REPO_NAME=skillex
 ENV_PREFIX=SKILLEX
 NPM_SCOPE=@atheory-ai
 
-PROJECT_HOMEPAGE=https://github.com/atheory-ai/skillex
-PROJECT_DESCRIPTION=Skill management for AI agents — versioned, dependency-aware documentation surfaced via CLI and MCP
-PROJECT_LICENSE=Apache-2.0
+PROJECT_HOMEPAGE="https://github.com/atheory-ai/skillex"
+PROJECT_DESCRIPTION="Skill management for AI agents — versioned, dependency-aware documentation surfaced via CLI and MCP"
+PROJECT_LICENSE="Apache-2.0"
 
 # Skillex stamps its version into cli.Version (see .goreleaser.yaml ldflags).
 # No second injection target needed.

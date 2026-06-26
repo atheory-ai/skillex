@@ -1,0 +1,26 @@
+# Templated from atheory-ai/release-template
+# Copy as-is — no placeholders.
+#
+# Keeps GitHub Actions SHA-pinned references current. Dependabot opens
+# a PR per outdated action; the comment on each pin line still shows
+# the tag at the time of pinning, so reviewers can confirm whether the
+# new SHA corresponds to the expected major bump.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

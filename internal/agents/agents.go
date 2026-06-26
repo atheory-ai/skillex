@@ -117,7 +117,7 @@ func UpdateFile(agentsPath string, section string) error {
 	if err := os.MkdirAll(filepath.Dir(agentsPath), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(agentsPath, []byte(updated), 0o644)
+	return os.WriteFile(agentsPath, []byte(updated), 0o644) //nolint:gosec // G306: AGENTS.md is user-edited project doc
 }
 
 // replaceSection replaces the content between markers, or appends if not found.

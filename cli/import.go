@@ -131,7 +131,7 @@ func runImport(root, filePath, dest, visibility string, topics []string, skipRev
 		normalized = fmStr + "\n" + body
 	}
 
-	if err := os.WriteFile(skillPath, []byte(normalized), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(normalized), 0o644); err != nil { //nolint:gosec // G306: skill markdown is user-edited; 0o644 is correct
 		return fmt.Errorf("writing skill: %w", err)
 	}
 
@@ -139,7 +139,7 @@ func runImport(root, filePath, dest, visibility string, topics []string, skipRev
 	// succeeded; failing here would be confusing UX.
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		stub := generateTestStub(filename)
-		_ = os.WriteFile(testPath, []byte(stub), 0o644) //nolint:errcheck // see comment above
+		_ = os.WriteFile(testPath, []byte(stub), 0o644) //nolint:errcheck,gosec // see above; G306: test stub is user-edited markdown
 	}
 
 	if !flagQuiet {
