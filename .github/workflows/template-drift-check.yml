@@ -16,9 +16,11 @@ on:
       - 'install.sh'
       - '.golangci.yml'
       - 'Makefile'
+      - '.release-template-config'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-full.yml'
+      - '.github/workflows/template-drift-check.yml'
       - 'npm/**/package.json'
       - 'npm/**/bin/*.js'
   schedule:
@@ -68,22 +70,57 @@ jobs:
 
           # Read the consumer's substitution config so we can reverse the
           # @VAR@ → value mapping for a meaningful diff.
+          #
+          # SECURITY: we deliberately do NOT `source` this file. On
+          # pull_request runs the file is PR-controlled, so sourcing
+          # would execute attacker-supplied shell with access to job
+          # credentials. Parse plain `KEY=value` lines instead, rejecting
+          # any value that contains shell metachars beyond what's needed
+          # for legitimate descriptions.
           if [ ! -f consumer/.release-template-config ]; then
             echo "::warning::No .release-template-config in consumer repo; skipping drift check."
             exit 0
           fi
 
-          # shellcheck disable=SC1091
-          set -a
-          . consumer/.release-template-config
-          set +a
+          declare -A CONFIG
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments + blanks.
+            case "$line" in ''|\#*) continue ;; esac
+            # Only accept KEY=value lines where KEY is an uppercase-ASCII
+            # identifier. Anything else is ignored (with a warning).
+            if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+              key="${BASH_REMATCH[1]}"
+              raw="${BASH_REMATCH[2]}"
+              # Strip surrounding single or double quotes if balanced.
+              if [[ "$raw" =~ ^\"(.*)\"$ ]] || [[ "$raw" =~ ^\'(.*)\'$ ]]; then
+                raw="${BASH_REMATCH[1]}"
+              fi
+              # Reject values containing command-substitution markers.
+              # We use the value only in `sed s/@VAR@/$value/g` below;
+              # backticks / $() should never appear in a config value.
+              case "$raw" in
+                *'$('*|*'`'*)
+                  echo "::warning::Refusing suspicious value for $key; skipping drift check."
+                  exit 0
+                  ;;
+              esac
+              CONFIG["$key"]="$raw"
+            else
+              echo "::warning::Ignoring malformed line in .release-template-config: $line"
+            fi
+          done < consumer/.release-template-config
 
           REQUIRED=(PROJECT_NAME BINARY_NAME REPO_OWNER REPO_NAME ENV_PREFIX NPM_SCOPE)
           for var in "${REQUIRED[@]}"; do
-            if [ -z "${!var:-}" ]; then
+            if [ -z "${CONFIG[$var]:-}" ]; then
               echo "::warning::Missing required template var: $var"
               exit 0
             fi
+          done
+
+          # Re-export the parsed values for downstream substitution steps.
+          for var in "${!CONFIG[@]}"; do
+            printf -v "$var" '%s' "${CONFIG[$var]}"
           done
 
           # Files to compare: (template-path, consumer-path). Templates
