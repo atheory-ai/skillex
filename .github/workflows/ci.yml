@@ -1,9 +1,13 @@
 name: CI
 
-# Derived from atheory-ai/release-template v0.2.0.
+# Derived from atheory-ai/release-template v0.2.6.
 # Adds: golangci-lint, govulncheck, race detector. Preserves skillex's
 # acceptance test job (which needs Node.js + pnpm/yarn for fixture
 # packages) and npm packaging smoke test.
+#
+# All third-party actions pinned to commit SHAs (Tier 2 hardening);
+# inline comments are the semver tag at pinning. Dependabot keeps
+# them current — see .github/dependabot.yml.
 #
 # Skipped vs. template: coverage gate (no test/coverage/ infrastructure
 # yet — follow-up).
@@ -28,8 +32,10 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -50,13 +56,15 @@ jobs:
     name: Lint (golangci-lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84  # v6.5.0
         with:
           # Pinned to v1.x — the v2 config schema is incompatible.
           # Migration to v2 is a separate cross-project task.
@@ -67,8 +75,10 @@ jobs:
     name: Vuln Scan (govulncheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -76,7 +86,7 @@ jobs:
         # Uses the official govulncheck-action which picks a version
         # compatible with the project's go.mod (avoids needing
         # `@latest` which now requires Go >= 1.25).
-        uses: golang/govulncheck-action@v1
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee  # v1.0.4
         with:
           go-version-file: go.mod
           check-latest: true
@@ -85,8 +95,10 @@ jobs:
     name: Unit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -101,8 +113,10 @@ jobs:
     name: Race Detector
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -114,12 +128,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.0.0
         with:
           node-version: 24
       - name: Enable pnpm and yarn
@@ -135,16 +151,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: acceptance
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.0.0
         with:
           node-version: 24
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
@@ -155,7 +173,7 @@ jobs:
       - name: Build npm tarballs
         run: VERSION=$(cat VERSION) PACKAGE_VERSION=$(cat VERSION) make npm-pack
       - name: Upload npm tarballs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: npm-tarballs-ci
           path: dist/*.tgz
