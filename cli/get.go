@@ -112,14 +112,14 @@ func runGet(root, url string, topics []string, skipReview bool) error {
 	// Ensure frontmatter with topics and source
 	normalized := normalizeSkillContent(content, topics, url)
 
-	if err := os.WriteFile(skillPath, []byte(normalized), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(normalized), 0o644); err != nil { //nolint:gosec // G306: skill markdown is user-edited; 0o644 is the standard project-file mode
 		return fmt.Errorf("writing skill: %w", err)
 	}
 
 	// Write test stub if not exists
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		stub := generateTestStub(filename)
-		if err := os.WriteFile(testPath, []byte(stub), 0o644); err != nil {
+		if err := os.WriteFile(testPath, []byte(stub), 0o644); err != nil { //nolint:gosec // G306: test markdown is user-edited; 0o644 is correct
 			return fmt.Errorf("writing test stub: %w", err)
 		}
 	}

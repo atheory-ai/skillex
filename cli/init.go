@@ -170,7 +170,7 @@ func initPackage(root string, yes bool) error {
 	publicSkill := filepath.Join(root, "skillex/public/consumer.md")
 	if _, err := os.Stat(publicSkill); os.IsNotExist(err) {
 		content := "---\nname: Consumer Guide\ndescription: How to install, configure, and use this package as a dependency.\ntopics: []\ntags: []\n---\n\n# Consumer Guide\n\nDocument how consumers should use this package.\n"
-		if err := os.WriteFile(publicSkill, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(publicSkill, []byte(content), 0o644); err != nil { //nolint:gosec // G306: skill template the user will edit
 			return err
 		}
 	}
@@ -178,7 +178,7 @@ func initPackage(root string, yes bool) error {
 	privateSkill := filepath.Join(root, "skillex/private/dev-workflow.md")
 	if _, err := os.Stat(privateSkill); os.IsNotExist(err) {
 		content := "---\nname: Development Workflow\ndescription: How contributors set up, build, test, and submit changes to this package.\ntopics: []\ntags: []\n---\n\n# Development Workflow\n\nDocument how contributors work on this package.\n"
-		if err := os.WriteFile(privateSkill, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(privateSkill, []byte(content), 0o644); err != nil { //nolint:gosec // G306: skill template the user will edit
 			return err
 		}
 	}
@@ -239,7 +239,7 @@ func createSkilexConfig(root string, yes bool, format config.Format) error {
 		data = append([]byte(header), data...)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o644) //nolint:gosec // G306: skillex.yaml is user-edited config
 }
 
 func createSkillsDir(root string) error {
@@ -269,7 +269,7 @@ paths in the repository.
 - Commit message format
 - PR process
 `
-		return os.WriteFile(repoSkill, []byte(content), 0o644)
+		return os.WriteFile(repoSkill, []byte(content), 0o644) //nolint:gosec // G306: skill template the user will edit
 	}
 	return nil
 }
@@ -277,7 +277,7 @@ paths in the repository.
 func createAgentsMD(root string) error {
 	path := filepath.Join(root, "AGENTS.md")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.WriteFile(path, []byte(agents.DefaultContent()), 0o644)
+		return os.WriteFile(path, []byte(agents.DefaultContent()), 0o644) //nolint:gosec // G306: AGENTS.md is user-edited project doc
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func configureMCP(root, harness string) error {
 		return nil
 	}
 
-	return os.WriteFile(configPath, []byte(mcpConfig), 0o644)
+	return os.WriteFile(configPath, []byte(mcpConfig), 0o644) //nolint:gosec // G306: MCP harness config the user owns
 }
 
 func addSkilexToPackageJSON(path string) error {
@@ -351,7 +351,7 @@ func addSkilexToPackageJSON(path string) error {
 	}
 
 	updated := content[:lastBrace] + insertion + "\n" + content[lastBrace:]
-	return os.WriteFile(path, []byte(updated), 0o644)
+	return os.WriteFile(path, []byte(updated), 0o644) //nolint:gosec // G306: project's own package.json
 }
 
 func findLastBrace(s string) int {

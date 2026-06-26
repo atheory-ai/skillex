@@ -46,13 +46,39 @@ linters-settings:
       - fmt.Scan
       - fmt.Scanf
       - fmt.Scanln
+      # cobra/pflag/viper accessors only error on programmer mistakes
+      # (wrong type or unknown flag); the callsite has already declared
+      # the flag, so the error is unreachable in practice.
+      - (*github.com/spf13/pflag.FlagSet).GetString
+      - (*github.com/spf13/pflag.FlagSet).GetStringSlice
+      - (*github.com/spf13/pflag.FlagSet).GetBool
+      - (*github.com/spf13/pflag.FlagSet).GetInt
+      - (*github.com/spf13/pflag.FlagSet).GetInt64
+      - (*github.com/spf13/pflag.FlagSet).GetUint
+      - (*github.com/spf13/pflag.FlagSet).GetFloat64
+      - (*github.com/spf13/pflag.FlagSet).GetDuration
+      - github.com/spf13/viper.BindPFlag
+      - github.com/spf13/viper.BindPFlags
+      - github.com/spf13/viper.BindEnv
+      # Extism CurrentPlugin memory I/O inside WASM host functions —
+      # errors only on malformed pointers, which is a programmer bug.
+      - (*github.com/extism/go-sdk.CurrentPlugin).ReadString
+      - (*github.com/extism/go-sdk.CurrentPlugin).WriteString
+      - (*github.com/extism/go-sdk.CurrentPlugin).ReadBytes
+      - (*github.com/extism/go-sdk.CurrentPlugin).WriteBytes
 
   gosec:
+    # Only G104 is excluded globally because errcheck already covers
+    # it — listing it under both is pure noise.
+    #
+    # G204 (subprocess from variable), G304 (file inclusion via
+    # variable), and G306 (WriteFile permissions) DO surface real
+    # CLI-pattern false positives, but the per-site `// #nosec GXXX
+    # -- <reason>` annotation makes each exception auditable and
+    # forces a code reader to consider whether the input is genuinely
+    # safe. Global excludes hid that consideration.
     excludes:
       - G104   # duplicates errcheck; one is enough
-      - G204   # subprocess from user input — too noisy in CLIs / test helpers
-      - G304   # file inclusion via variable — too noisy in CLIs
-      - G306   # WriteFile permissions — projects choose their own perms
     severity: medium
     confidence: medium
 
@@ -104,7 +130,7 @@ issues:
     - path: _test\.go
       linters: [errcheck, gosec, revive]
     - path: ^test/
-      linters: [errcheck, gosec, revive, staticcheck]
+      linters: [errcheck, gosec, revive, staticcheck, unused]
     - path: /testdata/
       linters: [errcheck, gosec, revive, staticcheck, unused]
     # Generated code is exempt.
