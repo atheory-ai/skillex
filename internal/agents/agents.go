@@ -138,10 +138,7 @@ func replaceMarkedSection(existing, section string, startMarker string, endMarke
 	}
 
 	before := existing[:startIdx]
-	after := existing[endIdx+len(endMarker):]
-	if strings.HasPrefix(after, "\n") {
-		after = after[1:]
-	}
+	after := strings.TrimPrefix(existing[endIdx+len(endMarker):], "\n")
 
 	return before + section + after
 }
