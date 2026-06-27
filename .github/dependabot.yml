@@ -1,10 +1,12 @@
 # Templated from atheory-ai/release-template
 # Copy as-is — no placeholders.
 #
-# Keeps GitHub Actions SHA-pinned references current. Dependabot opens
-# a PR per outdated action; the comment on each pin line still shows
-# the tag at the time of pinning, so reviewers can confirm whether the
-# new SHA corresponds to the expected major bump.
+# Keeps GitHub Actions SHA-pinned references current. Major-version
+# bumps often include breaking changes (e.g., golangci-lint-action
+# v7 dropped golangci-lint v1 support; actions/upload-artifact v5
+# changed artifact behaviour). We group ALL bumps — including majors
+# — into a single weekly PR so they get triaged together rather than
+# arriving as a flood of individual major-bump PRs.
 
 version: 2
 updates:
@@ -15,12 +17,13 @@ updates:
       day: monday
       time: "09:00"
       timezone: "America/Los_Angeles"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
       include: scope
     groups:
-      actions-minor-patch:
+      actions:
         update-types:
-          - minor
           - patch
+          - minor
+          - major

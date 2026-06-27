@@ -408,7 +408,7 @@ func ScanDirectory(dir, relBase, pkgName, pkgVersion, visibility, sourceType str
 			return nil
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // G122: walking a known-trusted tree under the project root; TOCTOU not a meaningful concern here
 		if err != nil {
 			return err
 		}

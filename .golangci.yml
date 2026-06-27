@@ -1,144 +1,148 @@
-# Shared lint config for atheory-ai Go projects.
-# Copy as-is — no placeholders. Stage 2 of the harmonization plan.
-
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
-    - errcheck       # unchecked errors
-    - gosec          # security checks (CWE-aware)
-    - govet          # standard go vet
-    - ineffassign    # unused assignments
-    - revive         # style + correctness (replaces golint)
-    - staticcheck    # comprehensive static analysis
-    - unused         # unused code
-
-linters-settings:
-  errcheck:
-    # Type-assertion discards (`v, _ := x.(T)`) are idiomatic in Go;
-    # checking forces unwieldy `v, ok := ...; if !ok { ... }` even when
-    # the zero value is the intended fallback.
-    check-type-assertions: false
-    check-blank: true
-    exclude-functions:
-      # Always-discarded idioms
-      - (io.Closer).Close
-      - (*os.File).Close
-      - fmt.Fprintln
-      - fmt.Fprintf
-      - fmt.Fprint
-      - fmt.Println
-      - fmt.Printf
-      - fmt.Print
-      # filepath.Rel/Abs only error on malformed paths; usually the
-      # callsite knows the inputs are well-formed.
-      - path/filepath.Rel
-      - path/filepath.Abs
-      # JSON marshal of statically-typed maps/structs is never an error
-      # at runtime; checking is noise.
-      - encoding/json.Marshal
-      - encoding/json.MarshalIndent
-      # Interactive prompts; error usually means user hit Ctrl-D and
-      # we want to fall through to the default.
-      - fmt.Scan
-      - fmt.Scanf
-      - fmt.Scanln
-      # cobra/pflag/viper accessors only error on programmer mistakes
-      # (wrong type or unknown flag); the callsite has already declared
-      # the flag, so the error is unreachable in practice.
-      - (*github.com/spf13/pflag.FlagSet).GetString
-      - (*github.com/spf13/pflag.FlagSet).GetStringSlice
-      - (*github.com/spf13/pflag.FlagSet).GetBool
-      - (*github.com/spf13/pflag.FlagSet).GetInt
-      - (*github.com/spf13/pflag.FlagSet).GetInt64
-      - (*github.com/spf13/pflag.FlagSet).GetUint
-      - (*github.com/spf13/pflag.FlagSet).GetFloat64
-      - (*github.com/spf13/pflag.FlagSet).GetDuration
-      - github.com/spf13/viper.BindPFlag
-      - github.com/spf13/viper.BindPFlags
-      - github.com/spf13/viper.BindEnv
-      # Extism CurrentPlugin memory I/O inside WASM host functions —
-      # errors only on malformed pointers, which is a programmer bug.
-      - (*github.com/extism/go-sdk.CurrentPlugin).ReadString
-      - (*github.com/extism/go-sdk.CurrentPlugin).WriteString
-      - (*github.com/extism/go-sdk.CurrentPlugin).ReadBytes
-      - (*github.com/extism/go-sdk.CurrentPlugin).WriteBytes
-
-  gosec:
-    # Only G104 is excluded globally because errcheck already covers
-    # it — listing it under both is pure noise.
-    #
-    # G204 (subprocess from variable), G304 (file inclusion via
-    # variable), and G306 (WriteFile permissions) DO surface real
-    # CLI-pattern false positives, but the per-site `// #nosec GXXX
-    # -- <reason>` annotation makes each exception auditable and
-    # forces a code reader to consider whether the input is genuinely
-    # safe. Global excludes hid that consideration.
-    excludes:
-      - G104   # duplicates errcheck; one is enough
-    severity: medium
-    confidence: medium
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment   # opt in per project; noisy on most codebases
-      - shadow           # flags idiomatic `if err := f(); err != nil` patterns   # often noisy; opt in per project
-
-  revive:
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Println
+        - fmt.Printf
+        - fmt.Print
+        - path/filepath.Rel
+        - path/filepath.Abs
+        - encoding/json.Marshal
+        - encoding/json.MarshalIndent
+        - fmt.Scan
+        - fmt.Scanf
+        - fmt.Scanln
+        - (*github.com/spf13/pflag.FlagSet).GetString
+        - (*github.com/spf13/pflag.FlagSet).GetStringSlice
+        - (*github.com/spf13/pflag.FlagSet).GetBool
+        - (*github.com/spf13/pflag.FlagSet).GetInt
+        - (*github.com/spf13/pflag.FlagSet).GetInt64
+        - (*github.com/spf13/pflag.FlagSet).GetUint
+        - (*github.com/spf13/pflag.FlagSet).GetFloat64
+        - (*github.com/spf13/pflag.FlagSet).GetDuration
+        - github.com/spf13/viper.BindPFlag
+        - github.com/spf13/viper.BindPFlags
+        - github.com/spf13/viper.BindEnv
+        - (*github.com/extism/go-sdk.CurrentPlugin).ReadString
+        - (*github.com/extism/go-sdk.CurrentPlugin).WriteString
+        - (*github.com/extism/go-sdk.CurrentPlugin).ReadBytes
+        - (*github.com/extism/go-sdk.CurrentPlugin).WriteBytes
+    gosec:
+      excludes:
+        - G104
+      severity: medium
+      confidence: medium
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          arguments:
+            - sayRepetitiveInsteadOfStutters
+        - name: if-return
+        - name: increment-decrement
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+          disabled: true
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    staticcheck:
+      checks:
+        - all
+        - -ST1000   # missing package doc — opt in per project
+        - -ST1020   # comment formatting on exported types
+        - -ST1021
+        - -ST1022
+        - -QF1012   # "Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))" — stylistic quickfix, not a bug
+        - -QF1003   # tagged switch over if-else chain — stylistic
+        - -QF1008   # remove embedded field from selector — stylistic
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-        arguments: ["sayRepetitiveInsteadOfStutters"]
-      - name: if-return
-      - name: increment-decrement
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-      - name: empty-block
-      - name: superfluous-else
-      - name: unused-parameter
-        disabled: true                   # too noisy; turn on per-project
-      - name: unreachable-code
-      - name: redefines-builtin-id
-
-  staticcheck:
-    checks:
-      - all
-      - "-ST1000"   # missing package doc — turn on per project
-      - "-ST1020"   # comment formatting — turn on per project
-      - "-ST1021"
-      - "-ST1022"
-
+      - linters:
+          - errcheck
+          - gosec
+          - revive
+        path: _test\.go
+      - linters:
+          - errcheck
+          - gosec
+          - revive
+          - staticcheck
+          - unused
+        path: ^test/
+      - linters:
+          - errcheck
+          - gosec
+          - revive
+          - staticcheck
+          - unused
+        path: /testdata/
+      - linters:
+          - errcheck
+          - gosec
+          - revive
+          - staticcheck
+          - unused
+        path: \.pb\.go
+      - linters:
+          - revive
+        source: '^//go:generate '
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    # Test files (the convention + the common dirs that aren't _test.go).
-    - path: _test\.go
-      linters: [errcheck, gosec, revive]
-    - path: ^test/
-      linters: [errcheck, gosec, revive, staticcheck, unused]
-    - path: /testdata/
-      linters: [errcheck, gosec, revive, staticcheck, unused]
-    # Generated code is exempt.
-    - path: \.pb\.go
-      linters: [errcheck, gosec, revive, staticcheck, unused]
-    - source: "^//go:generate "
-      linters: [revive]
-
   max-issues-per-linter: 0
   max-same-issues: 0
   new: false
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
