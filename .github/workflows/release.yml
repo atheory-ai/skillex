@@ -91,7 +91,7 @@ jobs:
         run: make test-acceptance
 
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
@@ -220,7 +220,7 @@ jobs:
           # could inject artifacts into the signing path. CI keeps cache: true.
           cache: false
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
