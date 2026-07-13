@@ -86,7 +86,7 @@ jobs:
         # Uses the official govulncheck-action which picks a version
         # compatible with the project's go.mod (avoids needing
         # `@latest` which now requires Go >= 1.25).
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee  # v1.0.4
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f  # v1.1.0
         with:
           go-version-file: go.mod
           check-latest: true
@@ -162,7 +162,7 @@ jobs:
         with:
           node-version: 24
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
