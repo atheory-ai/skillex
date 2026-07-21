@@ -105,6 +105,34 @@ func TestMigrate_FreshDB_HasNewColumns(t *testing.T) {
 	}
 }
 
+func TestMigrate_V3RebuildsFullTextIndex(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "v3.db")
+	rawDB := openRawDB(t, dbPath)
+	if _, err := rawDB.Exec(schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`DROP TABLE skill_search`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`PRAGMA user_version = 3`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`INSERT INTO skills (path, content, name, description, visibility, source_type, indexed_at) VALUES ('skills/a.md', 'Roving tabindex details.', 'Guide', 'Short guide', 'repo', 'repo', '2024-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	rawDB.Close()
+	reg, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	results, err := reg.QueryBySearch("roving")
+	if err != nil || len(results) != 1 || results[0].Path != "skills/a.md" {
+		t.Fatalf("v3 full-text rebuild failed: %#v, %v", results, err)
+	}
+}
+
 func TestMigrate_OldSchema_AddsColumns(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "old.db")

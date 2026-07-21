@@ -45,18 +45,18 @@ func GenerateSection(reg *registry.Registry) (string, error) {
 
 	sb.WriteString("### MCP (preferred)\n\n")
 	sb.WriteString("If the `skillex` MCP server is connected, use it directly:\n\n")
-	sb.WriteString("- Use the `skillex_query` tool with parameters: path, topic, tags, package, search, format.\n")
-	sb.WriteString("- Use `search` for intent-based discovery — pass space/comma-separated concepts to find relevant skills without knowing the taxonomy.\n")
-	sb.WriteString("- Browse available skills through MCP resource discovery.\n\n")
+	sb.WriteString("- Start with `skillex_query` (path, topic, tags, package, search, limit, cursor). It returns bounded discovery summaries, not whole skill files.\n")
+	sb.WriteString("- If `too_broad` is true, use its candidate-scoped `narrow_with` facets and suggestions to refine the query.\n")
+	sb.WriteString("- Use `skillex_read` with a selected result `ref` and optional section id only after discovery; keep reads bounded.\n")
+	sb.WriteString("- MCP resources provide a skill table of contents. Do not bulk-load skill content.\n\n")
 
 	sb.WriteString("### CLI (fallback)\n\n")
 	sb.WriteString("If MCP is not available, query skills via the command line:\n\n")
 	sb.WriteString("```\n")
 	sb.WriteString("  skillex query --search \"<concepts>\"\n")
-	sb.WriteString("  skillex query --path <filepath>\n")
+	sb.WriteString("  skillex query --path <filepath> --limit 8\n")
 	sb.WriteString("  skillex query --topic <topic> --tags <tags>\n")
-	sb.WriteString("  skillex query --package <package>\n")
-	sb.WriteString("  skillex query --path <glob> --topic <topic> --format content\n")
+	sb.WriteString("  skillex read --ref <ref-from-query> --section <optional-section-id>\n")
 	sb.WriteString("```\n\n")
 
 	if len(scopes) > 0 {

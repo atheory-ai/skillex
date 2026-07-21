@@ -414,7 +414,7 @@ Returns all skills exported by a package (respecting visibility for the current 
 skillex query --search "button accessible keyboard"
 ```
 
-Returns skills whose `name` or `description` matches any of the whitespace or comma-separated tokens. Each token is matched independently (OR) so multi-concept queries find all relevant skills in one call. Defaults to `--format summary`. Skills without `name`/`description` are not matched by this filter.
+Returns bounded, ranked discovery summaries whose metadata, headings, or body matches any whitespace or comma-separated token. Each token is matched independently (OR); `match_count`, candidate-scoped narrowing facets, and a continuation cursor help agents refine broad results. Skills are selected for content with the explicit `read` operation.
 
 ```
 skillex query --search "auth" --topic security
@@ -432,7 +432,13 @@ Flags compose as intersection — this returns skills that are in scope for `pac
 skillex query --path packages/app-a/src/auth.ts --format content
 ```
 
-Returns the full skill content, concatenated and ready to pipe into an agent's context.
+Queries are discovery-only. Agents select one result ref from discovery and use a bounded read.
+
+```
+skillex read --ref skill:... --section authentication --max-bytes 24576
+```
+
+Returns only the selected skill or Markdown section, enforcing a deterministic byte budget.
 
 ```
 skillex query --path packages/app-a/src/auth.ts --format summary
@@ -923,7 +929,7 @@ Potential future improvements:
 - Conditional skill inclusion (e.g., only link migration skills when upgrading)
 - Table-of-contents skills for two-phase retrieval
 - Test coverage reporting and nondeterminism tracking
-- Full-text search upgrade (FTS5) for relevance ranking and stemming across name/description (ATH-198)
+- Further full-text search tuning (stemming, phrase modes, and relevance evaluation)
 - Semantic search as an optional query mode alongside structured queries
 - Remote skill registries for cross-repo skill sharing
 - Skill analysis tooling: automated detection of overlapping skills, context pollution measurement, and split recommendations

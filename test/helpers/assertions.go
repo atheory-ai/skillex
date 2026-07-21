@@ -8,25 +8,44 @@ import (
 
 // SkillSummary mirrors a single result entry in a skillex query --json response.
 type SkillSummary struct {
-	Path        string   `json:"path"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	PackageName string   `json:"package"`
-	Version     string   `json:"version"`
-	Visibility  string   `json:"visibility"`
-	SourceType  string   `json:"source_type"`
-	Topics      []string `json:"topics"`
-	Tags        []string `json:"tags"`
-	Scopes      []string `json:"scopes"`
-	Content     string   `json:"content"`
+	Ref          string   `json:"ref"`
+	Path         string   `json:"path"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	PackageName  string   `json:"package"`
+	Version      string   `json:"version"`
+	Visibility   string   `json:"visibility"`
+	SourceType   string   `json:"source_type"`
+	Topics       []string `json:"topics"`
+	Tags         []string `json:"tags"`
+	Scopes       []string `json:"scopes"`
+	Content      string   `json:"content"`
+	ContentBytes int      `json:"content_bytes"`
+	Sections     []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+		Level int    `json:"level"`
+	} `json:"sections"`
+	MatchedIn []string `json:"matched_in"`
+	Excerpt   string   `json:"excerpt"`
 }
 
 // QueryResponse mirrors the top-level JSON envelope returned by skillex query --json.
 type QueryResponse struct {
-	Type       string         `json:"type"`
-	Results    []SkillSummary `json:"results"`
-	Vocabulary *VocabSummary  `json:"vocabulary"`
-	Query      *QueryEcho     `json:"query"`
+	Type          string         `json:"type"`
+	Results       []SkillSummary `json:"results"`
+	Vocabulary    *VocabSummary  `json:"vocabulary"`
+	Query         *QueryEcho     `json:"query"`
+	MatchCount    int            `json:"match_count"`
+	ReturnedCount int            `json:"returned_count"`
+	TooBroad      bool           `json:"too_broad"`
+	NextCursor    string         `json:"next_cursor"`
+	NarrowWith    *struct {
+		Topics []struct {
+			Value string `json:"value"`
+			Count int    `json:"count"`
+		} `json:"topics"`
+	} `json:"narrow_with"`
 }
 
 // VocabSummary mirrors the vocabulary object in a QueryResponse.

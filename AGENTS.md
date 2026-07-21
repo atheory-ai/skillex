@@ -13,9 +13,10 @@ if available (preferred), otherwise use the CLI commands below.
 
 If the `skillex` MCP server is connected, use it directly:
 
-- Use the `skillex_query` tool with parameters: path, topic, tags, package, search, format.
-- Use `search` for intent-based discovery — pass space/comma-separated concepts to find relevant skills without knowing the taxonomy.
-- Browse available skills through MCP resource discovery.
+- Start with `skillex_query` (path, topic, tags, package, search, limit, cursor). It returns bounded discovery summaries, not whole skill files.
+- If `too_broad` is true, use its candidate-scoped `narrow_with` facets and suggestions to refine the query.
+- Use `skillex_read` with a selected result `ref` and optional section id only after discovery; keep reads bounded.
+- MCP resources provide a skill table of contents. Do not bulk-load skill content.
 
 ### CLI (fallback)
 
@@ -23,10 +24,9 @@ If MCP is not available, query skills via the command line:
 
 ```
   skillex query --search "<concepts>"
-  skillex query --path <filepath>
+  skillex query --path <filepath> --limit 8
   skillex query --topic <topic> --tags <tags>
-  skillex query --package <package>
-  skillex query --path <glob> --topic <topic> --format content
+  skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 
 ### Available scopes

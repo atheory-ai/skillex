@@ -21,6 +21,8 @@ func newQueryCmd() *cobra.Command {
 		packageFlag string
 		searchFlag  string
 		formatFlag  string
+		limitFlag   int
+		cursorFlag  string
 	)
 
 	cmd := &cobra.Command{
@@ -33,6 +35,9 @@ All filters are intersected — only skills matching all specified criteria are 
 Use --search for intent-based discovery when you don't know the topic/tag taxonomy.
 Each space or comma-separated term is matched independently against skill names and
 descriptions, so multiple concepts can be found in one call.
+
+Discovery responses are always bounded summaries. Use skillex read --ref to load one
+	selected skill or section.
 
 When no filters are provided, a vocabulary response is returned listing the available
 topics, tags, and packages you can filter by.
@@ -84,11 +89,12 @@ Examples:
 				}
 			}
 
-			// Resolve format: explicit flag overrides default; empty means auto.
+			// Queries are discovery-only. Preserve the legacy flag syntactically so
+			// older instructions do not fail, but never emit bulk content.
 			var format query.Format
 			switch formatFlag {
 			case "content":
-				format = query.FormatContent
+				format = query.FormatSummary
 			case "summary":
 				format = query.FormatSummary
 			default:
@@ -102,6 +108,8 @@ Examples:
 				Package: packageFlag,
 				Search:  searchFlag,
 				Format:  format,
+				Limit:   limitFlag,
+				Cursor:  cursorFlag,
 			}
 
 			resp, err := eng.Execute(params)
@@ -120,11 +128,7 @@ Examples:
 				// Determine what format was actually used (mirrors Execute logic).
 				effectiveFormat := format
 				if effectiveFormat == query.FormatDefault {
-					if searchFlag != "" {
-						effectiveFormat = query.FormatSummary
-					} else {
-						effectiveFormat = query.FormatContent
-					}
+					effectiveFormat = query.FormatSummary
 				}
 				if effectiveFormat == query.FormatContent {
 					out := query.ContentString(resp.Results)
@@ -156,7 +160,9 @@ Examples:
 	cmd.Flags().StringVar(&tagsFlag, "tags", "", "Comma-separated tag filters")
 	cmd.Flags().StringVar(&packageFlag, "package", "", "Package name filter")
 	cmd.Flags().StringVar(&searchFlag, "search", "", "Keyword search across skill names and descriptions (space/comma-separated terms)")
-	cmd.Flags().StringVar(&formatFlag, "format", "", "Output format: content (default) or summary")
+	cmd.Flags().StringVar(&formatFlag, "format", "", "Output format: summary (default) or deprecated bounded content")
+	cmd.Flags().IntVar(&limitFlag, "limit", 8, "Maximum discovery results (1-20)")
+	cmd.Flags().StringVar(&cursorFlag, "cursor", "", "Continuation cursor from a previous discovery response")
 
 	return cmd
 }

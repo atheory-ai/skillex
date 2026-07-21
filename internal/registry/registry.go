@@ -55,6 +55,14 @@ CREATE INDEX IF NOT EXISTS idx_skill_topics ON skill_topics(topic);
 CREATE INDEX IF NOT EXISTS idx_skill_tags ON skill_tags(tag);
 CREATE INDEX IF NOT EXISTS idx_skill_scopes ON skill_scopes(scope);
 CREATE INDEX IF NOT EXISTS idx_skill_tests ON skill_tests(skill_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS skill_search USING fts5(
+    skill_id UNINDEXED,
+    name,
+    description,
+    headings,
+    body
+);
 `
 
 // Registry wraps a SQLite database for skill storage and retrieval.
@@ -74,6 +82,7 @@ type Skill struct {
 	PackageVersion string
 	Visibility     string
 	SourceType     string
+	Score          float64
 	Topics         []string
 	Tags           []string
 	Scopes         []string
@@ -141,6 +150,7 @@ func (r *Registry) Clear() error {
 		DELETE FROM skill_scopes;
 		DELETE FROM skill_tags;
 		DELETE FROM skill_topics;
+		DELETE FROM skill_search;
 		DELETE FROM skills;
 	`)
 	return err
@@ -175,6 +185,12 @@ func (r *Registry) InsertSkill(s Skill) (int64, error) {
 	// inserts below ran with an invalid skill_id and tripped FOREIGN KEY constraints.
 	id, err := r.getSkillIDByPath(s.Path)
 	if err != nil {
+		return 0, err
+	}
+	if _, err := r.db.Exec(`DELETE FROM skill_search WHERE skill_id = ?`, id); err != nil {
+		return 0, err
+	}
+	if _, err := r.db.Exec(`INSERT INTO skill_search (skill_id, name, description, headings, body) VALUES (?, ?, ?, ?, ?)`, id, s.Name, s.Description, headingsText(s.Content), s.Content); err != nil {
 		return 0, err
 	}
 
@@ -671,21 +687,46 @@ func (r *Registry) QueryBySearch(search string) ([]Skill, error) {
 		return nil, nil
 	}
 
-	// Build: (LOWER(name) LIKE ? OR LOWER(description) LIKE ?) OR (...)
-	clauses := make([]string, len(tokens))
-	args := make([]any, 0, len(tokens)*2)
+	terms := make([]string, len(tokens))
 	for i, tok := range tokens {
-		pattern := "%" + strings.ToLower(tok) + "%"
-		clauses[i] = "(LOWER(COALESCE(name,'')) LIKE ? OR LOWER(COALESCE(description,'')) LIKE ?)"
-		args = append(args, pattern, pattern)
+		terms[i] = `"` + strings.ReplaceAll(tok, `"`, `""`) + `"`
 	}
+	q := `SELECT s.id, s.path, s.content, COALESCE(s.name,''), COALESCE(s.description,''), COALESCE(s.package_name,''), COALESCE(s.package_ver,''), s.visibility, s.source_type, -bm25(skill_search, 8.0, 5.0, 3.0, 1.0)
+		FROM skill_search JOIN skills s ON s.id = CAST(skill_search.skill_id AS INTEGER)
+		WHERE skill_search MATCH ? ORDER BY bm25(skill_search, 8.0, 5.0, 3.0, 1.0), s.path`
+	rows, err := r.db.Query(q, strings.Join(terms, " OR "))
+	if err != nil {
+		return nil, fmt.Errorf("full-text search: %w", err)
+	}
+	defer rows.Close()
+	var skills []Skill
+	for rows.Next() {
+		var s Skill
+		if err := rows.Scan(&s.ID, &s.Path, &s.Content, &s.Name, &s.Description, &s.PackageName, &s.PackageVersion, &s.Visibility, &s.SourceType, &s.Score); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range skills {
+		if err := r.populateMeta(&skills[i]); err != nil {
+			return nil, err
+		}
+	}
+	return skills, nil
+}
 
-	q := fmt.Sprintf(
-		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
-		 FROM skills WHERE %s`,
-		strings.Join(clauses, " OR "),
-	)
-	return r.querySkills(q, args...)
+func headingsText(content string) string {
+	var headings []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			headings = append(headings, strings.TrimSpace(strings.TrimLeft(line, "#")))
+		}
+	}
+	return strings.Join(headings, "\n")
 }
 
 // searchTokens splits a search string into individual tokens on whitespace and commas.

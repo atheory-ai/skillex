@@ -37,6 +37,7 @@ packages, follow repo conventions, and work safely in a codebase.`,
 	rootCmd.AddCommand(
 		newInitCmd(),
 		newQueryCmd(),
+		newReadCmd(),
 		newRefreshCmd(),
 		newGetCmd(),
 		newImportCmd(),
