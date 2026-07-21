@@ -95,7 +95,7 @@ func migrateSchema(db *sql.DB) error {
 	}
 	rows, err := db.Query(`SELECT id, COALESCE(name,''), COALESCE(description,''), content FROM skills`)
 	if err != nil {
-		db.Exec("ROLLBACK")
+		db.Exec("ROLLBACK") //nolint:errcheck
 		return fmt.Errorf("reading skills for full-text index: %w", err)
 	}
 	type ftsSkill struct {
@@ -108,20 +108,20 @@ func migrateSchema(db *sql.DB) error {
 		var name, description, content string
 		if err := rows.Scan(&id, &name, &description, &content); err != nil {
 			rows.Close()
-			db.Exec("ROLLBACK")
+			db.Exec("ROLLBACK") //nolint:errcheck
 			return err
 		}
 		ftsSkills = append(ftsSkills, ftsSkill{id, name, description, content})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		db.Exec("ROLLBACK")
+		db.Exec("ROLLBACK") //nolint:errcheck
 		return err
 	}
 	rows.Close()
 	for _, skill := range ftsSkills {
 		if _, err := db.Exec(`INSERT INTO skill_search (skill_id, name, description, headings, body) VALUES (?, ?, ?, ?, ?)`, skill.id, skill.name, skill.description, headingsText(skill.content), skill.content); err != nil {
-			db.Exec("ROLLBACK")
+			db.Exec("ROLLBACK") //nolint:errcheck
 			return fmt.Errorf("indexing skill %d for full-text search: %w", skill.id, err)
 		}
 	}

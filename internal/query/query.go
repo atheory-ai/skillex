@@ -370,11 +370,11 @@ func headings(content string) string {
 // compactText puts a fixed upper bound on discovery metadata. This keeps a
 // malformed or unusually verbose frontmatter field from defeating discovery
 // response budgeting.
-func compactText(s string, max int) string {
-	if len(s) <= max {
+func compactText(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	end := max
+	end := maxLen
 	for end > 0 && (s[end]&0xc0) == 0x80 {
 		end--
 	}
