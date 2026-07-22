@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.8.1]
+
+- **Release:** grant the provenance-attestation action the required `attestations: write` permission.
+
 ## [0.8.0]
 
 - **Retrieval:** query results now default to bounded discovery summaries with match counts, cursors, section metadata, and narrowing guidance.
