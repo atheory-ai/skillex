@@ -4,10 +4,15 @@ PACKAGE_VERSION ?= $(BASE_VERSION)
 LDFLAGS := -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$(VERSION)"
 GO ?= go
 GORELEASER ?= goreleaser
+DEV_BINARY := .skillex/bin/skillex
+
+ifeq ($(OS),Windows_NT)
+DEV_BINARY := .skillex/bin/skillex.exe
+endif
 
 UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v '/test/acceptance$$')
 
-.PHONY: build install test test-unit test-race \
+.PHONY: build dev-binary install test test-unit test-race \
         fmt fmt-check vet lint vuln \
         verify verify-unit \
         dist release-snapshot \
@@ -19,8 +24,13 @@ UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v '/test/acceptance$$')
 
 # ── Build ─────────────────────────────────────────────────────────────
 
-build:
-	$(GO) build $(LDFLAGS) -o skillex ./cmd/skillex
+# Build the current checkout for local development, dogfooding, and acceptance tests.
+# Keep it under .skillex so it cannot be mistaken for an installed release.
+build: dev-binary
+
+dev-binary:
+	mkdir -p $(dir $(DEV_BINARY))
+	$(GO) build $(LDFLAGS) -o $(DEV_BINARY) ./cmd/skillex
 
 install:
 	$(GO) install $(LDFLAGS) ./cmd/skillex
@@ -133,11 +143,11 @@ npm-publish: npm-stage
 
 # ── Repo workflow ─────────────────────────────────────────────────────
 
-refresh:
-	$(GO) run $(LDFLAGS) ./cmd/skillex refresh
+refresh: dev-binary
+	$(DEV_BINARY) refresh
 
-doctor:
-	$(GO) run $(LDFLAGS) ./cmd/skillex doctor
+doctor: dev-binary
+	$(DEV_BINARY) doctor
 
 release-tag:
 	@version=$$(cat VERSION); \
@@ -173,12 +183,12 @@ release-tag:
 test-setup:
 	./test/setup.sh
 
-test-acceptance: test-setup build
-	$(GO) test ./test/acceptance/... -v -timeout 300s
+test-acceptance: test-setup dev-binary
+	SKILLEX_BINARY=$(abspath $(DEV_BINARY)) $(GO) test ./test/acceptance/... -v -timeout 300s
 
-test-perf: build
+test-perf: dev-binary
 	./test/setup.sh --perf
-	$(GO) test ./test/acceptance/ -run "TestPerformance" -v -timeout 600s
+	SKILLEX_BINARY=$(abspath $(DEV_BINARY)) $(GO) test ./test/acceptance/ -run "TestPerformance" -v -timeout 600s
 
 test-clean:
 	./test/setup.sh --clean
@@ -187,13 +197,15 @@ test-clean:
 
 clean:
 	rm -f skillex skillex.exe
+	rm -rf .skillex/bin
 	rm -rf dist/
 
 # ── Help ──────────────────────────────────────────────────────────────
 
 help:
 	@echo "Common targets:"
-	@echo "  make build             Build ./skillex"
+	@echo "  make build             Build .skillex/bin/skillex from this checkout"
+	@echo "  make dev-binary        Rebuild the local development binary"
 	@echo "  make verify-unit       fmt-check + vet + unit tests + build"
 	@echo "  make verify            full pre-PR gate (+ lint + acceptance)"
 	@echo "  make test-race         Run tests with the race detector"

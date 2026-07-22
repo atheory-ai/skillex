@@ -51,7 +51,7 @@ func GenerateSection(reg *registry.Registry) (string, error) {
 	sb.WriteString("- MCP resources provide a skill table of contents. Do not bulk-load skill content.\n\n")
 
 	sb.WriteString("### CLI (fallback)\n\n")
-	sb.WriteString("If MCP is not available, query skills via the command line:\n\n")
+	sb.WriteString("If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:\n\n")
 	sb.WriteString("```\n")
 	sb.WriteString("  skillex query --search \"<concepts>\"\n")
 	sb.WriteString("  skillex query --path <filepath> --limit 8\n")

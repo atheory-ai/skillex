@@ -7,3 +7,63 @@ Rules:
       Skills:
         - skills/repo.md
       DependencyBoundary: ""
+    - Scope: 'test/**'
+      Skills:
+        - skills/testing-and-golden-harness.md
+      DependencyBoundary: ""
+    - Scope: 'docs/manual-testing.md'
+      Skills:
+        - skills/testing-and-golden-harness.md
+      DependencyBoundary: ""
+    - Scope: '.github/workflows/release.yml'
+      Skills:
+        - skills/release-and-recovery.md
+      DependencyBoundary: ""
+    - Scope: 'VERSION'
+      Skills:
+        - skills/release-and-recovery.md
+      DependencyBoundary: ""
+    - Scope: 'CHANGELOG.md'
+      Skills:
+        - skills/release-and-recovery.md
+      DependencyBoundary: ""
+    - Scope: 'Makefile'
+      Skills:
+        - skills/release-and-recovery.md
+      DependencyBoundary: ""
+    - Scope: '.goreleaser.yaml'
+      Skills:
+        - skills/release-and-recovery.md
+      DependencyBoundary: ""
+    - Scope: 'cli/query.go'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'cli/read.go'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'mcp/server.go'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'internal/query/**'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'internal/registry/**'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'internal/agents/**'
+      Skills:
+        - skills/retrieval-contract.md
+      DependencyBoundary: ""
+    - Scope: 'internal/packs/**'
+      Skills:
+        - skills/packs-boundary.md
+      DependencyBoundary: ""
+    - Scope: 'test/acceptance/pack_test.go'
+      Skills:
+        - skills/packs-boundary.md
+      DependencyBoundary: ""

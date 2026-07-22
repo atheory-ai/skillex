@@ -3,6 +3,7 @@ package helpers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,21 +18,36 @@ type Result struct {
 	ExitCode int
 }
 
-// SkilexBinary returns the path to the skillex binary.
+// SkilexBinary returns the current checkout's development binary unless a test
+// explicitly overrides it. Acceptance tests must never silently use a global or
+// stale root-level binary.
 func SkilexBinary() string {
 	if v := os.Getenv("SKILLEX_BINARY"); v != "" {
 		return v
 	}
-	_, file, _, _ := runtime.Caller(0)
-	root := filepath.Join(filepath.Dir(file), "..", "..")
-	// Try repo root binary first
-	candidate := filepath.Join(root, "skillex")
-	if _, err := os.Stat(candidate); err == nil {
-		abs, _ := filepath.Abs(candidate)
-		return abs
+	name := "skillex"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
-	// Fall back to PATH
-	return "skillex"
+	return filepath.Join(repoRoot(), ".skillex", "bin", name)
+}
+
+// BuildSkilexBinary builds the current checkout for acceptance tests that run
+// directly through go test rather than a Make target.
+func BuildSkilexBinary() error {
+	binary := SkilexBinary()
+	if os.Getenv("SKILLEX_BINARY") != "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		return fmt.Errorf("creating development binary directory: %w", err)
+	}
+	cmd := exec.Command("go", "build", "-o", binary, "./cmd/skillex")
+	cmd.Dir = repoRoot()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("building development binary: %w\n%s", err, output)
+	}
+	return nil
 }
 
 // Run executes skillex in the given directory and returns stdout, stderr, and exit code.

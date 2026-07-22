@@ -146,7 +146,7 @@ go install github.com/atheory-ai/skillex/cmd/skillex@latest
 ```bash
 git clone https://github.com/atheory-ai/skillex
 cd skillex
-make build          # produces ./skillex
+make build          # builds .skillex/bin/skillex from this checkout
 make install        # installs to $GOPATH/bin
 ```
 
@@ -825,7 +825,7 @@ The CLI validates structure. The agent validates behavior.
 git clone https://github.com/atheory-ai/skillex
 cd skillex
 
-make build      # ./skillex
+make build      # builds .skillex/bin/skillex from this checkout
 make install    # $GOPATH/bin/skillex
 make test       # go test ./...
 make lint       # go vet ./...
