@@ -2,6 +2,14 @@
 
 This file documents how to work in this repository.
 
+## Local development
+
+This checkout dogfoods the current source, not a globally installed Skillex release.
+
+1. Run `make dev-binary` after checkout. It builds `.skillex/bin/skillex` from this source tree.
+2. Run `make dev-binary` again after changing Go source.
+3. Use `./.skillex/bin/skillex` for local Skillex commands (`.exe` on Windows). `make refresh` and the acceptance suite rebuild or select it automatically.
+
 
 <!-- skillex:start -->
 ## Skillex
@@ -20,7 +28,7 @@ If the `skillex` MCP server is connected, use it directly:
 
 ### CLI (fallback)
 
-If MCP is not available, query skills via the command line:
+If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:
 
 ```
   skillex query --search "<concepts>"

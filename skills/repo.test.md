@@ -13,5 +13,6 @@ Success criteria:
 
 Prompt: The skillex command is not installed on PATH. How do I use the repository's implementation while developing it?
 Success criteria:
-  - Uses go run ./cmd/skillex as the source fallback
+  - Uses make dev-binary to build the local development binary
+  - Uses .skillex/bin/skillex rather than a globally installed release
   - Keeps the normal query-then-read retrieval sequence

@@ -22,8 +22,12 @@ Requirements:
 Install dependencies and build locally:
 
 ```bash
-make build
+make dev-binary  # builds .skillex/bin/skillex from this checkout
 ```
+
+Run `make dev-binary` after changing Go source. Use
+`./.skillex/bin/skillex` for local CLI work (`.exe` on Windows); do not rely on a global install
+when developing this repository.
 
 ## Verification
 
