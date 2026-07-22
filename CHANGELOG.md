@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.8.2]
+
+- **Release:** upload Go release assets before npm packaging clears the shared `dist/` directory.
+
 ## [0.8.1]
 
 - **Release:** grant the provenance-attestation action the required `attestations: write` permission.

@@ -132,12 +132,6 @@ jobs:
         with:
           subject-path: 'dist/skillex_*.tar.gz,dist/skillex_*.zip'
 
-      - name: Sync npm package versions
-        run: node scripts/set-npm-version.mjs "${{ steps.release_version.outputs.version }}"
-
-      - name: Build npm tarballs
-        run: VERSION=${{ steps.release_version.outputs.version }} PACKAGE_VERSION=${{ steps.release_version.outputs.version }} make npm-pack
-
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -149,6 +143,12 @@ jobs:
             dist/*.bundle
             dist/sbom.spdx.json
           if-no-files-found: error
+
+      - name: Sync npm package versions
+        run: node scripts/set-npm-version.mjs "${{ steps.release_version.outputs.version }}"
+
+      - name: Build npm tarballs
+        run: VERSION=${{ steps.release_version.outputs.version }} PACKAGE_VERSION=${{ steps.release_version.outputs.version }} make npm-pack
 
       - name: Upload npm tarballs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
