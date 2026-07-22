@@ -12,6 +12,10 @@ import (
 
 func queryResults(t *testing.T, dir string, args ...string) []helpers.SkillSummary {
 	t.Helper()
+	// Inventory assertions intentionally inspect every fixture result. Production
+	// discovery remains bounded by its default limit; dedicated progressive tests
+	// cover that behavior.
+	args = append(args, "--limit", "20")
 	resp, _ := helpers.RunQueryJSON(t, dir, append([]string{"query"}, args...)...)
 	if resp.Type != "results" {
 		t.Fatalf("expected response type 'results', got %q", resp.Type)

@@ -18,8 +18,8 @@ func newMCPCmd() *cobra.Command {
 		Long: `Start the skillex MCP server using stdio transport.
 
 The MCP server exposes:
-  - Resources: each skill as a discoverable MCP resource
-  - Tool: skillex_query for structured skill queries
+  - Resources: bounded skill summaries and section tables of contents
+  - Tools: skillex_query for discovery and skillex_read for bounded selected content
 
 Configure in your agent harness:
 

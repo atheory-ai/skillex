@@ -172,7 +172,8 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 3. Ask the agent a question that should trigger a skillex query (e.g., "how do I use the @test/ui components?").
    - Does the agent call skillex_query?
-   - Is the returned context relevant?
+   - Does it receive bounded summaries, then narrow or select a skill before reading content?
+   - Is the returned context relevant and proportionate to the question?
    - Does the agent use the skill content effectively in its response?
 
 4. Ask a question that crosses visibility boundaries (e.g., ask about internal architecture while working in a consumer package).
@@ -212,7 +213,7 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 
 3. Ask follow-up questions requiring different query parameters.
    - Does the agent vary its queries (different topics, tags, paths)?
-   - Does it use --format summary to decide what to load, then --format content?
+   - Does it use discovery summaries to decide what to load, then `skillex read --ref` for one skill or section?
 
 **What to look for:**
 - Whether the AGENTS.md instructions are sufficient for the agent to self-direct.

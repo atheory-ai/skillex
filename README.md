@@ -202,7 +202,7 @@ skillex refresh
 ### Query skills
 
 ```bash
-# All skills for a file path
+# Discover applicable skills for a file path (bounded summaries)
 skillex query --path packages/app-a/src/auth.ts
 
 # By topic
@@ -217,8 +217,8 @@ skillex query --package @acme/foo
 # Compound query — intersection of all filters
 skillex query --path packages/app-a/** --topic auth --tags v2
 
-# Full content, ready to pipe to an agent
-skillex query --path packages/app-a/** --format content
+# Read only a selected skill or section returned by discovery
+skillex read --ref skill:... --section authentication --max-bytes 24576
 ```
 
 ---
@@ -525,7 +525,10 @@ Parameters:
   tags    string    Comma-separated tag filters
   package string    Package name filter
   search  string    Keyword search over skill name and description (space/comma tokens, OR)
-  format  string    "content" or "summary" (default: summary when search is set, else content)
+  limit   number    Maximum discovery summaries (default 8, max 20)
+  cursor  string    Continuation cursor for a broad discovery result
+
+Use `skillex_read` with a selected result `ref` and optional section id for bounded content.
 ```
 
 **Resources**

@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.8.0]
+
+- **Retrieval:** query results now default to bounded discovery summaries with match counts, cursors, section metadata, and narrowing guidance.
+- **Retrieval:** added bounded `skillex read` / `skillex_read` selected skill and section retrieval.
+- **Search:** added ranked full-text discovery across skill metadata, headings, and bodies.
+
 ## [0.7.2]
 
 ### Fixed

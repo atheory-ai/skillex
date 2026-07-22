@@ -568,21 +568,16 @@ func TestGolden_Results_FormatSummaryNoContent(t *testing.T) {
 	}
 }
 
-func TestGolden_Results_FormatContentHasContent(t *testing.T) {
+func TestGolden_Results_LegacyContentFormatStaysSummaryOnly(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 	helpers.Run(t, dir, "refresh")
 
 	resp, _ := helpers.RunQueryJSON(t, dir, "query", "--topic", "migration", "--format", "content")
 
-	hasContent := false
 	for _, s := range resp.Results {
 		if s.Content != "" {
-			hasContent = true
-			break
+			t.Errorf("queries must stay summary-only; %s contained content", s.Path)
 		}
-	}
-	if !hasContent {
-		t.Error("format=content response should include skill content")
 	}
 }
 

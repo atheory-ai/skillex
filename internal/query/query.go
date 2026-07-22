@@ -1,7 +1,10 @@
 package query
 
 import (
+	"encoding/base64"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/registry"
@@ -35,10 +38,15 @@ const (
 
 // Response is the unified return type for all query executions.
 type Response struct {
-	Type       ResponseType `json:"type"`
-	Results    []Result     `json:"results,omitempty"`
-	Vocabulary *Vocabulary  `json:"vocabulary,omitempty"`
-	Query      *Echo        `json:"query,omitempty"`
+	Type          ResponseType `json:"type"`
+	Results       []Result     `json:"results,omitempty"`
+	Vocabulary    *Vocabulary  `json:"vocabulary,omitempty"`
+	Query         *Echo        `json:"query,omitempty"`
+	MatchCount    int          `json:"match_count,omitempty"`
+	ReturnedCount int          `json:"returned_count,omitempty"`
+	TooBroad      bool         `json:"too_broad,omitempty"`
+	NextCursor    string       `json:"next_cursor,omitempty"`
+	NarrowWith    *NarrowWith  `json:"narrow_with,omitempty"`
 }
 
 // Echo captures the filters that were searched, included in no_match responses.
@@ -80,17 +88,56 @@ type PackageEntry struct {
 
 // Result is a single skill query result.
 type Result struct {
-	Path           string   `json:"path"`
-	Name           string   `json:"name,omitempty"`
-	Description    string   `json:"description,omitempty"`
-	PackageName    string   `json:"package,omitempty"`
-	PackageVersion string   `json:"version,omitempty"`
-	Visibility     string   `json:"visibility"`
-	SourceType     string   `json:"source_type"`
-	Topics         []string `json:"topics,omitempty"`
-	Tags           []string `json:"tags,omitempty"`
-	Scopes         []string `json:"scopes,omitempty"`
-	Content        string   `json:"content,omitempty"`
+	Ref            string    `json:"ref"`
+	Path           string    `json:"path"`
+	Name           string    `json:"name,omitempty"`
+	Description    string    `json:"description,omitempty"`
+	PackageName    string    `json:"package,omitempty"`
+	PackageVersion string    `json:"version,omitempty"`
+	Visibility     string    `json:"visibility"`
+	SourceType     string    `json:"source_type"`
+	Topics         []string  `json:"topics,omitempty"`
+	Tags           []string  `json:"tags,omitempty"`
+	Scopes         []string  `json:"scopes,omitempty"`
+	ContentBytes   int       `json:"content_bytes"`
+	Score          float64   `json:"score,omitempty"`
+	Sections       []Section `json:"sections,omitempty"`
+	MatchedIn      []string  `json:"matched_in,omitempty"`
+	Excerpt        string    `json:"excerpt,omitempty"`
+	Content        string    `json:"content,omitempty"`
+}
+
+// Section is a compact, stable address for a Markdown section.
+type Section struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Level int    `json:"level"`
+}
+
+// Facet gives an agent a candidate-scoped way to narrow a broad query.
+type Facet struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+// NarrowWith contains only values represented by the current candidate set.
+type NarrowWith struct {
+	Topics   []Facet `json:"topics,omitempty"`
+	Tags     []Facet `json:"tags,omitempty"`
+	Packages []Facet `json:"packages,omitempty"`
+	Paths    []Facet `json:"paths,omitempty"`
+	Advice   string  `json:"advice,omitempty"`
+}
+
+// ReadResponse is the bounded second stage of progressive skill retrieval.
+type ReadResponse struct {
+	Ref          string   `json:"ref"`
+	Path         string   `json:"path"`
+	Section      *Section `json:"section,omitempty"`
+	Content      string   `json:"content"`
+	ContentBytes int      `json:"content_bytes"`
+	Truncated    bool     `json:"truncated,omitempty"`
+	NextAction   string   `json:"next_action,omitempty"`
 }
 
 // Params holds query parameters.
@@ -107,8 +154,13 @@ type Params struct {
 	// Whitespace/comma-separated tokens are each matched independently (OR).
 	Search string
 	// Format controls output detail for result responses.
-	// FormatDefault auto-selects: summary when Search is set, content otherwise.
+	// FormatDefault always selects summary. Content is available only through an
+	// explicit read operation; this keeps discovery bounded and useful.
 	Format Format
+	// Limit bounds discovery results. Zero selects the safe default.
+	Limit int
+	// Cursor resumes a deterministic discovery result page.
+	Cursor string
 }
 
 // hasFilters reports whether any filter dimension is set.
@@ -165,13 +217,13 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 			// Intersect search results with the already-filtered classic set.
 			// ATH-172: a search that matches nothing in an otherwise valid set
 			// must return no_match, not all the classic results.
-			searchIDs := make(map[int64]bool, len(searchSkills))
-			for _, s := range searchSkills {
-				searchIDs[s.ID] = true
+			classicIDs := make(map[int64]bool, len(skills))
+			for _, s := range skills {
+				classicIDs[s.ID] = true
 			}
 			var intersected []registry.Skill
-			for _, s := range skills {
-				if searchIDs[s.ID] {
+			for _, s := range searchSkills {
+				if classicIDs[s.ID] {
 					intersected = append(intersected, s)
 				}
 			}
@@ -195,23 +247,38 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		return e.noMatchResponse(p)
 	}
 
-	// Determine effective format:
-	// FormatDefault → summary when search is active (discovery mode), content otherwise.
-	effectiveFormat := p.Format
-	if effectiveFormat == FormatDefault {
-		if p.Search != "" {
-			effectiveFormat = FormatSummary
-		} else {
-			effectiveFormat = FormatContent
-		}
+	// Queries are discovery-only. Content is available exclusively through Read,
+	// which requires an explicit skill ref and enforces a byte budget.
+	effectiveFormat := FormatSummary
+
+	// Pagination is only meaningful with a stable order.
+	if p.Search == "" {
+		sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
+	}
+	matchCount := len(skills)
+	start := decodeCursor(p.Cursor)
+	if start > matchCount {
+		start = matchCount
+	}
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 8
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	end := start + limit
+	if end > matchCount {
+		end = matchCount
 	}
 
-	results := make([]Result, 0, len(skills))
-	for _, s := range skills {
+	results := make([]Result, 0, end-start)
+	for _, s := range skills[start:end] {
 		r := Result{
+			Ref:            skillRef(s.Path),
 			Path:           s.Path,
-			Name:           s.Name,
-			Description:    s.Description,
+			Name:           compactText(s.Name, 200),
+			Description:    compactText(s.Description, 600),
 			PackageName:    s.PackageName,
 			PackageVersion: s.PackageVersion,
 			Visibility:     s.Visibility,
@@ -219,6 +286,12 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 			Topics:         s.Topics,
 			Tags:           s.Tags,
 			Scopes:         s.Scopes,
+			ContentBytes:   len([]byte(s.Content)),
+			Score:          s.Score,
+			Sections:       Sections(s.Content),
+		}
+		if p.Search != "" {
+			r.MatchedIn, r.Excerpt = matchDetails(s, p.Search)
 		}
 		if effectiveFormat == FormatContent {
 			r.Content = s.Content
@@ -226,10 +299,199 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		results = append(results, r)
 	}
 
-	return &Response{
-		Type:    ResponseTypeResults,
-		Results: results,
-	}, nil
+	resp := &Response{Type: ResponseTypeResults, Results: results, MatchCount: matchCount, ReturnedCount: len(results)}
+	if end < matchCount {
+		resp.NextCursor = encodeCursor(end)
+	}
+	resp.TooBroad = matchCount > limit
+	if resp.TooBroad {
+		resp.NarrowWith = buildNarrowWith(skills)
+	}
+	return resp, nil
+}
+
+func matchDetails(s registry.Skill, search string) ([]string, string) {
+	tokens := strings.FieldsFunc(strings.ToLower(search), func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == ',' })
+	contains := func(value string) bool {
+		value = strings.ToLower(value)
+		for _, t := range tokens {
+			if strings.Contains(value, t) {
+				return true
+			}
+		}
+		return false
+	}
+	var fields []string
+	if contains(s.Name) {
+		fields = append(fields, "name")
+	}
+	if contains(s.Description) {
+		fields = append(fields, "description")
+	}
+	if contains(headings(s.Content)) {
+		fields = append(fields, "heading")
+	}
+	if contains(s.Content) {
+		fields = append(fields, "body")
+	}
+	for _, t := range tokens {
+		idx := strings.Index(strings.ToLower(s.Content), t)
+		if idx >= 0 {
+			start := idx - 120
+			if start < 0 {
+				start = 0
+			}
+			end := idx + 220
+			if end > len(s.Content) {
+				end = len(s.Content)
+			}
+			excerpt := strings.TrimSpace(s.Content[start:end])
+			if start > 0 {
+				excerpt = "…" + excerpt
+			}
+			if end < len(s.Content) {
+				excerpt += "…"
+			}
+			return fields, excerpt
+		}
+	}
+	return fields, ""
+}
+
+func headings(content string) string {
+	var b strings.Builder
+	for _, s := range Sections(content) {
+		b.WriteString(s.Title)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// compactText puts a fixed upper bound on discovery metadata. This keeps a
+// malformed or unusually verbose frontmatter field from defeating discovery
+// response budgeting.
+func compactText(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	end := maxLen
+	for end > 0 && (s[end]&0xc0) == 0x80 {
+		end--
+	}
+	return s[:end] + "…"
+}
+
+func skillRef(path string) string {
+	return "skill:" + base64.RawURLEncoding.EncodeToString([]byte(path))
+}
+
+// PathFromRef resolves a stable skill reference without exposing database ids.
+func PathFromRef(ref string) (string, bool) {
+	if !strings.HasPrefix(ref, "skill:") {
+		return "", false
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(ref, "skill:"))
+	return string(b), err == nil && len(b) > 0
+}
+
+// Read returns one selected skill, optionally one selected section. Content is
+// never returned above maxBytes; callers can select a section to narrow it.
+func (e *Engine) Read(ref, sectionID string, maxBytes int) (*ReadResponse, error) {
+	path, ok := PathFromRef(ref)
+	if !ok {
+		return nil, fmt.Errorf("invalid skill ref")
+	}
+	s, err := e.reg.GetSkillByPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, fmt.Errorf("skill not found")
+	}
+	content := s.Content
+	var selected *Section
+	if sectionID != "" {
+		section, found := SelectSection(content, sectionID)
+		if !found {
+			return nil, fmt.Errorf("section %q not found", sectionID)
+		}
+		content = section
+		for _, h := range Sections(s.Content) {
+			if h.ID == sectionID {
+				hCopy := h
+				selected = &hCopy
+				break
+			}
+		}
+	}
+	if maxBytes <= 0 {
+		maxBytes = 24 * 1024
+	}
+	if maxBytes > 64*1024 {
+		maxBytes = 64 * 1024
+	}
+	fullBytes := len([]byte(content))
+	resp := &ReadResponse{Ref: ref, Path: s.Path, Section: selected, ContentBytes: fullBytes}
+	if fullBytes > maxBytes {
+		// UTF-8-safe enough for Markdown display: backing up to a rune boundary.
+		cut := maxBytes
+		for cut > 0 && (content[cut]&0xc0) == 0x80 {
+			cut--
+		}
+		resp.Content = content[:cut]
+		resp.Truncated = true
+		resp.NextAction = "Select a narrower section or request another bounded read."
+		return resp, nil
+	}
+	resp.Content = content
+	return resp, nil
+}
+
+func encodeCursor(offset int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+}
+func decodeCursor(cursor string) int {
+	b, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(string(b))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func buildNarrowWith(skills []registry.Skill) *NarrowWith {
+	counts := func(values func(registry.Skill) []string) []Facet {
+		m := map[string]int{}
+		for _, s := range skills {
+			for _, v := range values(s) {
+				if v != "" {
+					m[v]++
+				}
+			}
+		}
+		out := make([]Facet, 0, len(m))
+		for v, c := range m {
+			out = append(out, Facet{Value: v, Count: c})
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Count == out[j].Count {
+				return out[i].Value < out[j].Value
+			}
+			return out[i].Count > out[j].Count
+		})
+		if len(out) > 8 {
+			out = out[:8]
+		}
+		return out
+	}
+	return &NarrowWith{
+		Topics: counts(func(s registry.Skill) []string { return s.Topics }), Tags: counts(func(s registry.Skill) []string { return s.Tags }),
+		Packages: counts(func(s registry.Skill) []string { return []string{s.PackageName} }), Paths: counts(func(s registry.Skill) []string { return s.Scopes }),
+		Advice: "This query is broad. Narrow it with a suggested path, topic, tag, package, or more specific search terms before reading content.",
+	}
 }
 
 // vocabularyResponse builds a vocabulary response from all registry skills.
