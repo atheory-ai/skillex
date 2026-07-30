@@ -81,3 +81,17 @@ func TestCLI_HelpText(t *testing.T) {
 		})
 	}
 }
+
+func TestCLI_QueryHelpPromotesProgressiveRetrieval(t *testing.T) {
+	res := helpers.Run(t, t.TempDir(), "query", "--help")
+	if res.ExitCode != 0 {
+		t.Fatalf("query help failed: %s", res.Stderr)
+	}
+	combined := res.Stdout + res.Stderr
+	if !strings.Contains(combined, "skillex read --ref <ref-from-query>") {
+		t.Fatalf("query help must direct agents to selected reads:\n%s", combined)
+	}
+	if strings.Contains(combined, "--format content") {
+		t.Fatalf("query help must not teach bulk content discovery:\n%s", combined)
+	}
+}

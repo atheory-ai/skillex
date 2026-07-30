@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.8.3]
+
+- **Retrieval:** guide agent harnesses through bounded discovery, narrowing, and selected reads instead of bulk skill-content queries.
+- **Refresh:** clarify that registry refreshes follow skill, configuration, or dependency changes rather than every task.
+
 ## [0.8.2]
 
 - **Release:** upload Go release assets before npm packaging clears the shared `dist/` directory.

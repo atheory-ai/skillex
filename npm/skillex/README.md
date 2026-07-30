@@ -63,17 +63,22 @@ skillex query --tags migration,breaking-change
 skillex query --package @acme/foo
 ```
 
-Return full skill content for an agent:
+Use a selected result to read only the guidance needed:
 
 ```bash
-skillex query --path packages/app-a/** --format content
+skillex query --path packages/app-a/src/auth.ts --search "session handling"
+skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
+
+`query` returns bounded discovery summaries. Narrow broad results before reading a
+selected skill or section. `--format content` is retained for backward compatibility,
+but is not the recommended agent workflow.
 
 ## Example workflow
 
 1. Add repo skills in `skills/` and configure scopes in `skillex.json`
-2. Run `skillex refresh` to rebuild `.skillex/index.db`
-3. Let your agent query only the skills relevant to its current task
+2. Run `skillex refresh` after changing skills, configuration, or installed dependencies
+3. Let your agent query, narrow, and read only the skills relevant to its current task
 
 ## Packs
 

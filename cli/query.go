@@ -52,7 +52,8 @@ Examples:
   skillex query --topic error-handling
   skillex query --tags migration,breaking-change
   skillex query --package @acme/foo
-  skillex query --path packages/app-a/** --topic auth --format content`,
+  skillex query --path packages/app-a/src/auth.ts --search "session handling" --limit 8
+  skillex read --ref <ref-from-query> --section <optional-section-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
 			dbPath := filepath.Join(root, ".skillex", "index.db")
