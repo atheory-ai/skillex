@@ -28,6 +28,12 @@ func TestRefresh_AgentsMdUpdated(t *testing.T) {
 	if !strings.Contains(contentStr, "skillex") {
 		t.Error("AGENTS.md should contain skillex section")
 	}
+	if !strings.Contains(contentStr, "skillex_read") || !strings.Contains(contentStr, "too_broad") {
+		t.Errorf("AGENTS.md must describe progressive retrieval:\n%s", contentStr)
+	}
+	if strings.Contains(contentStr, "--format content") {
+		t.Errorf("AGENTS.md must not teach bulk content discovery:\n%s", contentStr)
+	}
 }
 
 func TestRefresh_DoesNotCreateAgentBridgesWithoutMarkers(t *testing.T) {

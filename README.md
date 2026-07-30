@@ -565,6 +565,9 @@ skillex refresh --check           # Fail if registry is stale (CI)
 skillex refresh --dry-run         # Preview without writing
 ```
 
+Refresh after changing skills, Skillex configuration, or installed dependencies. It is
+not a per-task setup step.
+
 ### `skillex query`
 
 ```bash
@@ -574,9 +577,13 @@ skillex query --topic <topic>
 skillex query --tags <tag1,tag2>
 skillex query --package <name>
 skillex query --search "auth" --topic security
-skillex query --path <glob> --topic <topic> --format content
-skillex query --format summary --json
+skillex query --path <filepath> --search "<task intent>" --limit 8
+skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
+
+`query` is discovery: it returns bounded summaries. Narrow a broad result, then use
+`read` for the selected skill or section. `--format content` is retained only for
+backward compatibility; do not use it for agent discovery.
 
 ### `skillex test validate`
 
