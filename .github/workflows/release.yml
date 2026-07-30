@@ -27,7 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.release_version.outputs.version }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -55,14 +55,14 @@ jobs:
           fi
           echo "version=$tag_version" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v6.0.0
         with:
           go-version-file: go.mod
           # Cache disabled in privileged release flows — a poisoned cache
           # could inject artifacts into the signing path. CI keeps cache: true.
           cache: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6.0.0
         with:
           node-version: 24
 
@@ -92,7 +92,7 @@ jobs:
         run: make test-acceptance
 
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
@@ -168,7 +168,7 @@ jobs:
         with:
           name: skillex-npm-tarballs
           path: dist
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -210,18 +210,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify_release, publish_release]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v6.0.0
         with:
           go-version-file: go.mod
           # Cache disabled in privileged release flows — a poisoned cache
           # could inject artifacts into the signing path. CI keeps cache: true.
           cache: false
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a  # v6.5.0
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v6.5.0
         with:
           install-only: true
           version: "~> v2"
