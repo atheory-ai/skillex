@@ -822,6 +822,12 @@ The CLI validates structure. The agent validates behavior.
 | MCP server | Native integration for MCP-capable harnesses |
 | AGENTS.md | Last resort for agents that can't run MCP or shell commands |
 
+### Design proposals
+
+- [MCP capability broker](docs/mcp-capability-broker/README.md) — a proposed
+  architecture in which hosts register only Skillex, while Skillex discovers,
+  selects, authenticates to, and invokes downstream MCP servers dynamically.
+
 ---
 
 ## Building from source
