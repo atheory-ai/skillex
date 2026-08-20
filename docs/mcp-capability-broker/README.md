@@ -22,6 +22,8 @@ Documents:
 - [Technical design](./technical-design.md) defines proposed schemas, Go
   interfaces, query and invocation contracts, authentication providers,
   storage, testing, migrations, and implementation phases.
+- [Implementation status](./implementation-status.md) records milestone progress,
+  compatibility findings, and accepted or pending architecture decisions.
 
 These documents are a design proposal, not a statement that the described
 functionality already exists.
