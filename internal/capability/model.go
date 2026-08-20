@@ -11,7 +11,7 @@ import (
 )
 
 // CapabilityKind identifies a downstream MCP capability family.
-type CapabilityKind string
+type CapabilityKind string //nolint:revive // Explicit domain name avoids ambiguity at connector boundaries.
 
 const (
 	CapabilityTool             CapabilityKind = "tool"

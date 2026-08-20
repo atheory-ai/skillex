@@ -8,7 +8,53 @@ import (
 	"time"
 
 	"github.com/atheory-ai/skillex/internal/capability"
+	"github.com/atheory-ai/skillex/internal/config"
 )
+
+func TestNewConfiguredRequiresExplicitMCPOptIn(t *testing.T) {
+	for _, cfg := range []*config.Config{
+		nil,
+		config.DefaultConfig(),
+		{Version: config.MCPConfigVersion},
+		{Version: config.MCPConfigVersion, MCP: &config.MCPConfig{Enabled: false}},
+	} {
+		created, err := NewConfigured(cfg, nil, nil, nil, nil)
+		if !errors.Is(err, ErrMCPDisabled) {
+			t.Fatalf("NewConfigured(%#v) error = %v, want %v", cfg, err, ErrMCPDisabled)
+		}
+		if created != nil {
+			t.Fatalf("NewConfigured(%#v) returned a broker while disabled", cfg)
+		}
+	}
+}
+
+func TestNewConfiguredAllowsValidatedOptIn(t *testing.T) {
+	cfg := &config.Config{
+		Version: config.MCPConfigVersion,
+		MCP: &config.MCPConfig{
+			Enabled: true,
+			Bindings: []config.MCPBinding{{
+				Server:  "io.example/issues",
+				Version: "1.0.0",
+				Scope:   "**",
+			}},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := capability.NewReferenceSigner([]byte("0123456789abcdef0123456789abcdef"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := NewConfigured(cfg, &fakeCatalog{}, signer, allowPolicy{}, &fakeConnectorFactory{})
+	if err != nil {
+		t.Fatalf("NewConfigured(enabled) error = %v", err)
+	}
+	if created == nil {
+		t.Fatal("NewConfigured(enabled) returned nil broker")
+	}
+}
 
 func TestBrokerQueriesOfflineAndInvokesOnlySelectedServer(t *testing.T) {
 	ctx := context.Background()
@@ -168,9 +214,9 @@ type fakeConnectorFactory struct {
 	opened []string
 }
 
-func (f *fakeConnectorFactory) Open(_ context.Context, server capability.ServerVersion) (Connector, error) {
-	f.opened = append(f.opened, server.Identity.CanonicalName)
-	return &fakeConnector{server: server.Identity.CanonicalName}, nil
+func (f *fakeConnectorFactory) Open(_ context.Context, selected capability.Capability) (Connector, error) {
+	f.opened = append(f.opened, selected.Server.Identity.CanonicalName)
+	return &fakeConnector{server: selected.Server.Identity.CanonicalName}, nil
 }
 
 type fakeConnector struct {

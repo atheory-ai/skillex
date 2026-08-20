@@ -95,6 +95,9 @@ copy_golden multi-version-local
 # Fixture F: Go module with local replace dependency and pack fixtures
 copy_golden go-basic
 
+# Fixture G: deterministic downstream MCP capability broker corpus
+copy_golden mcp-capability-broker
+
 echo "Standard fixtures ready in $FIXTURES_DIR"
 
 # ── performance fixture ────────────────────────────────────────────────────────

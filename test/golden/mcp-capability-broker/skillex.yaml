@@ -1,0 +1,14 @@
+Version: 5
+Rules:
+  - Scope: "**"
+    Skills: []
+MCP:
+  Enabled: true
+  Bindings:
+    - Server: io.example/weather
+      Version: 1.0.0
+      Scope: "**"
+    - Server: io.example/issues
+      Version: 1.0.0
+      AuthProfile: issues-test
+      Scope: "packages/app/**"

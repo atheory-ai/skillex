@@ -518,6 +518,28 @@ existing `results` skill array.
 
 ## Configuration requirements
 
+### Project opt-in
+
+The implemented project-level boundary uses configuration version 5 and is
+default-off. Version 4 remains skills-only, as does version 5 without the
+explicit enabled flag:
+
+```yaml
+Version: 5
+MCP:
+  Enabled: true
+  Bindings:
+    - Server: io.github.example/postgres-mcp
+      Version: 2.1.0
+      AuthProfile: postgres-development
+      Scope: "services/api/**"
+```
+
+The repository may select only the name of a separately trusted auth profile.
+It cannot define credential sources. This configuration gate is implemented;
+catalog persistence, profile resolution, and public host-facing capability
+tools remain rollout work tracked in the implementation status.
+
 ### Pack declaration
 
 The proposed pack syntax is illustrative and requires versioned schema review:

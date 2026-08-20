@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/atheory-ai/skillex/internal/capability"
+	"github.com/atheory-ai/skillex/internal/config"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 	ErrPolicyDenied       = errors.New("capability invocation denied by policy")
 	ErrApprovalRequired   = errors.New("capability invocation requires approval")
 	ErrCapabilityNotReady = errors.New("capability is not ready")
+	ErrMCPDisabled        = errors.New("MCP capability brokering is not enabled for this project")
 )
 
 // Query describes the context and intent used to retrieve capabilities.
@@ -78,7 +80,7 @@ type Connector interface {
 // ConnectorFactory opens the configured downstream transport only after a
 // reference, context, schema, readiness, and policy have been validated.
 type ConnectorFactory interface {
-	Open(ctx context.Context, server capability.ServerVersion) (Connector, error)
+	Open(ctx context.Context, selected capability.Capability) (Connector, error)
 }
 
 // CallResult attributes a downstream result to the real server and tool.
@@ -105,6 +107,19 @@ func New(catalog Catalog, signer *capability.ReferenceSigner, policy Policy, con
 		return nil, errors.New("broker catalog, signer, policy, and connector factory are required")
 	}
 	return &Broker{catalog: catalog, signer: signer, policy: policy, connectors: connectors}, nil
+}
+
+// NewConfigured constructs the project-facing broker only after configuration
+// has explicitly enabled MCP capability brokering. Low-level tests and adapters
+// may use New directly; application entry points must use this gate.
+func NewConfigured(cfg *config.Config, catalog Catalog, signer *capability.ReferenceSigner, policy Policy, connectors ConnectorFactory) (*Broker, error) {
+	if cfg == nil || !cfg.MCPEnabled() {
+		return nil, ErrMCPDisabled
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid MCP configuration: %w", err)
+	}
+	return New(catalog, signer, policy, connectors)
 }
 
 // Query searches the offline catalog and issues short-lived references. It does
@@ -199,7 +214,7 @@ func (b *Broker) Call(ctx context.Context, ref string, arguments map[string]any,
 		return CallResult{}, fmt.Errorf("unknown policy effect %q", effect)
 	}
 
-	connector, err := b.connectors.Open(ctx, selected.Server)
+	connector, err := b.connectors.Open(ctx, selected)
 	if err != nil {
 		return CallResult{}, fmt.Errorf("opening downstream MCP server %s: %w", selected.Server.Identity.CanonicalName, err)
 	}

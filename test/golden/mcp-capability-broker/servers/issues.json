@@ -1,0 +1,21 @@
+{
+  "name": "issues-fixture-server",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "issues.create",
+      "title": "Create issue",
+      "description": "Create an issue in the configured tracker.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
+}

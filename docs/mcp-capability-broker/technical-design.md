@@ -1,8 +1,8 @@
 # Technical Design: Contextual MCP Capability Broker
 
-Status: proposed
+Status: implementation in progress
 
-Last updated: 2026-08-19
+Last updated: 2026-08-20
 
 ## 1. Purpose
 
@@ -252,10 +252,11 @@ treated as a permanent property of a capability record.
 
 ### 5.1 Versioning
 
-The current root configuration version is 4. Adding MCP fields requires a new
-version and explicit migration/compatibility policy. Packs also require a
-versioned schema change coordinated with `atheory-ai/skillex-packs` before
-canonical content is published.
+Root configuration version 5 now provides the explicit project-level MCP gate.
+Version 4 remains skills-only. Version 5 also remains skills-only when `MCP` is
+absent or `MCP.Enabled` is false. Packs still require a separately versioned
+schema change coordinated with `atheory-ai/skillex-packs` before canonical
+content is published.
 
 Unknown fields should be rejected in the new security-sensitive configuration
 sections. Silent typos in service identity or secret mapping are unsafe.
@@ -355,20 +356,27 @@ service-policy:
 The parser must preserve which layer supplied every value. Enterprise-managed
 configuration may make selected fields non-overridable.
 
-### 5.4 Project profile selection
+### 5.4 Project opt-in and profile selection
 
 A repository may request an existing trusted profile only if policy allows:
 
 ```yaml
-MCPBindings:
-  - Server: io.github.github/github-mcp-server
-    AuthProfile: github-work
-    Scope: "**"
+Version: 5
+MCP:
+  Enabled: true
+  Bindings:
+    - Server: io.github.github/github-mcp-server
+      Version: 1.8.0
+      AuthProfile: github-work
+      Scope: "**"
 ```
 
 The user sees and approves the first repository-to-profile association unless an
 enterprise policy preauthorizes it. Repository configuration cannot define or
-modify `github-work`.
+modify `github-work`. `Server`, exact `Version`, and `Scope` are required. An
+auth profile is optional for servers that support unauthenticated operation.
+Bindings are invalid unless `Enabled` is true, and version 5 rejects unknown
+fields.
 
 ## 6. Registry schema
 
@@ -1362,8 +1370,10 @@ query is not useful unless bounded results and narrowing remain relevant.
 ### 22.2 Configuration
 
 - Existing Version 4 configurations continue to work with no MCP capability
-  behavior.
-- New MCP root fields require an explicit new configuration version.
+  behavior and cannot contain MCP fields.
+- Version 5 is required for MCP root fields and still defaults to skills-only.
+- Broker construction requires `MCP.Enabled: true` plus at least one exact
+  server-version binding.
 - Existing packs with only skills remain valid.
 - Packs using `mcp-servers` require the new pack schema/version.
 

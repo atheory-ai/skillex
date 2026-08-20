@@ -50,6 +50,23 @@ func BuildSkilexBinary() error {
 	return nil
 }
 
+// BuildFakeMCPServer builds the strict MCP 2026-07-28 stdio test server and
+// returns its absolute path. The binary is scoped to the current test.
+func BuildFakeMCPServer(t *testing.T) string {
+	t.Helper()
+	name := "fake-mcp-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), name)
+	cmd := exec.Command("go", "build", "-o", binary, "./test/fakes/mcpserver")
+	cmd.Dir = repoRoot()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building fake MCP server: %v\n%s", err, output)
+	}
+	return binary
+}
+
 // Run executes skillex in the given directory and returns stdout, stderr, and exit code.
 // Never fails the test — the caller asserts on the results.
 func Run(t *testing.T, dir string, args ...string) Result {

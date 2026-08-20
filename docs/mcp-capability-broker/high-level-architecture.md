@@ -526,6 +526,11 @@ flowchart LR
 The project may select a trusted profile only under policy. It cannot construct a
 new path from an arbitrary secret to an arbitrary server.
 
+Project activation is also an explicit boundary: version 4 configuration is
+skills-only, and version 5 constructs the broker only when `MCP.Enabled` is true
+and at least one exact server-version binding is present. The gate is evaluated
+before catalog, credential, policy, or connector dependencies are initialized.
+
 ## Deployment modes
 
 ### Local open source

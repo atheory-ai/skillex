@@ -10,13 +10,29 @@ import (
 )
 
 type doctorReport struct {
-	ConfigOK   bool     `json:"config_ok"`
-	RegistryOK bool     `json:"registry_ok"`
-	SkillCount int      `json:"skill_count"`
-	Topics     []string `json:"topics"`
-	Tags       []string `json:"tags"`
-	Errors     []string `json:"errors"`
-	Warnings   []string `json:"warnings"`
+	ConfigOK    bool     `json:"config_ok"`
+	RegistryOK  bool     `json:"registry_ok"`
+	SkillCount  int      `json:"skill_count"`
+	MCPEnabled  bool     `json:"mcp_enabled"`
+	MCPBindings int      `json:"mcp_bindings"`
+	Topics      []string `json:"topics"`
+	Tags        []string `json:"tags"`
+	Errors      []string `json:"errors"`
+	Warnings    []string `json:"warnings"`
+}
+
+func TestDoctor_ReportsExplicitMCPOptIn(t *testing.T) {
+	dir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+
+	var report doctorReport
+	helpers.RunJSON(t, dir, &report, "doctor")
+
+	if !report.ConfigOK {
+		t.Fatal("expected version 5 MCP configuration to be valid")
+	}
+	if !report.MCPEnabled || report.MCPBindings != 2 {
+		t.Fatalf("MCP status = enabled %v, bindings %d; want enabled with 2 bindings", report.MCPEnabled, report.MCPBindings)
+	}
 }
 
 func TestDoctor_MissingTestCoverage(t *testing.T) {

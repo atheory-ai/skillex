@@ -1,0 +1,56 @@
+{
+  "capabilities": [
+    {
+      "server": {
+        "identity": {
+          "canonical_name": "io.example/weather",
+          "publisher": "example"
+        },
+        "version": "1.0.0",
+        "package_digest": "sha256:weather-fixture",
+        "status": "active"
+      },
+      "kind": "tool",
+      "name": "weather.lookup",
+      "title": "Weather lookup",
+      "description": "Look up weather for a location.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": ["location"],
+        "additionalProperties": false
+      },
+      "availability": "ready"
+    },
+    {
+      "server": {
+        "identity": {
+          "canonical_name": "io.example/issues",
+          "publisher": "example"
+        },
+        "version": "1.0.0",
+        "package_digest": "sha256:issues-fixture",
+        "status": "active"
+      },
+      "kind": "tool",
+      "name": "issues.create",
+      "title": "Create issue",
+      "description": "Create an issue in the configured tracker.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      },
+      "availability": "ready"
+    }
+  ]
+}

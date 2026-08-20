@@ -1,0 +1,28 @@
+[
+  {
+    "ref": "<capability-ref>",
+    "server": {
+      "canonical_name": "io.example/weather",
+      "publisher": "example"
+    },
+    "version": "1.0.0",
+    "kind": "tool",
+    "name": "weather.lookup",
+    "title": "Weather lookup",
+    "description": "Look up weather for a location.",
+    "availability": "ready"
+  },
+  {
+    "ref": "<capability-ref>",
+    "server": {
+      "canonical_name": "io.example/issues",
+      "publisher": "example"
+    },
+    "version": "1.0.0",
+    "kind": "tool",
+    "name": "issues.create",
+    "title": "Create issue",
+    "description": "Create an issue in the configured tracker.",
+    "availability": "ready"
+  }
+]

@@ -66,6 +66,21 @@ func CopyFixture(t *testing.T, name string) string {
 	return dst
 }
 
+// CopyGoldenFixture creates a temporary copy directly from the immutable golden
+// corpus. It is useful for acceptance fixtures that require no dependency setup.
+func CopyGoldenFixture(t *testing.T, name string) string {
+	t.Helper()
+	src := GoldenPath(name)
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("golden fixture %q not found at %s", name, src)
+	}
+	dst := t.TempDir()
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copying golden fixture %q: %v", name, err)
+	}
+	return dst
+}
+
 // copyDir recursively copies src to dst, preserving symlinks.
 func copyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {

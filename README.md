@@ -93,7 +93,7 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 - **Detector-driven activation** — built-in and pack-defined detectors activate skills from project facts such as files and dependencies.
 - **Polyglot resolver model** — Node package support now shares infrastructure with non-Node resolvers; Go modules are the first non-Node resolver.
 - **Instant retrieval** — SQLite index with structured queries plus keyword search over skill `name` and `description`. No document browsing, no embeddings.
-- **MCP native** — first-class Model Context Protocol server. Agents with MCP support get typed tool calls and resource discovery.
+- **MCP-native skill retrieval** — first-class Model Context Protocol server. Agents with MCP support get typed skill query/read calls and resource discovery.
 - **CLI fallback** — every agent harness can call the CLI. Works in CI, scripts, and terminals.
 - **AGENTS.md manifest** — auto-generated fallback for agents that can't run MCP or shell commands.
 - **Testable** — every skill can have a co-located `.test.md` file with structured validation scenarios.
@@ -262,6 +262,41 @@ skillex init --yaml
 | `Scope` | Glob pattern. Skills in this rule apply when the working path matches. |
 | `Skills` | Repo-local skill files to attach to this scope. |
 | `DependencyBoundary` | Path to a `package.json`. The scanner reads its dependencies and links any that export skills. |
+
+### Skills-only and MCP broker opt-in
+
+Existing version 4 configuration remains skills-only. It does not initialize a
+downstream MCP catalog, credentials, policy, or connectors, and existing users
+do not need to opt out of anything.
+
+The capability-broker development work introduces configuration version 5. It
+also remains skills-only unless `MCP.Enabled` is explicitly `true`:
+
+```yaml
+Version: 5
+Rules:
+  - Scope: "**"
+    Skills:
+      - skills/repo.md
+MCP:
+  Enabled: true
+  Bindings:
+    - Server: io.example/issues
+      Version: 1.0.0
+      AuthProfile: issues-work
+      Scope: "packages/app/**"
+```
+
+Each binding selects an exact canonical server version and project scope.
+`AuthProfile` is only the name of a separately trusted user or enterprise
+profile; repository configuration cannot define credentials or secret sources.
+Bindings are rejected unless MCP is explicitly enabled, and unknown version 5
+fields are rejected so security-sensitive typos do not silently pass.
+
+This is currently an experimental construction and compatibility gate for the
+broker implementation. The released `skillex_query` and `skillex_read` surface
+described below remains skill-only until capability catalog persistence and the
+additive host-facing tools are implemented.
 
 ---
 
@@ -489,7 +524,7 @@ skillex test validate --check   # exit non-zero on errors (CI)
 
 ---
 
-## MCP server
+## MCP server for skills
 
 Skillex runs as a Model Context Protocol server, providing native integration for MCP-capable agent harnesses (Cursor, Claude Code, Windsurf, and others).
 
@@ -539,6 +574,21 @@ skillex://skills/{scope}/{package}/{filename}
 ```
 
 Agents discover available resources through the MCP protocol's resource listing — no `AGENTS.md` parsing required.
+
+### Experimental downstream MCP capability broker
+
+The capability-broker implementation keeps the host registration model simple:
+the host registers only Skillex, and Skillex opens a selected downstream server
+on demand. A downstream server is never written into Cursor, VS Code, or another
+host's MCP configuration.
+
+Version 4 projects cannot construct the broker. Version 5 projects must use the
+explicit `MCP.Enabled` gate shown in the configuration section. The current
+milestone includes the protocol-neutral broker core, a modern stdio connector,
+strict opt-in configuration, and process-level golden tests. Catalog ingestion,
+trusted credential-profile resolution, and additive host-facing capability
+query/describe/call tools are still under development; see the
+[implementation status](docs/mcp-capability-broker/implementation-status.md).
 
 ---
 
@@ -824,9 +874,10 @@ The CLI validates structure. The agent validates behavior.
 
 ### Design proposals
 
-- [MCP capability broker](docs/mcp-capability-broker/README.md) — a proposed
-  architecture in which hosts register only Skillex, while Skillex discovers,
-  selects, authenticates to, and invokes downstream MCP servers dynamically.
+- [MCP capability broker](docs/mcp-capability-broker/README.md) — the evolving
+  architecture and implementation in which hosts register only Skillex, while
+  Skillex discovers, selects, authenticates to, and invokes downstream MCP
+  servers dynamically.
 
 ---
 

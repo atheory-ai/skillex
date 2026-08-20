@@ -1,8 +1,8 @@
 # Skillex MCP Capability Broker
 
-Status: proposed
+Status: implementation in progress
 
-Last updated: 2026-08-19
+Last updated: 2026-08-20
 
 This design package describes a proposed extension of Skillex from contextual
 skill retrieval into contextual MCP capability discovery and invocation.
@@ -25,5 +25,8 @@ Documents:
 - [Implementation status](./implementation-status.md) records milestone progress,
   compatibility findings, and accepted or pending architecture decisions.
 
-These documents are a design proposal, not a statement that the described
-functionality already exists.
+Implementation is incremental. The protocol-neutral broker core, modern stdio
+acceptance path, and explicit version 5 project opt-in gate exist on the feature
+branch. Catalog persistence, trusted credential-profile resolution, and the
+additive host-facing capability tools remain planned. The implementation-status
+document is the source of truth for that boundary.
