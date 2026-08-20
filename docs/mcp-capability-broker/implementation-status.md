@@ -4,9 +4,10 @@ Last updated: 2026-08-20
 
 ## Current milestone
 
-Milestones 0 and 1 are implemented. Milestone 2 (local introspection and
-invocation) is substantially implemented; OAuth and hosted enterprise identity
-remain active work.
+The open-source capability-broker scope in milestones 0–4 is implemented.
+Milestone 5 is an operating model (managed synchronization, regional connector
+fleets, dashboards, and alerting) rather than a prerequisite for the local or
+self-hosted broker.
 
 The implemented foundation includes:
 
@@ -29,6 +30,22 @@ The implemented foundation includes:
 - JSON Schema 2020-12 argument validation and live input/output schema checks;
 - optional privacy-safe local usage telemetry, disabled by default;
 - CLI capability describe/call and auth readiness commands.
+- explicit standard Registry API synchronization with opaque cursor handling,
+  namespace allowlists, package/remote transport provenance, and artifact hashes;
+- explicit trusted-server introspection that indexes tools, prompts, and resource
+  templates into a freshness-bounded offline snapshot;
+- capability-only continuation offsets plus server, kind, and readiness facets;
+- optional `server/discover`, paginated lists, public/private TTL caches, and
+  MCP `2026-07-28` multi-round-trip input retry fields;
+- stable machine-readable broker error codes;
+- env, dotenv, OS keychain, absolute credential-helper, and mTLS sources;
+- protected-resource/authorization-server discovery, PKCE, CIMD-first client
+  registration, explicitly enabled DCR fallback, encrypted token storage and refresh;
+- client credentials, `private_key_jwt`, workload token exchange, and stable
+  Enterprise-Managed Authorization/ID-JAG exchanges;
+- hosted inbound RS256 bearer/IAP-style verification, exact mTLS principal
+  mapping, opaque tenant partitions, tenant-specific signing-key derivation,
+  and private-view isolation.
 
 The process-level acceptance harness adds:
 
@@ -90,20 +107,22 @@ replacement before changing the production dependency.
    capability schema, readiness, and policy are re-evaluated before a connector
    opens.
 
-### Remaining implementation work
+### Deliberate deployment boundaries
 
-1. Standard OAuth discovery, authorization-code/PKCE, CIMD-first registration,
-   refresh, secure token storage, and typed login continuation.
-2. Stable Enterprise-Managed Authorization/ID-JAG and draft client-credentials
-   providers, plus workload identity, JWT bearer, mTLS, keychain, and helper sources.
-3. Standard Registry API synchronization, incremental cursors, transport
-   provenance, publisher/package trust, and lifecycle/cache freshness.
-4. MRTR continuations, older-protocol fallback policy, prompts/resource-template
-   invocation, and pooled connector lifecycle controls.
-5. Hosted inbound authentication, tenant/principal partitioning, hosted signing
-   and token stores, audit export, and cross-tenant isolation suites.
-6. Capability-specific continuation cursors, richer narrowing facets, stable
-   machine-readable error codes, and managed telemetry/export operations.
+- Skillex targets the final MCP `2026-07-28` downstream protocol. Omission of
+  `resultType` is accepted as a compatibility behavior and `server/discover` is
+  optional, but pre-stateless MCP transports that require `initialize` are not
+  silently downgraded. They must be fronted by a compatible adapter or selected
+  through an explicitly added legacy connector.
+- The repository supplies hosted authentication, tenant partition, signing,
+  cache, and audit contracts. A particular hosted product still chooses its HTTP
+  framework, KMS/HSM, identity-provider key refresh, regional egress, durable
+  event sink, dashboards, and operational SLOs.
+- Registry synchronization is explicit and atomically replaces an offline
+  snapshot. It intentionally does not make network calls during user queries.
+- Credential helpers and keychains are exact trusted sources. Skillex does not
+  enumerate ambient secrets or let project/pack configuration name executable,
+  header, certificate, or credential locations.
 
 ## Verification
 
@@ -112,7 +131,9 @@ Passing gates:
 ```text
 go test ./internal/capability ./internal/broker
 go test ./internal/config
-go test ./internal/connector/stdio
+go test ./internal/connector/stdio ./internal/connector/streamhttp
+go test ./internal/auth ./internal/trust ./internal/registryapi
+go test ./internal/hostedauth ./internal/tenant
 go test ./test/acceptance -run TestMCPBroker_GoldenDiscoveryDescribeAndRealStdioCall
 make verify-unit
 make test-acceptance
@@ -121,5 +142,7 @@ make lint
 make dev-binary
 ```
 
-The next implementation slice is OAuth/enterprise credential acquisition and
-Registry API synchronization, followed by hosted multi-tenant foundations.
+The automated gates include golden query compatibility, real subprocess MCP
+calls, explicit introspection, exact credential injection, telemetry redaction,
+OAuth/EMA conformance, MRTR retry behavior, schema drift, cache partitioning,
+and cross-tenant view rejection.

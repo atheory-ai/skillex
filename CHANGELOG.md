@@ -6,6 +6,21 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **MCP broker:** added explicit version 5 opt-in for contextual downstream MCP
+  discovery and invocation while preserving all version 4 skills-only behavior.
+- **MCP indexing:** added static, standard Registry API, pack-suggested, and
+  explicitly observed tool/prompt/resource-template capability metadata with
+  provenance, freshness, independent pagination, and contextual facets.
+- **MCP transport:** added lazy trusted stdio and stateless MCP `2026-07-28`
+  Streamable HTTP connectors, live schema validation, TTL/cache-scope handling,
+  routing headers, optional discovery, and multi-round-trip input retries.
+- **MCP authentication:** added exact env/dotenv/keychain/helper/mTLS sources,
+  OAuth PKCE/CIMD/DCR, encrypted token refresh, client credentials,
+  `private_key_jwt`, workload exchange, and EMA/ID-JAG.
+- **MCP enterprise:** added privacy-safe usage reporting, stable broker error
+  codes, inbound JWT/IAP-style and mTLS principal verification, opaque tenant
+  partitions, tenant signing-key derivation, and private-view isolation.
+
 ## [0.8.3]
 
 - **Retrieval:** guide agent harnesses through bounded discovery, narrowing, and selected reads instead of bulk skill-content queries.

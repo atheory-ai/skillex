@@ -123,11 +123,11 @@ func (s *ReferenceSigner) Verify(ref string) (ReferenceClaims, error) {
 		return ReferenceClaims{}, ErrInvalidReference
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
+	if err != nil || base64.RawURLEncoding.EncodeToString(payload) != parts[0] {
 		return ReferenceClaims{}, ErrInvalidReference
 	}
 	providedMAC, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || !hmac.Equal(providedMAC, s.sign(payload)) {
+	if err != nil || base64.RawURLEncoding.EncodeToString(providedMAC) != parts[1] || !hmac.Equal(providedMAC, s.sign(payload)) {
 		return ReferenceClaims{}, ErrInvalidReference
 	}
 

@@ -42,3 +42,34 @@ func TestRegistrySearchFiltersByCapabilityBindingScope(t *testing.T) {
 		t.Fatalf("out-of-scope search = %#v, %v", unmatched, err)
 	}
 }
+
+func TestRegistryNeverReturnsOrResolvesAnotherPrivateView(t *testing.T) {
+	reg, err := registry.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	selected := capability.Capability{
+		Server: capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: "io.example/private"}, Version: "1"},
+		Kind:   capability.CapabilityTool, Name: "private.read", Description: "Private data", Availability: capability.AvailabilityReady,
+	}
+	for _, view := range []string{"tenant-a", "tenant-b"} {
+		if _, err := reg.InsertCapability(registry.CapabilityRecord{Capability: selected, Visibility: "private", AuthPartitionHash: view,
+			CacheScope: "private", SourceType: "observed", SourceRef: view}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalog, _ := NewRegistry(reg)
+	results, err := catalog.Search(context.Background(), broker.Query{Search: "Private", View: "tenant-a"})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("private search = %#v, %v", results, err)
+	}
+	claims := capability.ReferenceClaims{Server: "io.example/private", Version: "1", Kind: capability.CapabilityTool, Capability: "private.read", View: "tenant-a"}
+	if _, err := catalog.Resolve(context.Background(), claims); err != nil {
+		t.Fatal(err)
+	}
+	claims.View = "tenant-c"
+	if _, err := catalog.Resolve(context.Background(), claims); err == nil {
+		t.Fatal("unrecognized tenant resolved a private capability")
+	}
+}

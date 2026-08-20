@@ -47,6 +47,8 @@ packages, follow repo conventions, and work safely in a codebase.`,
 		newMCPCmd(),
 		newCapabilityCmd(),
 		newAuthCmd(),
+		newCatalogCmd(),
+		newTelemetryCmd(),
 	)
 }
 

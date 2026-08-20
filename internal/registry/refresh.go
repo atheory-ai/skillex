@@ -2,12 +2,16 @@ package registry
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/linker"
 	"github.com/atheory-ai/skillex/internal/scanner"
+	"github.com/atheory-ai/skillex/internal/trust"
 	"github.com/atheory-ai/skillex/internal/validator"
 )
 
@@ -31,12 +35,45 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 	result := &RefreshResult{}
 	var capabilityRecords []CapabilityRecord
 	if cfg.MCPEnabled() {
+		trusted, _, err := trust.LoadConfigured()
+		if err != nil {
+			return nil, fmt.Errorf("loading trusted MCP configuration: %w", err)
+		}
 		for _, source := range cfg.MCP.Catalogs {
-			records, err := LoadStaticCapabilityCatalog(opts.Root, source, cfg.MCP.Bindings)
+			loadSource := source
+			sourceType := "static"
+			sourceRef := source.Path
+			if source.Type == "trusted" {
+				if _, ok := trusted.FindCatalogSource(source.Name); !ok {
+					return nil, fmt.Errorf("trusted MCP catalog %q is not defined in trusted configuration", source.Name)
+				}
+				loadSource = config.MCPCatalog{Type: "static", Path: trustedCatalogCacheRelPath(source.Name)}
+				sourceType = "registry-api"
+				sourceRef = source.Name
+			}
+			records, err := LoadStaticCapabilityCatalog(opts.Root, loadSource, cfg.MCP.Bindings)
 			if err != nil {
 				return nil, err
 			}
+			for i := range records {
+				records[i].SourceType = sourceType
+				records[i].SourceRef = sourceRef
+			}
 			capabilityRecords = append(capabilityRecords, records...)
+		}
+		observedPath := filepath.Join(opts.Root, ".skillex", "mcp", "observed.json")
+		if _, err := os.Stat(observedPath); err == nil {
+			records, loadErr := LoadStaticCapabilityCatalog(opts.Root, config.MCPCatalog{Type: "static", Path: ".skillex/mcp/observed.json"}, cfg.MCP.Bindings)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			for i := range records {
+				records[i].SourceType = "observed"
+				records[i].SourceRef = "trusted-introspection"
+			}
+			capabilityRecords = append(capabilityRecords, records...)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
 	}
 
@@ -183,6 +220,10 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 	}
 
 	return result, nil
+}
+
+func trustedCatalogCacheRelPath(name string) string {
+	return filepath.ToSlash(filepath.Join(".skillex", "mcp", "catalogs", name+".json"))
 }
 
 // FormatErrors formats a list of errors as a readable string.

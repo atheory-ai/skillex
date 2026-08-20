@@ -204,10 +204,25 @@ type CapabilityRecord struct {
 	Bindings          []CapabilityBinding
 	RawDefinition     json.RawMessage
 	Score             float64
+	Transports        []TransportRecord
+}
+
+type TransportRecord struct {
+	Server          string          `json:"server"`
+	Version         string          `json:"version"`
+	Kind            string          `json:"kind"`
+	PackageRegistry string          `json:"package_registry,omitempty"`
+	PackageID       string          `json:"package_id,omitempty"`
+	PackageVersion  string          `json:"package_version,omitempty"`
+	PackageDigest   string          `json:"package_digest,omitempty"`
+	Endpoint        string          `json:"endpoint,omitempty"`
+	CommandTemplate json.RawMessage `json:"command_template,omitempty"`
+	Origin          string          `json:"origin,omitempty"`
 }
 
 type staticCapabilityCatalog struct {
 	Capabilities []capability.Capability `json:"capabilities"`
+	Transports   []TransportRecord       `json:"transports,omitempty"`
 }
 
 func createCapabilitySchema(db interface {
@@ -265,6 +280,11 @@ func LoadStaticCapabilityCatalog(root string, source config.MCPCatalog, bindings
 			CacheScope:        "public",
 			SourceType:        "static",
 			SourceRef:         filepath.ToSlash(source.Path),
+		}
+		for _, transport := range document.Transports {
+			if transport.Server == selected.Server.Identity.CanonicalName && transport.Version == selected.Server.Version {
+				record.Transports = append(record.Transports, transport)
+			}
 		}
 		record.RawDefinition, err = json.Marshal(selected)
 		if err != nil {
@@ -373,13 +393,32 @@ func (r *Registry) InsertCapability(record CapabilityRecord) (int64, error) {
 	if err := tx.QueryRow(`SELECT id FROM mcp_server_versions WHERE server_id = ? AND version = ?`, serverID, selected.Server.Version).Scan(&serverVersionID); err != nil {
 		return 0, err
 	}
+	for _, transport := range record.Transports {
+		if transport.Server != selected.Server.Identity.CanonicalName || transport.Version != selected.Server.Version || transport.Kind == "" {
+			return 0, errors.New("MCP transport identity does not match capability server version")
+		}
+		if _, err := tx.Exec(`INSERT INTO mcp_transports
+			(server_version_id, kind, package_registry, package_id, package_version,
+			 package_digest, endpoint, command_template, origin)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(server_version_id, kind, package_id, endpoint) DO UPDATE SET
+			package_registry=excluded.package_registry, package_version=excluded.package_version,
+			package_digest=excluded.package_digest, command_template=excluded.command_template,
+			origin=excluded.origin`, serverVersionID, transport.Kind, transport.PackageRegistry,
+			transport.PackageID, transport.PackageVersion, transport.PackageDigest,
+			transport.Endpoint, []byte(transport.CommandTemplate), transport.Origin); err != nil {
+			return 0, fmt.Errorf("upserting MCP transport: %w", err)
+		}
+	}
 	provenance, _ := json.Marshal(map[string]string{"source_type": record.SourceType, "source_ref": record.SourceRef})
 	if _, err := tx.Exec(`INSERT INTO mcp_capability_views
-		(server_version_id, visibility, auth_partition_hash, cache_scope, provenance)
-		VALUES (?, ?, ?, ?, ?)
+		(server_version_id, visibility, auth_partition_hash, cache_scope, observed_at, expires_at, provenance)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(server_version_id, auth_partition_hash) DO UPDATE SET
-		visibility=excluded.visibility, cache_scope=excluded.cache_scope, provenance=excluded.provenance`,
-		serverVersionID, record.Visibility, record.AuthPartitionHash, record.CacheScope, provenance); err != nil {
+		visibility=excluded.visibility, cache_scope=excluded.cache_scope, observed_at=excluded.observed_at,
+		expires_at=excluded.expires_at, provenance=excluded.provenance`,
+		serverVersionID, record.Visibility, record.AuthPartitionHash, record.CacheScope,
+		formatOptionalTime(selected.ObservedAt), formatOptionalTime(selected.ExpiresAt), provenance); err != nil {
 		return 0, fmt.Errorf("upserting MCP capability view: %w", err)
 	}
 	var viewID int64
@@ -486,10 +525,24 @@ func (r *Registry) ResolveCapability(server, version string, kind capability.Cap
 	return &records[0], nil
 }
 
+// ResolveCapabilityView retrieves a public capability or the exact private
+// auth partition. It prevents hosted callers from resolving another tenant's
+// cached capability view.
+func (r *Registry) ResolveCapabilityView(server, version string, kind capability.CapabilityKind, name, view string) (*CapabilityRecord, error) {
+	records, err := r.queryCapabilities(capabilitySelect+`
+		WHERE s.canonical_name = ? AND sv.version = ? AND c.kind = ? AND c.name = ?
+		AND (v.auth_partition_hash = 'public' OR v.auth_partition_hash = ?)
+		ORDER BY CASE WHEN v.auth_partition_hash = ? THEN 0 ELSE 1 END LIMIT 1`, server, version, kind, name, view, view)
+	if err != nil || len(records) == 0 {
+		return nil, err
+	}
+	return &records[0], nil
+}
+
 const capabilitySelect = `SELECT c.id, s.canonical_name, s.publisher, sv.version,
 	sv.package_digest, sv.status, c.kind, c.name, c.title, c.description,
 	c.input_schema, c.output_schema, c.schema_digest, c.availability,
-	v.visibility, v.auth_partition_hash, v.cache_scope, s.source_type,
+	v.visibility, v.auth_partition_hash, v.cache_scope, v.observed_at, v.expires_at, s.source_type,
 	s.source_ref, c.risk, c.raw_definition
 	FROM mcp_capabilities c
 	JOIN mcp_server_versions sv ON sv.id = c.server_version_id
@@ -506,6 +559,7 @@ func (r *Registry) queryCapabilities(query string, args ...any) ([]CapabilityRec
 	for rows.Next() {
 		var record CapabilityRecord
 		var input, output, raw []byte
+		var observedAt, expiresAt string
 		if err := rows.Scan(&record.ID,
 			&record.Capability.Server.Identity.CanonicalName,
 			&record.Capability.Server.Identity.Publisher,
@@ -516,13 +570,18 @@ func (r *Registry) queryCapabilities(query string, args ...any) ([]CapabilityRec
 			&record.Capability.Title, &record.Capability.Description,
 			&input, &output, &record.Capability.SchemaDigest,
 			&record.Capability.Availability, &record.Visibility,
-			&record.AuthPartitionHash, &record.CacheScope,
+			&record.AuthPartitionHash, &record.CacheScope, &observedAt, &expiresAt,
 			&record.SourceType, &record.SourceRef, &record.Risk, &raw); err != nil {
 			return nil, err
 		}
 		record.Capability.InputSchemaJSON = append(json.RawMessage(nil), input...)
 		record.Capability.OutputSchemaJSON = append(json.RawMessage(nil), output...)
 		record.RawDefinition = append(json.RawMessage(nil), raw...)
+		record.Capability.ObservedAt = parseOptionalTime(observedAt)
+		record.Capability.ExpiresAt = parseOptionalTime(expiresAt)
+		if !record.Capability.ExpiresAt.IsZero() && time.Now().After(record.Capability.ExpiresAt) {
+			record.Capability.Availability = capability.AvailabilityStale
+		}
 		records = append(records, record)
 	}
 	if err := rows.Err(); err != nil {
@@ -536,6 +595,21 @@ func (r *Registry) queryCapabilities(query string, args ...any) ([]CapabilityRec
 		records[i].Bindings = bindings
 	}
 	return records, nil
+}
+
+func formatOptionalTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func parseOptionalTime(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func (r *Registry) capabilityBindings(capabilityID int64) ([]CapabilityBinding, error) {

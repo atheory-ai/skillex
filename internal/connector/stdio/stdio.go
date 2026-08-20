@@ -39,6 +39,7 @@ var (
 	ErrSchemaChanged       = errors.New("downstream MCP capability schema changed")
 	ErrToolResult          = errors.New("downstream MCP tool returned an error")
 	ErrToolResultInvalid   = errors.New("downstream MCP result does not satisfy the capability output schema")
+	errMethodNotFound      = errors.New("downstream MCP method not found")
 )
 
 // ServerConfig is trusted launch configuration for one exact server version.
@@ -100,32 +101,80 @@ func (f *Factory) Open(ctx context.Context, selected capability.Capability) (bro
 
 	startupCtx, cancel := context.WithTimeout(ctx, config.StartupTimeout)
 	defer cancel()
-	if err := client.discover(startupCtx); err != nil {
+	if err := client.discover(startupCtx); err != nil && !errors.Is(err, errMethodNotFound) {
 		_ = client.Close()
 		return nil, err
 	}
-	tools, err := client.listTools(startupCtx)
-	if err != nil {
-		_ = client.Close()
-		return nil, err
+	if selected.Kind == capability.CapabilityTool {
+		tools, err := client.listTools(startupCtx)
+		if err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+		tool, ok := tools[selected.Name]
+		if !ok {
+			_ = client.Close()
+			return nil, fmt.Errorf("%w: %s", ErrCapabilityMissing, selected.Name)
+		}
+		digest, err := capability.ComputeSchemaDigest(capability.CapabilityTool, tool.Name, tool.InputSchema, tool.OutputSchema)
+		if err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+		if digest != selected.SchemaDigest {
+			_ = client.Close()
+			return nil, fmt.Errorf("%w: %s", ErrSchemaChanged, selected.Name)
+		}
+		client.tools = tools
+	} else {
+		definitions, err := client.inspect(startupCtx, selected.Server)
+		if err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+		key := string(selected.Kind) + "\x00" + selected.Name
+		runtimeCapability, ok := definitions[key]
+		if !ok {
+			_ = client.Close()
+			return nil, fmt.Errorf("%w: %s", ErrCapabilityMissing, selected.Name)
+		}
+		if runtimeCapability.SchemaDigest != selected.SchemaDigest {
+			_ = client.Close()
+			return nil, fmt.Errorf("%w: %s", ErrSchemaChanged, selected.Name)
+		}
 	}
-	tool, ok := tools[selected.Name]
-	if !ok {
-		_ = client.Close()
-		return nil, fmt.Errorf("%w: %s", ErrCapabilityMissing, selected.Name)
-	}
-	digest, err := capability.ComputeSchemaDigest(capability.CapabilityTool, tool.Name, tool.InputSchema, tool.OutputSchema)
-	if err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("digesting runtime schema for %s: %w", tool.Name, err)
-	}
-	if digest != selected.SchemaDigest {
-		_ = client.Close()
-		return nil, fmt.Errorf("%w: %s", ErrSchemaChanged, selected.Name)
-	}
-	client.tools = tools
 	client.outputSchema = append(json.RawMessage(nil), selected.OutputSchemaJSON...)
 	return client, nil
+}
+
+// Inspect explicitly connects to one trusted server and returns its callable
+// capability definitions. It is intended for catalog synchronization, never query.
+func Inspect(ctx context.Context, config ServerConfig) ([]capability.Capability, error) {
+	if config.StartupTimeout <= 0 {
+		config.StartupTimeout = 5 * time.Second
+	}
+	client, err := start(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	startupCtx, cancel := context.WithTimeout(ctx, config.StartupTimeout)
+	defer cancel()
+	if err := client.discover(startupCtx); err != nil && !errors.Is(err, errMethodNotFound) {
+		return nil, err
+	}
+	indexed, err := client.inspect(startupCtx, capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: config.CanonicalName}, Version: config.Version})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]capability.Capability, 0, len(indexed))
+	for _, selected := range indexed {
+		result = append(result, selected)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return string(result[i].Kind)+"\x00"+result[i].Name < string(result[j].Kind)+"\x00"+result[j].Name
+	})
+	return result, nil
 }
 
 func serverKey(name, version string) string { return name + "\x00" + version }
@@ -138,11 +187,65 @@ type client struct {
 	wait         chan error
 	stderr       *limitedBuffer
 	tools        map[string]toolDefinition
+	prompts      map[string]promptDefinition
+	resources    map[string]resourceTemplateDefinition
 	outputSchema json.RawMessage
 	nextID       atomic.Int64
 	callMu       sync.Mutex
 	closeOnce    sync.Once
 	closeErr     error
+}
+
+func (c *client) inspect(ctx context.Context, server capability.ServerVersion) (map[string]capability.Capability, error) {
+	result := map[string]capability.Capability{}
+	tools, err := c.listTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.tools = tools
+	for _, tool := range tools {
+		selected, err := (capability.Capability{Server: server, Kind: capability.CapabilityTool, Name: tool.Name,
+			Title: tool.Title, Description: tool.Description, InputSchemaJSON: tool.InputSchema, OutputSchemaJSON: tool.OutputSchema,
+			Availability: capability.AvailabilityReady}).WithComputedSchemaDigest()
+		if err != nil {
+			return nil, err
+		}
+		result[string(selected.Kind)+"\x00"+selected.Name] = selected
+	}
+	prompts, err := c.listPrompts(ctx)
+	if err != nil && !errors.Is(err, errMethodNotFound) {
+		return nil, err
+	}
+	c.prompts = prompts
+	for _, prompt := range prompts {
+		input, err := promptInputSchema(prompt.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		selected, err := (capability.Capability{Server: server, Kind: capability.CapabilityPrompt, Name: prompt.Name,
+			Title: prompt.Title, Description: prompt.Description, InputSchemaJSON: input,
+			Availability: capability.AvailabilityReady}).WithComputedSchemaDigest()
+		if err != nil {
+			return nil, err
+		}
+		result[string(selected.Kind)+"\x00"+selected.Name] = selected
+	}
+	resources, err := c.listResourceTemplates(ctx)
+	if err != nil && !errors.Is(err, errMethodNotFound) {
+		return nil, err
+	}
+	c.resources = resources
+	for _, resource := range resources {
+		input := json.RawMessage(`{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"],"additionalProperties":false}`)
+		selected, err := (capability.Capability{Server: server, Kind: capability.CapabilityResourceTemplate, Name: resource.URITemplate,
+			Title: resource.Name, Description: resource.Description, InputSchemaJSON: input,
+			Availability: capability.AvailabilityReady}).WithComputedSchemaDigest()
+		if err != nil {
+			return nil, err
+		}
+		result[string(selected.Kind)+"\x00"+selected.Name] = selected
+	}
+	return result, nil
 }
 
 func start(ctx context.Context, config ServerConfig) (*client, error) {
@@ -186,7 +289,7 @@ func (c *client) discover(ctx context.Context) error {
 	if err := c.roundTrip(ctx, "server/discover", nil, &result); err != nil {
 		return fmt.Errorf("discovering downstream MCP server: %w", err)
 	}
-	if result.ResultType != "complete" {
+	if result.ResultType != "" && result.ResultType != "complete" {
 		return fmt.Errorf("%w: discovery result type %q", ErrProtocolUnsupported, result.ResultType)
 	}
 	found := false
@@ -217,7 +320,7 @@ func (c *client) listTools(ctx context.Context) (map[string]toolDefinition, erro
 		if err := c.roundTrip(ctx, "tools/list", params, &result); err != nil {
 			return nil, fmt.Errorf("listing downstream MCP tools: %w", err)
 		}
-		if result.ResultType != "complete" {
+		if result.ResultType != "" && result.ResultType != "complete" {
 			return nil, fmt.Errorf("unexpected tools/list result type %q", result.ResultType)
 		}
 		for _, tool := range result.Tools {
@@ -237,20 +340,79 @@ func (c *client) listTools(ctx context.Context) (map[string]toolDefinition, erro
 	return nil, errors.New("downstream MCP tools/list exceeded 32 pages")
 }
 
+func (c *client) listPrompts(ctx context.Context) (map[string]promptDefinition, error) {
+	result := map[string]promptDefinition{}
+	cursor := ""
+	for page := 0; page < 32; page++ {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var listed listPromptsResult
+		if err := c.roundTrip(ctx, "prompts/list", params, &listed); err != nil {
+			return nil, err
+		}
+		for _, prompt := range listed.Prompts {
+			if prompt.Name == "" {
+				return nil, errors.New("downstream MCP prompt has an empty name")
+			}
+			result[prompt.Name] = prompt
+		}
+		if listed.NextCursor == "" {
+			return result, nil
+		}
+		cursor = listed.NextCursor
+	}
+	return nil, errors.New("downstream MCP prompts/list exceeded 32 pages")
+}
+
+func (c *client) listResourceTemplates(ctx context.Context) (map[string]resourceTemplateDefinition, error) {
+	result := map[string]resourceTemplateDefinition{}
+	cursor := ""
+	for page := 0; page < 32; page++ {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var listed listResourceTemplatesResult
+		if err := c.roundTrip(ctx, "resources/templates/list", params, &listed); err != nil {
+			return nil, err
+		}
+		for _, resource := range listed.ResourceTemplates {
+			if resource.URITemplate == "" {
+				return nil, errors.New("downstream MCP resource template has an empty URI template")
+			}
+			result[resource.URITemplate] = resource
+		}
+		if listed.NextCursor == "" {
+			return result, nil
+		}
+		cursor = listed.NextCursor
+	}
+	return nil, errors.New("downstream MCP resources/templates/list exceeded 32 pages")
+}
+
 // CallTool invokes a tool that was present and schema-verified during Open.
 func (c *client) CallTool(ctx context.Context, name string, arguments map[string]any) (any, error) {
+	return c.CallToolRound(ctx, name, arguments, nil, "")
+}
+
+func (c *client) CallToolRound(ctx context.Context, name string, arguments, inputResponses map[string]any, requestState string) (any, error) {
 	if _, ok := c.tools[name]; !ok {
 		return nil, fmt.Errorf("%w: %s", ErrCapabilityMissing, name)
 	}
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
+	params := roundParams(map[string]any{"name": name, "arguments": arguments}, inputResponses, requestState)
 	var result ToolResult
-	if err := c.roundTrip(ctx, "tools/call", map[string]any{"name": name, "arguments": arguments}, &result); err != nil {
+	if err := c.roundTrip(ctx, "tools/call", params, &result); err != nil {
 		return nil, err
 	}
-	if result.ResultType != "complete" {
-		return result, fmt.Errorf("unexpected tools/call result type %q", result.ResultType)
+	if result.ResultType != "" && result.ResultType != "complete" {
+		// MCP 2026-07-28 multi-round-trip responses are returned intact so the
+		// host can satisfy the requested continuation and call again.
+		return result, nil
 	}
 	if result.IsError {
 		return result, ErrToolResult
@@ -259,6 +421,59 @@ func (c *client) CallTool(ctx context.Context, name string, arguments map[string
 		return nil, ErrToolResultInvalid
 	}
 	return result, nil
+}
+
+func (c *client) GetPrompt(ctx context.Context, name string, arguments map[string]any) (any, error) {
+	return c.GetPromptRound(ctx, name, arguments, nil, "")
+}
+
+func (c *client) GetPromptRound(ctx context.Context, name string, arguments, inputResponses map[string]any, requestState string) (any, error) {
+	if _, ok := c.prompts[name]; !ok {
+		return nil, fmt.Errorf("%w: %s", ErrCapabilityMissing, name)
+	}
+	var result map[string]any
+	if err := c.roundTrip(ctx, "prompts/get", roundParams(map[string]any{"name": name, "arguments": arguments}, inputResponses, requestState), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *client) ReadResource(ctx context.Context, uri string) (any, error) {
+	return c.ReadResourceRound(ctx, uri, nil, "")
+}
+
+func (c *client) ReadResourceRound(ctx context.Context, uri string, inputResponses map[string]any, requestState string) (any, error) {
+	var result map[string]any
+	if err := c.roundTrip(ctx, "resources/read", roundParams(map[string]any{"uri": uri}, inputResponses, requestState), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func roundParams(params map[string]any, inputResponses map[string]any, requestState string) map[string]any {
+	if len(inputResponses) > 0 {
+		params["inputResponses"] = inputResponses
+	}
+	if requestState != "" {
+		params["requestState"] = requestState
+	}
+	return params
+}
+
+func promptInputSchema(arguments []promptArgument) (json.RawMessage, error) {
+	properties := map[string]any{}
+	var required []string
+	for _, argument := range arguments {
+		properties[argument.Name] = map[string]any{"type": "string", "description": argument.Description}
+		if argument.Required {
+			required = append(required, argument.Name)
+		}
+	}
+	schema := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return json.Marshal(schema)
 }
 
 // Close performs the MCP stdio graceful shutdown sequence.
@@ -327,6 +542,9 @@ func (c *client) roundTrip(ctx context.Context, method string, params map[string
 				return fmt.Errorf("downstream MCP response id %d does not match request id %d", response.ID, id)
 			}
 			if response.Error != nil {
+				if response.Error.Code == -32601 {
+					return errMethodNotFound
+				}
 				return fmt.Errorf("downstream MCP error %d: %s", response.Error.Code, bounded(response.Error.Message, 512))
 			}
 			if err := json.Unmarshal(response.Result, target); err != nil {
@@ -375,6 +593,9 @@ type ToolResult struct {
 	Content           json.RawMessage `json:"content,omitempty"`
 	StructuredContent any             `json:"structuredContent,omitempty"`
 	IsError           bool            `json:"isError,omitempty"`
+	InputRequests     json.RawMessage `json:"inputRequests,omitempty"`
+	RequestState      string          `json:"requestState,omitempty"`
+	Meta              json.RawMessage `json:"_meta,omitempty"`
 }
 
 type toolDefinition struct {
@@ -383,6 +604,26 @@ type toolDefinition struct {
 	Description  string          `json:"description,omitempty"`
 	InputSchema  json.RawMessage `json:"inputSchema"`
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+}
+
+type promptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+type promptDefinition struct {
+	Name        string           `json:"name"`
+	Title       string           `json:"title,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []promptArgument `json:"arguments,omitempty"`
+}
+
+type resourceTemplateDefinition struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mimeType,omitempty"`
 }
 
 type discoverResult struct {
@@ -397,6 +638,16 @@ type listToolsResult struct {
 	NextCursor string           `json:"nextCursor,omitempty"`
 	TTLMS      int64            `json:"ttlMs,omitempty"`
 	CacheScope string           `json:"cacheScope,omitempty"`
+}
+
+type listPromptsResult struct {
+	Prompts    []promptDefinition `json:"prompts"`
+	NextCursor string             `json:"nextCursor,omitempty"`
+}
+
+type listResourceTemplatesResult struct {
+	ResourceTemplates []resourceTemplateDefinition `json:"resourceTemplates"`
+	NextCursor        string                       `json:"nextCursor,omitempty"`
 }
 
 type rpcRequest struct {

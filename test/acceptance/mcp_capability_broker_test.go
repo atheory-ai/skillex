@@ -61,6 +61,63 @@ func TestMCPBroker_StaticCatalogRefreshIsOffline(t *testing.T) {
 	}
 }
 
+func TestMCPBroker_ExplicitTrustedInspectionBuildsOfflineCapabilityIndex(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	fakeServer := helpers.BuildFakeMCPServer(t)
+	events := filepath.Join(t.TempDir(), "inspect.jsonl")
+	trustPath := filepath.Join(t.TempDir(), "mcp-trust.yaml")
+	trustDocument := fmt.Sprintf(`Version: 1
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [%q]
+    AuthProfiles: [issues-test]
+    Stdio:
+      Command: %q
+      Args: ["--fixture", %q, "--events", %q]
+CredentialProfiles:
+  - Name: issues-test
+    Service: io.example/issues
+    Credentials:
+      - Slot: token
+        Sources:
+          - Env:
+              Key: SKILLEX_ISSUES_TOKEN
+        Inject:
+          StdioEnv: ISSUES_TOKEN
+`, fixtureDir, fakeServer, filepath.Join(fixtureDir, "servers", "issues.json"), events)
+	if err := os.WriteFile(trustPath, []byte(trustDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKILLEX_MCP_TRUST_CONFIG", trustPath)
+	t.Setenv("SKILLEX_ISSUES_TOKEN", "exact-token")
+	hostConfig := filepath.Join(fixtureDir, ".cursor", "mcp.json")
+	before, _ := os.ReadFile(hostConfig)
+	result := helpers.Run(t, fixtureDir, "catalog", "inspect", "--server", "io.example/issues", "--json")
+	if result.ExitCode != 0 {
+		t.Fatalf("catalog inspect failed: %s", result.Stderr)
+	}
+	var summary struct {
+		Servers      int `json:"servers"`
+		Capabilities int `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(result.Stdout), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Servers != 1 || summary.Capabilities != 1 {
+		t.Fatalf("inspection summary = %#v", summary)
+	}
+	observed, err := os.ReadFile(filepath.Join(fixtureDir, ".skillex", "mcp", "observed.json"))
+	if err != nil || !bytes.Contains(observed, []byte(`"name": "issues.create"`)) || !bytes.Contains(observed, []byte(`"observed_at"`)) {
+		t.Fatalf("observed catalog = %s, %v", observed, err)
+	}
+	assertEvents(t, events, []protocolEvent{{Method: "server/discover"}, {Method: "tools/list"}, {Method: "prompts/list"}, {Method: "resources/templates/list"}})
+	after, _ := os.ReadFile(hostConfig)
+	if !bytes.Equal(before, after) {
+		t.Fatal("trusted inspection modified host MCP configuration")
+	}
+}
+
 func TestMCPBroker_HostDiscoversAndDescribesCapabilityThroughSkillexOnly(t *testing.T) {
 	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
 	hostConfigPath := filepath.Join(fixtureDir, ".cursor", "mcp.json")

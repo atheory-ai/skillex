@@ -18,14 +18,17 @@ import (
 
 func newQueryCmd() *cobra.Command {
 	var (
-		pathFlag    string
-		topicFlag   string
-		tagsFlag    string
-		packageFlag string
-		searchFlag  string
-		formatFlag  string
-		limitFlag   int
-		cursorFlag  string
+		pathFlag         string
+		topicFlag        string
+		tagsFlag         string
+		packageFlag      string
+		searchFlag       string
+		formatFlag       string
+		limitFlag        int
+		cursorFlag       string
+		serverFlag       string
+		kindFlag         string
+		availabilityFlag string
 	)
 
 	cmd := &cobra.Command{
@@ -117,14 +120,17 @@ Examples:
 			}
 
 			params := query.Params{
-				Path:    pathFlag,
-				Topics:  topics,
-				Tags:    tags,
-				Package: packageFlag,
-				Search:  searchFlag,
-				Format:  format,
-				Limit:   limitFlag,
-				Cursor:  cursorFlag,
+				Path:           pathFlag,
+				Topics:         topics,
+				Tags:           tags,
+				Package:        packageFlag,
+				Search:         searchFlag,
+				Format:         format,
+				Limit:          limitFlag,
+				Cursor:         cursorFlag,
+				Server:         serverFlag,
+				CapabilityKind: kindFlag,
+				Availability:   availabilityFlag,
 			}
 
 			resp, err := eng.Execute(params)
@@ -179,6 +185,9 @@ Examples:
 	cmd.Flags().StringVar(&formatFlag, "format", "", "Output format: summary (default) or deprecated bounded content")
 	cmd.Flags().IntVar(&limitFlag, "limit", 8, "Maximum discovery results (1-20)")
 	cmd.Flags().StringVar(&cursorFlag, "cursor", "", "Continuation cursor from a previous discovery response")
+	cmd.Flags().StringVar(&serverFlag, "mcp-server", "", "Filter MCP capabilities by canonical server identity")
+	cmd.Flags().StringVar(&kindFlag, "mcp-kind", "", "Filter MCP capabilities by kind")
+	cmd.Flags().StringVar(&availabilityFlag, "mcp-availability", "", "Filter MCP capabilities by readiness")
 
 	return cmd
 }

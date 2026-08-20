@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 // CapabilityKind identifies a downstream MCP capability family.
@@ -17,6 +18,7 @@ const (
 	CapabilityTool             CapabilityKind = "tool"
 	CapabilityPrompt           CapabilityKind = "prompt"
 	CapabilityResourceTemplate CapabilityKind = "resource-template"
+	CapabilityServer           CapabilityKind = "server"
 )
 
 // AvailabilityStatus describes whether a capability can currently be used.
@@ -64,6 +66,8 @@ type Capability struct {
 	OutputSchemaJSON json.RawMessage    `json:"output_schema,omitempty"`
 	SchemaDigest     string             `json:"schema_digest"`
 	Availability     AvailabilityStatus `json:"availability"`
+	ObservedAt       time.Time          `json:"observed_at,omitempty"`
+	ExpiresAt        time.Time          `json:"expires_at,omitempty"`
 	// RoutingScope and AuthProfile are integrity-protected broker routing
 	// metadata. They are never serialized as capability definitions.
 	RoutingScope string `json:"-"`

@@ -95,6 +95,34 @@ func TestBrokerQueriesOfflineAndInvokesOnlySelectedServer(t *testing.T) {
 	}
 }
 
+func TestBrokerInvokesPromptAndResourceTemplateCapabilities(t *testing.T) {
+	ctx := context.Background()
+	server := capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: "io.example/content"}, Version: "1"}
+	prompt, _ := (capability.Capability{Server: server, Kind: capability.CapabilityPrompt, Name: "plan",
+		InputSchemaJSON: []byte(`{"type":"object","properties":{"topic":{"type":"string"}},"required":["topic"]}`), Availability: capability.AvailabilityReady}).WithComputedSchemaDigest()
+	resource, _ := (capability.Capability{Server: server, Kind: capability.CapabilityResourceTemplate, Name: "docs://{id}",
+		InputSchemaJSON: []byte(`{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}`), Availability: capability.AvailabilityReady}).WithComputedSchemaDigest()
+	catalog := &fakeCatalog{capabilities: []capability.Capability{prompt, resource}}
+	engine := newTestBroker(t, catalog, allowPolicy{}, &fakeConnectorFactory{})
+	refs, err := engine.Query(ctx, Query{Search: "content", ContextDigest: "sha256:repo-context", View: "private:test-user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, summary := range refs {
+		arguments := map[string]any{"topic": "release"}
+		if summary.Kind == capability.CapabilityResourceTemplate {
+			arguments = map[string]any{"uri": "docs://123"}
+		}
+		result, err := engine.Call(ctx, summary.Ref, arguments, RequestContext{ContextDigest: "sha256:repo-context", View: "private:test-user"})
+		if err != nil {
+			t.Fatalf("calling %s: %v", summary.Kind, err)
+		}
+		if result.Capability.Kind != summary.Kind {
+			t.Fatalf("result attribution = %#v", result)
+		}
+	}
+}
+
 func TestBrokerRejectsContextAndSchemaChangesBeforeConnecting(t *testing.T) {
 	ctx := context.Background()
 	selected := newTestCapability(t, "io.example/issues", "issues.create")
@@ -251,6 +279,14 @@ type fakeConnector struct {
 
 func (f *fakeConnector) CallTool(_ context.Context, name string, arguments map[string]any) (any, error) {
 	return map[string]any{"server": f.server, "tool": name, "arguments": arguments}, nil
+}
+
+func (f *fakeConnector) GetPrompt(_ context.Context, name string, arguments map[string]any) (any, error) {
+	return map[string]any{"server": f.server, "prompt": name, "arguments": arguments}, nil
+}
+
+func (f *fakeConnector) ReadResource(_ context.Context, uri string) (any, error) {
+	return map[string]any{"server": f.server, "uri": uri}, nil
 }
 
 func (*fakeConnector) Close() error { return nil }

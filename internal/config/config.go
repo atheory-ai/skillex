@@ -56,7 +56,8 @@ type MCPConfig struct {
 // paths are resolved within the project root and are never executed.
 type MCPCatalog struct {
 	Type string `yaml:"Type" json:"Type"`
-	Path string `yaml:"Path" json:"Path"`
+	Path string `yaml:"Path,omitempty" json:"Path,omitempty"`
+	Name string `yaml:"Name,omitempty" json:"Name,omitempty"`
 }
 
 // MCPBinding selects one exact downstream server version and, optionally, a
@@ -156,12 +157,21 @@ func (c *Config) Validate() error {
 	}
 	for i, catalog := range c.MCP.Catalogs {
 		prefix := fmt.Sprintf("MCP.Catalogs[%d]", i)
-		if catalog.Type != "static" {
-			return fmt.Errorf("%s.Type %q is unsupported (supported: static)", prefix, catalog.Type)
-		}
-		path := filepath.Clean(strings.TrimSpace(catalog.Path))
-		if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("%s.Path must be a relative path inside the project", prefix)
+		switch catalog.Type {
+		case "static":
+			path := filepath.Clean(strings.TrimSpace(catalog.Path))
+			if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("%s.Path must be a relative path inside the project", prefix)
+			}
+			if catalog.Name != "" {
+				return fmt.Errorf("%s.Name is not valid for a static catalog", prefix)
+			}
+		case "trusted":
+			if !validCatalogName(catalog.Name) || catalog.Path != "" {
+				return fmt.Errorf("%s requires a safe Name and no Path", prefix)
+			}
+		default:
+			return fmt.Errorf("%s.Type %q is unsupported (supported: static, trusted)", prefix, catalog.Type)
 		}
 	}
 
@@ -187,6 +197,18 @@ func (c *Config) Validate() error {
 		seen[key] = struct{}{}
 	}
 	return nil
+}
+
+func validCatalogName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.", r) {
+			return false
+		}
+	}
+	return value != "." && value != ".."
 }
 
 func errorsForDisabledBindings() error {

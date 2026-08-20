@@ -51,7 +51,7 @@ func newCapabilityDescribeCmd() *cobra.Command {
 }
 
 func newCapabilityCallCmd() *cobra.Command {
-	var ref, arguments string
+	var ref, arguments, inputResponses, requestState string
 	cmd := &cobra.Command{
 		Use: "call --ref <capability-ref> --arguments <json|->", Short: "Invoke one selected downstream MCP tool",
 		Args: cobra.NoArgs,
@@ -63,12 +63,19 @@ func newCapabilityCallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var parsedResponses map[string]any
+			if inputResponses != "" {
+				parsedResponses, err = parseCapabilityArguments(inputResponses)
+				if err != nil {
+					return fmt.Errorf("invalid MRTR input responses: %w", err)
+				}
+			}
 			runtime, closeRegistry, err := openCapabilityRuntime()
 			if err != nil {
 				return err
 			}
 			defer closeRegistry()
-			result, err := runtime.Broker.Call(cmd.Context(), ref, parsed, runtimeRequest(runtime))
+			result, err := runtime.Broker.CallWithInput(cmd.Context(), ref, parsed, parsedResponses, requestState, runtimeRequest(runtime))
 			if err != nil {
 				return err
 			}
@@ -79,6 +86,8 @@ func newCapabilityCallCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&ref, "ref", "", "Capability ref returned by skillex query")
 	cmd.Flags().StringVar(&arguments, "arguments", "{}", "JSON object, or - to read a bounded object from stdin")
+	cmd.Flags().StringVar(&inputResponses, "input-responses", "", "MRTR response JSON object keyed by input request id")
+	cmd.Flags().StringVar(&requestState, "request-state", "", "Opaque MRTR requestState to echo byte-for-byte")
 	return cmd
 }
 

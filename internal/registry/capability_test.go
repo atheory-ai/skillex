@@ -123,3 +123,41 @@ func TestMigrateFreshDBHasCapabilitySchema(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshImportsOnlyProjectSelectedTrustedCatalogCache(t *testing.T) {
+	root := t.TempDir()
+	trustPath := filepath.Join(t.TempDir(), "mcp-trust.yaml")
+	if err := os.WriteFile(trustPath, []byte(`Version: 1
+CatalogSources:
+  - Name: official
+    Type: registry-api
+    BaseURL: https://registry.example
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKILLEX_MCP_TRUST_CONFIG", trustPath)
+	cache := filepath.Join(root, ".skillex", "mcp", "catalogs", "official.json")
+	if err := os.MkdirAll(filepath.Dir(cache), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cache, []byte(`{"capabilities":[{"server":{"identity":{"canonical_name":"io.example/issues"},"version":"1.0.0"},"kind":"server","name":"server.discover","description":"Issue service","schema_digest":"","availability":"discovered"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Version: config.MCPConfigVersion, MCP: &config.MCPConfig{
+		Enabled:  true,
+		Catalogs: []config.MCPCatalog{{Type: "trusted", Name: "official"}},
+		Bindings: []config.MCPBinding{{Server: "io.example/issues", Version: "1.0.0", Scope: "**"}},
+	}}
+	reg := newTestRegistry(t)
+	result, err := Refresh(reg, cfg, RefreshOptions{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CapabilitiesAdded != 1 {
+		t.Fatalf("capabilities added = %d", result.CapabilitiesAdded)
+	}
+	records, err := reg.AllCapabilities()
+	if err != nil || len(records) != 1 || records[0].SourceType != "registry-api" || records[0].SourceRef != "official" {
+		t.Fatalf("trusted records = %#v, %v", records, err)
+	}
+}

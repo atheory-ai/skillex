@@ -13,6 +13,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/brokerruntime"
 	"github.com/atheory-ai/skillex/internal/config"
+	"github.com/atheory-ai/skillex/internal/mcperror"
 	"github.com/atheory-ai/skillex/internal/query"
 	"github.com/atheory-ai/skillex/internal/registry"
 )
@@ -80,6 +81,9 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		),
 		mcplib.WithNumber("limit", mcplib.Description("Maximum discovery results (1-20, default 8)")),
 		mcplib.WithString("cursor", mcplib.Description("Continuation cursor returned by a previous query")),
+		mcplib.WithString("mcp_server", mcplib.Description("Canonical downstream MCP server identity filter")),
+		mcplib.WithString("mcp_kind", mcplib.Description("Capability kind filter: tool, prompt, resource-template, or server")),
+		mcplib.WithString("mcp_availability", mcplib.Description("Capability readiness filter")),
 	)
 
 	s.AddTool(queryTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -103,9 +107,11 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			return handleCapabilityDescribe(ctx, runtime, req)
 		})
 		callTool := mcplib.NewTool("skillex_mcp_call",
-			mcplib.WithDescription("Invoke one explicitly selected downstream MCP tool. Skillex revalidates context, schema, readiness, and policy before opening the selected server."),
+			mcplib.WithDescription("Invoke one explicitly selected downstream MCP tool, prompt, or resource template. Skillex revalidates context, schema, readiness, and policy before opening the selected server."),
 			mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Capability ref returned by skillex_query")),
 			mcplib.WithObject("arguments", mcplib.Description("Arguments for the selected downstream tool")),
+			mcplib.WithObject("input_responses", mcplib.Description("MRTR responses keyed by the downstream input request identifiers")),
+			mcplib.WithString("request_state", mcplib.Description("Opaque requestState returned by an input_required result; echo byte-for-byte")),
 		)
 		s.AddTool(callTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			return handleCapabilityCall(ctx, runtime, req)
@@ -150,6 +156,9 @@ func handleQuery(eng *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToo
 	formatVal, _ := req.Params.Arguments["format"].(string)
 	limitVal, _ := req.Params.Arguments["limit"].(float64)
 	cursorVal, _ := req.Params.Arguments["cursor"].(string)
+	serverVal, _ := req.Params.Arguments["mcp_server"].(string)
+	kindVal, _ := req.Params.Arguments["mcp_kind"].(string)
+	availabilityVal, _ := req.Params.Arguments["mcp_availability"].(string)
 
 	var topics []string
 	for _, t := range strings.Split(topicVal, ",") {
@@ -176,14 +185,17 @@ func handleQuery(eng *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToo
 	}
 
 	resp, err := eng.Execute(query.Params{
-		Path:    pathVal,
-		Topics:  topics,
-		Tags:    tags,
-		Package: pkgVal,
-		Search:  searchVal,
-		Format:  format,
-		Limit:   int(limitVal),
-		Cursor:  cursorVal,
+		Path:           pathVal,
+		Topics:         topics,
+		Tags:           tags,
+		Package:        pkgVal,
+		Search:         searchVal,
+		Format:         format,
+		Limit:          int(limitVal),
+		Cursor:         cursorVal,
+		Server:         serverVal,
+		CapabilityKind: kindVal,
+		Availability:   availabilityVal,
 	})
 	if err != nil {
 		return &mcplib.CallToolResult{
@@ -242,7 +254,9 @@ func handleCapabilityDescribe(ctx context.Context, runtime *brokerruntime.Runtim
 func handleCapabilityCall(ctx context.Context, runtime *brokerruntime.Runtime, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ref, _ := req.Params.Arguments["ref"].(string)
 	arguments, _ := req.Params.Arguments["arguments"].(map[string]any)
-	result, err := runtime.Broker.Call(ctx, ref, arguments, broker.RequestContext{ContextDigest: runtime.ContextDigest, View: runtime.View})
+	inputResponses, _ := req.Params.Arguments["input_responses"].(map[string]any)
+	requestState, _ := req.Params.Arguments["request_state"].(string)
+	result, err := runtime.Broker.CallWithInput(ctx, ref, arguments, inputResponses, requestState, broker.RequestContext{ContextDigest: runtime.ContextDigest, View: runtime.View})
 	if err != nil {
 		return toolError(err), nil
 	}
@@ -254,7 +268,11 @@ func handleCapabilityCall(ctx context.Context, runtime *brokerruntime.Runtime, r
 }
 
 func toolError(err error) *mcplib.CallToolResult {
-	return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: err.Error()}}, IsError: true}
+	encoded, marshalErr := json.Marshal(mcperror.From(err))
+	if marshalErr != nil {
+		encoded = []byte(`{"code":"TOOL_CALL_FAILED","message":"MCP broker call failed"}`)
+	}
+	return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: string(encoded)}}, IsError: true}
 }
 
 func handleRead(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

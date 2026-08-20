@@ -1490,18 +1490,33 @@ Each externally visible milestone must update:
 
 Version bumps and release actions remain separate from feature implementation.
 
-## 25. Decisions required before implementation
+## 25. Implemented decisions
 
-1. Choose the protocol SDK strategy for MCP `2026-07-28`.
-2. Approve additive query response compatibility semantics and defaults.
-3. Approve pack and trusted configuration schema versions.
-4. Approve canonical server identity and package/endpoint trust binding.
-5. Approve capability-reference signing, expiry, and replay policy.
-6. Approve local secret store and browser-auth abstractions.
-7. Approve which auth providers are required for the first invokable release.
-8. Approve stdio sandbox and network policy by platform.
-9. Approve default telemetry attributes and local export behavior.
-10. Approve the open source/hosted contract boundary.
-
-Implementation should not begin with schema migrations until decisions 1 through
-5 are resolved and represented in acceptance fixtures.
+1. Protocol-neutral connector interfaces isolate a direct MCP `2026-07-28`
+   stateless adapter from the older host-facing SDK.
+2. Capability results are additive; version 4 and version 5 with MCP disabled
+   retain skills-only behavior. Skills and capabilities have independent offsets
+   inside one backward-compatible cursor envelope.
+3. Project schema version 5 and trusted schema version 1 are strict. Packs may
+   suggest exact server versions and capability names but cannot define execution
+   or authentication.
+4. Canonical name plus exact server version is the routing identity. Registry
+   namespace, package/remote transport provenance, and package hashes are retained;
+   trusted execution configuration remains a separate allowlist.
+5. References are short-lived HMAC envelopes bound to context, view, routing
+   scope, auth profile, schema digest, issue/expiry time, and nonce. Every call
+   reauthorizes and revalidates live schema.
+6. Local OAuth records are AES-GCM encrypted with an owner-only key. Browser
+   interaction is represented as typed CLI continuation rather than launched by core.
+7. The provider set is env, dotenv, keychain, helper, mTLS, authorization-code
+   PKCE/CIMD/DCR, client credentials, private-key JWT, workload token exchange,
+   and EMA/ID-JAG.
+8. Stdio receives an empty allowlisted environment and an explicitly trusted
+   absolute executable. Platform process sandboxing remains the launcher's policy.
+9. Telemetry is disabled by default and excludes arguments, results, paths,
+   tokens, credential identities, and headers. Local JSONL and aggregate summary
+   are the open-source sinks.
+10. Hosted foundations accept verified JWT/IAP-style or exact mTLS principals and
+    derive opaque tenant partitions and tenant-specific signing keys. Deployment
+    frameworks, KMS/HSMs, regional connector fleets, and dashboards remain
+    operator choices.

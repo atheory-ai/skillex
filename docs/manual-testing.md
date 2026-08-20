@@ -220,6 +220,47 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 - Whether the CLI output format is easy for the agent to parse.
 - Common mistakes the agent makes when constructing queries.
 
+### Journey 5A: Dynamic MCP Capability Broker
+
+**Persona:** Developer whose harness registers only Skillex but needs several
+contextual downstream MCP services.
+
+**Starting state:** A version 5 project with `MCP.Enabled: true`, exact bindings,
+and a separate owner-only trusted configuration file.
+
+**Steps:**
+
+1. Confirm the host configuration contains Skillex only. Save a copy so it can
+   be compared after every remaining step.
+2. Run `skillex catalog sync`, disconnect the registry, and verify queries still
+   find server-level metadata.
+3. Run `skillex catalog inspect`. Verify it starts/calls only bound trusted
+   servers and indexes tools, prompts, and resource templates with freshness.
+4. Remove one mapped credential, run `skillex auth status`, and verify the exact
+   binding says `credential-missing` without contacting downstream services.
+5. For an authorization-code profile, run `skillex auth login --profile <name>`,
+   complete the callback, then verify readiness changes to `ready`.
+6. Ask the harness for a task that matches exactly one downstream capability.
+   Verify `skillex_query` returns its attributed signed ref, describe stays
+   offline, and call opens only the selected server.
+7. Exercise a tool that returns `input_required`; fulfill the request and verify
+   the retry echoes `inputResponses` and byte-exact `requestState`.
+8. Let an observed snapshot expire. Verify the capability becomes `stale` and
+   cannot be called until inspection refreshes it.
+9. Enable local telemetry, make successful and denied calls, then run
+   `skillex telemetry summary`. Inspect the JSONL for arguments, results, tokens,
+   headers, dotenv keys, and helper output; none should be present.
+10. Compare the host configuration with the saved copy. No downstream MCP server
+    should have been added or modified.
+
+**What to look for:**
+
+- Query and describe never start a process or make a network call.
+- Approval and errors name the real server and capability, not only Skillex.
+- Private/authenticated capability views never appear across tenant or principal
+  partitions.
+- Missing/expired credentials produce a typed next action and never a secret-bearing error.
+
 ---
 
 ### Journey 6: Importing External Skills

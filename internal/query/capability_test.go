@@ -34,6 +34,34 @@ func TestExecuteReturnsAdditiveCapabilityResults(t *testing.T) {
 	}
 }
 
+func TestCapabilityOnlyResultsUseIndependentContinuationOffset(t *testing.T) {
+	reg, err := registry.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	discoverer := &fakeCapabilityDiscoverer{}
+	for _, name := range []string{"one", "two", "three"} {
+		discoverer.results = append(discoverer.results, broker.Summary{Ref: "ref-" + name,
+			Server: capability.ServerIdentity{CanonicalName: "io.example/tools"}, Version: "1", Kind: capability.CapabilityTool, Name: name})
+	}
+	engine := NewWithCapabilities(reg, discoverer, "sha256:workspace", "local:public")
+	first, err := engine.Execute(Params{Search: "tool", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Capabilities) != 2 || first.NextCursor == "" {
+		t.Fatalf("first capability page = %#v", first)
+	}
+	second, err := engine.Execute(Params{Search: "tool", Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Capabilities) != 1 || second.Capabilities[0].Name != "three" || second.NextCursor != "" {
+		t.Fatalf("second capability page = %#v", second)
+	}
+}
+
 type fakeCapabilityDiscoverer struct {
 	results []broker.Summary
 	query   broker.Query

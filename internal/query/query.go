@@ -3,12 +3,14 @@ package query
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/broker"
+	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/gobwas/glob"
 )
@@ -56,11 +58,14 @@ type Response struct {
 
 // Echo captures the filters that were searched, included in no_match responses.
 type Echo struct {
-	Path    string   `json:"path,omitempty"`
-	Topics  []string `json:"topics,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Package string   `json:"package,omitempty"`
-	Search  string   `json:"search,omitempty"`
+	Path         string   `json:"path,omitempty"`
+	Topics       []string `json:"topics,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	Package      string   `json:"package,omitempty"`
+	Search       string   `json:"search,omitempty"`
+	Server       string   `json:"server,omitempty"`
+	Kind         string   `json:"capability_kind,omitempty"`
+	Availability string   `json:"availability,omitempty"`
 }
 
 // Vocabulary describes the skill dimensions available in the registry.
@@ -128,11 +133,14 @@ type Facet struct {
 
 // NarrowWith contains only values represented by the current candidate set.
 type NarrowWith struct {
-	Topics   []Facet `json:"topics,omitempty"`
-	Tags     []Facet `json:"tags,omitempty"`
-	Packages []Facet `json:"packages,omitempty"`
-	Paths    []Facet `json:"paths,omitempty"`
-	Advice   string  `json:"advice,omitempty"`
+	Topics       []Facet `json:"topics,omitempty"`
+	Tags         []Facet `json:"tags,omitempty"`
+	Packages     []Facet `json:"packages,omitempty"`
+	Paths        []Facet `json:"paths,omitempty"`
+	Servers      []Facet `json:"servers,omitempty"`
+	Kinds        []Facet `json:"capability_kinds,omitempty"`
+	Availability []Facet `json:"availability,omitempty"`
+	Advice       string  `json:"advice,omitempty"`
 }
 
 // ReadResponse is the bounded second stage of progressive skill retrieval.
@@ -158,7 +166,10 @@ type Params struct {
 	Package string
 	// Search performs keyword search across skill name and description.
 	// Whitespace/comma-separated tokens are each matched independently (OR).
-	Search string
+	Search         string
+	Server         string
+	CapabilityKind string
+	Availability   string
 	// Format controls output detail for result responses.
 	// FormatDefault always selects summary. Content is available only through an
 	// explicit read operation; this keeps discovery bounded and useful.
@@ -171,7 +182,7 @@ type Params struct {
 
 // hasFilters reports whether any filter dimension is set.
 func (p Params) hasFilters() bool {
-	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != "" || p.Search != ""
+	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != "" || p.Search != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != ""
 }
 
 // Engine executes structured skill queries against the registry.
@@ -208,6 +219,12 @@ func NewWithCapabilities(reg *registry.Registry, discoverer CapabilityDiscoverer
 //
 // No code path returns all skill content as a fallback.
 func (e *Engine) Execute(p Params) (*Response, error) {
+	if p.CapabilityKind != "" && p.CapabilityKind != string(capability.CapabilityTool) && p.CapabilityKind != string(capability.CapabilityPrompt) && p.CapabilityKind != string(capability.CapabilityResourceTemplate) && p.CapabilityKind != string(capability.CapabilityServer) {
+		return nil, fmt.Errorf("unsupported MCP capability kind %q", p.CapabilityKind)
+	}
+	if p.Availability != "" && !validAvailability(capability.AvailabilityStatus(p.Availability)) {
+		return nil, fmt.Errorf("unsupported MCP availability %q", p.Availability)
+	}
 	if !p.hasFilters() {
 		return e.vocabularyResponse()
 	}
@@ -219,10 +236,10 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		capabilities []broker.Summary
 		err          error
 	)
-	if e.capabilities != nil && (p.Search != "" || p.Path != "") {
+	if e.capabilities != nil && (p.Search != "" || p.Path != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != "") {
 		capabilities, err = e.capabilities.Query(context.Background(), broker.Query{
 			Path: p.Path, Search: p.Search, ContextDigest: e.capabilityContext,
-			View: e.capabilityView,
+			View: e.capabilityView, Server: p.Server, Kind: capability.CapabilityKind(p.CapabilityKind), Availability: capability.AvailabilityStatus(p.Availability),
 		})
 		if err != nil {
 			return nil, err
@@ -287,9 +304,9 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
 	}
 	matchCount := len(skills)
-	start := decodeCursor(p.Cursor)
-	if start > matchCount {
-		start = matchCount
+	cursor := decodeCursor(p.Cursor)
+	if cursor.Skills > matchCount {
+		cursor.Skills = matchCount
 	}
 	limit := p.Limit
 	if limit <= 0 {
@@ -298,19 +315,23 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	if limit > 20 {
 		limit = 20
 	}
-	end := start + limit
+	end := cursor.Skills + limit
 	if end > matchCount {
 		end = matchCount
 	}
 	capabilityMatchCount := len(capabilities)
-	capabilityEnd := limit
+	allCapabilities := append([]broker.Summary(nil), capabilities...)
+	if cursor.Capabilities > capabilityMatchCount {
+		cursor.Capabilities = capabilityMatchCount
+	}
+	capabilityEnd := cursor.Capabilities + limit
 	if capabilityEnd > capabilityMatchCount {
 		capabilityEnd = capabilityMatchCount
 	}
-	capabilities = capabilities[:capabilityEnd]
+	capabilities = capabilities[cursor.Capabilities:capabilityEnd]
 
-	results := make([]Result, 0, end-start)
-	for _, s := range skills[start:end] {
+	results := make([]Result, 0, end-cursor.Skills)
+	for _, s := range skills[cursor.Skills:end] {
 		r := Result{
 			Ref:            skillRef(s.Path),
 			Path:           s.Path,
@@ -341,14 +362,26 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		MatchCount: matchCount, ReturnedCount: len(results),
 		CapabilityMatchCount: capabilityMatchCount, CapabilityReturnedCount: len(capabilities),
 	}
-	if end < matchCount {
-		resp.NextCursor = encodeCursor(end)
+	if end < matchCount || capabilityEnd < capabilityMatchCount {
+		resp.NextCursor = encodeCursor(discoveryCursor{Skills: end, Capabilities: capabilityEnd})
 	}
 	resp.TooBroad = matchCount > limit || capabilityMatchCount > limit
 	if resp.TooBroad {
-		resp.NarrowWith = buildNarrowWith(skills)
+		resp.NarrowWith = buildNarrowWith(skills, allCapabilities)
 	}
 	return resp, nil
+}
+
+func validAvailability(value capability.AvailabilityStatus) bool {
+	switch value {
+	case capability.AvailabilityDiscovered, capability.AvailabilitySuggested, capability.AvailabilitySetupRequired,
+		capability.AvailabilityCredentialMissing, capability.AvailabilityLoginRequired, capability.AvailabilityScopeRequired,
+		capability.AvailabilityReady, capability.AvailabilityUnsupportedAuth, capability.AvailabilityPolicyDenied,
+		capability.AvailabilityUnreachable, capability.AvailabilityStale:
+		return true
+	default:
+		return false
+	}
 }
 
 func matchDetails(s registry.Skill, search string) ([]string, string) {
@@ -488,22 +521,33 @@ func (e *Engine) Read(ref, sectionID string, maxBytes int) (*ReadResponse, error
 	return resp, nil
 }
 
-func encodeCursor(offset int) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+type discoveryCursor struct {
+	Skills       int `json:"s"`
+	Capabilities int `json:"c"`
 }
-func decodeCursor(cursor string) int {
+
+func encodeCursor(cursor discoveryCursor) string {
+	encoded, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+func decodeCursor(cursor string) discoveryCursor {
 	b, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return 0
+		return discoveryCursor{}
+	}
+	var combined discoveryCursor
+	if json.Unmarshal(b, &combined) == nil && combined.Skills >= 0 && combined.Capabilities >= 0 {
+		return combined
 	}
 	n, err := strconv.Atoi(string(b))
 	if err != nil || n < 0 {
-		return 0
+		return discoveryCursor{}
 	}
-	return n
+	// Version 4 cursors encoded only a skill offset. Preserve that behavior.
+	return discoveryCursor{Skills: n}
 }
 
-func buildNarrowWith(skills []registry.Skill) *NarrowWith {
+func buildNarrowWith(skills []registry.Skill, capabilities []broker.Summary) *NarrowWith {
 	counts := func(values func(registry.Skill) []string) []Facet {
 		m := map[string]int{}
 		for _, s := range skills {
@@ -528,10 +572,27 @@ func buildNarrowWith(skills []registry.Skill) *NarrowWith {
 		}
 		return out
 	}
+	capabilityCounts := func(value func(broker.Summary) string) []Facet {
+		m := map[string]int{}
+		for _, selected := range capabilities {
+			if item := value(selected); item != "" {
+				m[item]++
+			}
+		}
+		out := make([]Facet, 0, len(m))
+		for value, count := range m {
+			out = append(out, Facet{Value: value, Count: count})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
+		return out
+	}
 	return &NarrowWith{
 		Topics: counts(func(s registry.Skill) []string { return s.Topics }), Tags: counts(func(s registry.Skill) []string { return s.Tags }),
 		Packages: counts(func(s registry.Skill) []string { return []string{s.PackageName} }), Paths: counts(func(s registry.Skill) []string { return s.Scopes }),
-		Advice: "This query is broad. Narrow it with a suggested path, topic, tag, package, or more specific search terms before reading content.",
+		Servers:      capabilityCounts(func(s broker.Summary) string { return s.Server.CanonicalName }),
+		Kinds:        capabilityCounts(func(s broker.Summary) string { return string(s.Kind) }),
+		Availability: capabilityCounts(func(s broker.Summary) string { return string(s.Availability) }),
+		Advice:       "This query is broad. Narrow it with a suggested path, topic, tag, package, or more specific search terms before reading content.",
 	}
 }
 
@@ -587,11 +648,14 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 	response := &Response{
 		Type: ResponseTypeNoMatch,
 		Query: &Echo{
-			Path:    p.Path,
-			Topics:  p.Topics,
-			Tags:    p.Tags,
-			Package: p.Package,
-			Search:  p.Search,
+			Path:         p.Path,
+			Topics:       p.Topics,
+			Tags:         p.Tags,
+			Package:      p.Package,
+			Search:       p.Search,
+			Server:       p.Server,
+			Kind:         p.CapabilityKind,
+			Availability: p.Availability,
 		},
 		Vocabulary: buildVocabulary(vocab),
 	}

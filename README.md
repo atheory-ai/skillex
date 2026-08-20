@@ -283,6 +283,8 @@ MCP:
   Catalogs:
     - Type: static
       Path: .skillex/mcp/catalog.json
+    - Type: trusted
+      Name: official
   Bindings:
     - Server: io.example/issues
       Version: 1.0.0
@@ -324,14 +326,74 @@ CredentialProfiles:
               Key: ISSUES_TOKEN
         Inject:
           StdioEnv: DOWNSTREAM_ISSUES_TOKEN
+CatalogSources:
+  - Name: official
+    Type: registry-api
+    BaseURL: https://registry.modelcontextprotocol.io
+    AllowedNamespaces: [io.github.my-company]
+Telemetry:
+  Enabled: false
+  Path: /absolute/path/to/skillex-mcp-usage.jsonl
 ```
 
 Skillex resolves only the named source keys for the selected service/profile.
 It does not enumerate a dotenv file into the process environment and downstream
-stdio servers do not inherit the parent environment. Optional local usage
-telemetry is off by default and can be enabled in this trusted file; it records
-server/tool identities, readiness, outcome, and duration, never credentials,
-arguments, or results.
+stdio servers do not inherit the parent environment. Exact `Keychain` and
+absolute `Helper` sources are also supported; helpers receive an empty
+environment and bounded stdout. Streamable HTTP servers may use exact header
+injection or mTLS certificate/key sources.
+
+OAuth profiles support authorization code with PKCE, URL-based Client ID
+Metadata Documents, explicitly enabled Dynamic Client Registration fallback,
+encrypted refresh-token storage, client credentials (secret or
+`private_key_jwt`), workload token exchange, and Enterprise-Managed
+Authorization with ID-JAG. Discovery validates protected-resource metadata,
+issuer, resource, audience, scopes, and HTTPS endpoints. `skillex auth status`
+does not contact the server; `skillex auth login --profile <name>` returns a
+typed, resumable login action.
+
+For example, a user-delegated remote profile can use a URL client ID (CIMD):
+
+```yaml
+CredentialProfiles:
+  - Name: issues-sso
+    Service: io.example/issues
+    OAuth:
+      Type: authorization-code
+      ProtectedResourceMetadataURL: https://mcp.example/.well-known/oauth-protected-resource
+      Resource: https://mcp.example
+      Issuer: https://login.example/tenant
+      ClientID: https://clients.example/skillex.json
+      RedirectURI: http://127.0.0.1:17832/callback
+      Scopes: [issues.read, issues.write]
+OAuthStore:
+  KeyPath: /absolute/private/path/oauth.key
+  Directory: /absolute/private/path/tokens
+```
+
+Set `OAuth.Type` to `enterprise-managed`, `client-credentials`, or
+`workload-token-exchange` for those flows. Every secret/assertion/private-key
+input uses the same ordered exact-source mapping; none may be supplied by a
+repository pack.
+
+Registry and downstream discovery are explicit synchronization operations, not
+query-time fan-out:
+
+```bash
+skillex catalog sync                         # Registry API metadata → offline cache
+skillex catalog inspect                      # trusted bound servers → tool/prompt/resource metadata
+skillex query --search "create issue"         # offline contextual search
+skillex capability describe --ref <ref>      # offline selected definition
+skillex capability call --ref <ref> --arguments '{"title":"Bug"}'
+skillex telemetry summary                    # opted-in privacy-safe usage counts
+```
+
+`catalog inspect` is the only operation above that starts stdio servers or calls
+remote MCP endpoints. Query and describe remain offline. Observed definitions
+carry freshness metadata; expired views become `stale` and cannot be invoked
+until re-inspected. Optional local telemetry is off by default and records only
+attributed server/capability identity, readiness, outcome, and duration—never
+credentials, arguments, results, tokens, or headers.
 
 ---
 
@@ -610,7 +672,7 @@ skillex://skills/{scope}/{package}/{filename}
 
 Agents discover available resources through the MCP protocol's resource listing — no `AGENTS.md` parsing required.
 
-### Experimental downstream MCP capability broker
+### Downstream MCP capability broker
 
 The capability-broker implementation keeps the host registration model simple:
 the host registers only Skillex, and Skillex opens a selected downstream server
@@ -619,13 +681,16 @@ host's MCP configuration.
 
 Version 4 projects cannot construct the broker. Version 5 projects must use the
 explicit `MCP.Enabled` gate shown in the configuration section. Enabled projects
-get additive capability results from `skillex_query` plus
+get additive, independently paginated capability results from `skillex_query` plus
 `skillex_mcp_describe` and `skillex_mcp_call`. Skillex revalidates the signed
 reference, workspace context, binding, readiness, policy, live schema, and JSON
-Schema 2020-12 arguments before invoking the one selected server. Trusted stdio
-and stateless MCP `2026-07-28` Streamable HTTP connectors are supported. See the
-[implementation status](docs/mcp-capability-broker/implementation-status.md)
-for the remaining OAuth, registry synchronization, and hosted-service work.
+Schema 2020-12 arguments before invoking the one selected server. Tools, prompts,
+and resource templates are indexed at capability granularity. Calls support MCP
+`2026-07-28` multi-round-trip `input_required` results and retries with
+`inputResponses` plus opaque `requestState`. Trusted stdio and stateless
+Streamable HTTP connectors are supported, including optional `server/discover`,
+list TTL/cache-scope handling, per-request metadata, and routing headers. See the
+[implementation status](docs/mcp-capability-broker/implementation-status.md).
 
 ---
 
@@ -665,6 +730,7 @@ skillex query --tags <tag1,tag2>
 skillex query --package <name>
 skillex query --search "auth" --topic security
 skillex query --path <filepath> --search "<task intent>" --limit 8
+skillex query --mcp-server io.example/issues --mcp-kind tool --mcp-availability ready
 skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 

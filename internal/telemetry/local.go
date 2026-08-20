@@ -14,15 +14,17 @@ import (
 )
 
 type Event struct {
-	Timestamp    time.Time `json:"timestamp"`
-	Operation    string    `json:"operation"`
-	Server       string    `json:"server,omitempty"`
-	Version      string    `json:"version,omitempty"`
-	Kind         string    `json:"kind,omitempty"`
-	Capability   string    `json:"capability,omitempty"`
-	Availability string    `json:"availability,omitempty"`
-	Outcome      string    `json:"outcome"`
-	DurationMS   int64     `json:"duration_ms"`
+	Timestamp       time.Time `json:"timestamp"`
+	Operation       string    `json:"operation"`
+	Server          string    `json:"server,omitempty"`
+	Version         string    `json:"version,omitempty"`
+	Kind            string    `json:"kind,omitempty"`
+	Capability      string    `json:"capability,omitempty"`
+	Availability    string    `json:"availability,omitempty"`
+	Outcome         string    `json:"outcome"`
+	DurationMS      int64     `json:"duration_ms"`
+	TenantPartition string    `json:"tenant_partition,omitempty"`
+	PrincipalKind   string    `json:"principal_kind,omitempty"`
 }
 
 type Local struct {
@@ -40,7 +42,8 @@ func (l *Local) Record(_ context.Context, usage broker.UsageEvent) {
 		Timestamp: time.Now().UTC(), Operation: usage.Operation, Server: usage.Server,
 		Version: usage.Version, Kind: string(usage.Kind), Capability: usage.Capability,
 		Availability: string(usage.Availability), Outcome: usage.Outcome,
-		DurationMS: usage.Duration.Milliseconds(),
+		DurationMS:      usage.Duration.Milliseconds(),
+		TenantPartition: usage.TenantPartition, PrincipalKind: usage.PrincipalKind,
 	}
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -55,6 +58,8 @@ func (l *Local) Record(_ context.Context, usage broker.UsageEvent) {
 	if err != nil {
 		return
 	}
-	_, _ = file.Write(append(data, '\n'))
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return
+	}
 	_ = file.Close()
 }

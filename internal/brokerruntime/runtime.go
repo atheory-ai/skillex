@@ -62,7 +62,7 @@ func NewDiscovery(root string, cfg *config.Config, reg *registry.Registry) (*Run
 	}
 	engine, err := broker.NewConfigured(cfg, catalogAdapter, signer,
 		trustedPolicy{cfg: cfg, trusted: trusted, projectRoot: root},
-		connectorFactory{trusted: trusted, projectRoot: root}, options...)
+		&connectorFactory{trusted: trusted, projectRoot: root, httpCache: &streamhttp.DefinitionCache{}}, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,9 @@ func (c readinessCatalog) Search(ctx context.Context, query broker.Query) ([]cap
 		return nil, err
 	}
 	for i := range results {
-		results[i].Availability = c.trusted.Ready(results[i], c.projectRoot)
+		if results[i].Availability != capability.AvailabilityStale {
+			results[i].Availability = c.trusted.Ready(results[i], c.projectRoot)
+		}
 	}
 	return results, nil
 }
@@ -91,7 +93,9 @@ func (c readinessCatalog) Resolve(ctx context.Context, claims capability.Referen
 	if err != nil {
 		return capability.Capability{}, err
 	}
-	selected.Availability = c.trusted.Ready(selected, c.projectRoot)
+	if selected.Availability != capability.AvailabilityStale {
+		selected.Availability = c.trusted.Ready(selected, c.projectRoot)
+	}
 	return selected, nil
 }
 
@@ -119,6 +123,7 @@ func (p trustedPolicy) Evaluate(_ context.Context, selected capability.Capabilit
 type connectorFactory struct {
 	trusted     *trust.Config
 	projectRoot string
+	httpCache   *streamhttp.DefinitionCache
 }
 
 func (f connectorFactory) Open(ctx context.Context, selected capability.Capability) (broker.Connector, error) {
@@ -127,10 +132,12 @@ func (f connectorFactory) Open(ctx context.Context, selected capability.Capabili
 		return nil, trust.ErrServerUntrusted
 	}
 	if server.HTTP != nil {
-		configured, err := f.trusted.StreamableHTTPConfig(selected, f.projectRoot)
+		configured, err := f.trusted.StreamableHTTPConfig(ctx, selected, f.projectRoot)
 		if err != nil {
 			return nil, err
 		}
+		configured.DefinitionCache = f.httpCache
+		configured.CachePartition = selected.AuthProfile
 		factory, err := streamhttp.NewFactory([]streamhttp.ServerConfig{configured})
 		if err != nil {
 			return nil, err

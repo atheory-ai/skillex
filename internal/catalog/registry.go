@@ -36,6 +36,14 @@ func (c *Registry) Search(_ context.Context, query broker.Query) ([]capability.C
 	}
 	results := make([]capability.Capability, 0, len(records))
 	for _, record := range records {
+		if record.AuthPartitionHash != "public" && record.AuthPartitionHash != query.View {
+			continue
+		}
+		if query.Server != "" && record.Capability.Server.Identity.CanonicalName != query.Server ||
+			query.Kind != "" && record.Capability.Kind != query.Kind ||
+			query.Availability != "" && record.Capability.Availability != query.Availability {
+			continue
+		}
 		binding, ok := matchingBinding(record, query.Path)
 		if query.Path != "" && !ok {
 			continue
@@ -52,7 +60,7 @@ func (c *Registry) Search(_ context.Context, query broker.Query) ([]capability.C
 
 // Resolve retrieves the exact current definition named by a selected ref.
 func (c *Registry) Resolve(_ context.Context, claims capability.ReferenceClaims) (capability.Capability, error) {
-	record, err := c.registry.ResolveCapability(claims.Server, claims.Version, claims.Kind, claims.Capability)
+	record, err := c.registry.ResolveCapabilityView(claims.Server, claims.Version, claims.Kind, claims.Capability, claims.View)
 	if err != nil {
 		return capability.Capability{}, err
 	}

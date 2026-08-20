@@ -15,20 +15,24 @@ import (
 )
 
 var (
-	ErrContextMismatch     = errors.New("capability reference context mismatch")
-	ErrViewMismatch        = errors.New("capability reference view mismatch")
-	ErrCapabilityChanged   = errors.New("capability changed after reference issuance")
-	ErrPolicyDenied        = errors.New("capability invocation denied by policy")
-	ErrApprovalRequired    = errors.New("capability invocation requires approval")
-	ErrCapabilityNotReady  = errors.New("capability is not ready")
-	ErrMCPDisabled         = errors.New("MCP capability brokering is not enabled for this project")
-	ErrToolArgumentInvalid = errors.New("tool arguments do not satisfy the capability input schema")
+	ErrContextMismatch       = errors.New("capability reference context mismatch")
+	ErrViewMismatch          = errors.New("capability reference view mismatch")
+	ErrCapabilityChanged     = errors.New("capability changed after reference issuance")
+	ErrPolicyDenied          = errors.New("capability invocation denied by policy")
+	ErrApprovalRequired      = errors.New("capability invocation requires approval")
+	ErrCapabilityNotReady    = errors.New("capability is not ready")
+	ErrMCPDisabled           = errors.New("MCP capability brokering is not enabled for this project")
+	ErrToolArgumentInvalid   = errors.New("tool arguments do not satisfy the capability input schema")
+	ErrCapabilityNotCallable = errors.New("selected capability is discoverable but not directly callable")
 )
 
 // Query describes the context and intent used to retrieve capabilities.
 type Query struct {
 	Path          string
 	Search        string
+	Server        string
+	Kind          capability.CapabilityKind
+	Availability  capability.AvailabilityStatus
 	ContextDigest string
 	View          string
 	Limit         int
@@ -80,6 +84,26 @@ type Connector interface {
 	Close() error
 }
 
+type PromptConnector interface {
+	GetPrompt(ctx context.Context, name string, arguments map[string]any) (any, error)
+}
+
+type ResourceConnector interface {
+	ReadResource(ctx context.Context, uri string) (any, error)
+}
+
+type ToolRoundConnector interface {
+	CallToolRound(ctx context.Context, name string, arguments, inputResponses map[string]any, requestState string) (any, error)
+}
+
+type PromptRoundConnector interface {
+	GetPromptRound(ctx context.Context, name string, arguments, inputResponses map[string]any, requestState string) (any, error)
+}
+
+type ResourceRoundConnector interface {
+	ReadResourceRound(ctx context.Context, uri string, inputResponses map[string]any, requestState string) (any, error)
+}
+
 // ConnectorFactory opens the configured downstream transport only after a
 // reference, context, schema, readiness, and policy have been validated.
 type ConnectorFactory interface {
@@ -99,14 +123,16 @@ type CallResult struct {
 // UsageEvent is the privacy-safe broker telemetry contract. It intentionally
 // excludes arguments, results, paths, credential identities, and header values.
 type UsageEvent struct {
-	Operation    string
-	Server       string
-	Version      string
-	Kind         capability.CapabilityKind
-	Capability   string
-	Availability capability.AvailabilityStatus
-	Outcome      string
-	Duration     time.Duration
+	Operation       string
+	Server          string
+	Version         string
+	Kind            capability.CapabilityKind
+	Capability      string
+	Availability    capability.AvailabilityStatus
+	Outcome         string
+	Duration        time.Duration
+	TenantPartition string
+	PrincipalKind   string
 }
 
 // Observer receives privacy-safe broker events. Recording failures must never
@@ -121,13 +147,24 @@ func WithObserver(observer Observer) Option {
 	return func(b *Broker) { b.observer = observer }
 }
 
+// WithAttribution attaches opaque hosted attribution to telemetry. It must be
+// a derived partition, never a raw tenant or subject identifier.
+func WithAttribution(tenantPartition, principalKind string) Option {
+	return func(b *Broker) {
+		b.tenantPartition = tenantPartition
+		b.principalKind = principalKind
+	}
+}
+
 // Broker coordinates bounded discovery and lazy downstream invocation.
 type Broker struct {
-	catalog    Catalog
-	signer     *capability.ReferenceSigner
-	policy     Policy
-	connectors ConnectorFactory
-	observer   Observer
+	catalog         Catalog
+	signer          *capability.ReferenceSigner
+	policy          Policy
+	connectors      ConnectorFactory
+	observer        Observer
+	tenantPartition string
+	principalKind   string
 }
 
 // New constructs a broker from protocol-neutral core interfaces.
@@ -237,6 +274,12 @@ func (b *Broker) Describe(ctx context.Context, ref string, request RequestContex
 
 // Call validates a selected capability and invokes only its downstream server.
 func (b *Broker) Call(ctx context.Context, ref string, arguments map[string]any, request RequestContext) (CallResult, error) {
+	return b.CallWithInput(ctx, ref, arguments, nil, "", request)
+}
+
+// CallWithInput retries an MRTR-capable operation with host-supplied responses
+// and the byte-exact opaque request state returned by the downstream server.
+func (b *Broker) CallWithInput(ctx context.Context, ref string, arguments, inputResponses map[string]any, requestState string, request RequestContext) (CallResult, error) {
 	started := time.Now()
 	selected, err := b.Describe(ctx, ref, request)
 	if err != nil {
@@ -280,7 +323,36 @@ func (b *Broker) Call(ctx context.Context, ref string, arguments map[string]any,
 		return CallResult{}, fmt.Errorf("opening downstream MCP server %s: %w", selected.Server.Identity.CanonicalName, err)
 	}
 	defer connector.Close()
-	result, err := connector.CallTool(ctx, selected.Name, arguments)
+	var result any
+	switch selected.Kind {
+	case capability.CapabilityTool:
+		if round, ok := connector.(ToolRoundConnector); ok {
+			result, err = round.CallToolRound(ctx, selected.Name, arguments, inputResponses, requestState)
+		} else {
+			result, err = connector.CallTool(ctx, selected.Name, arguments)
+		}
+	case capability.CapabilityPrompt:
+		promptConnector, ok := connector.(PromptConnector)
+		if !ok {
+			err = ErrCapabilityNotCallable
+		} else if round, ok := connector.(PromptRoundConnector); ok {
+			result, err = round.GetPromptRound(ctx, selected.Name, arguments, inputResponses, requestState)
+		} else {
+			result, err = promptConnector.GetPrompt(ctx, selected.Name, arguments)
+		}
+	case capability.CapabilityResourceTemplate:
+		resourceConnector, ok := connector.(ResourceConnector)
+		uri, uriOK := arguments["uri"].(string)
+		if !ok || !uriOK || uri == "" {
+			err = ErrCapabilityNotCallable
+		} else if round, ok := connector.(ResourceRoundConnector); ok {
+			result, err = round.ReadResourceRound(ctx, uri, inputResponses, requestState)
+		} else {
+			result, err = resourceConnector.ReadResource(ctx, uri)
+		}
+	default:
+		err = ErrCapabilityNotCallable
+	}
 	if err != nil {
 		record("tool-error")
 		return CallResult{}, fmt.Errorf("calling %s on %s: %w", selected.Name, selected.Server.Identity.CanonicalName, err)
@@ -295,6 +367,8 @@ func (b *Broker) Call(ctx context.Context, ref string, arguments map[string]any,
 
 func (b *Broker) record(ctx context.Context, event UsageEvent) {
 	if b.observer != nil {
+		event.TenantPartition = b.tenantPartition
+		event.PrincipalKind = b.principalKind
 		b.observer.Record(ctx, event)
 	}
 }
