@@ -27,6 +27,8 @@ type ReferenceClaims struct {
 	Capability    string         `json:"capability"`
 	Kind          CapabilityKind `json:"kind"`
 	SchemaDigest  string         `json:"schema_digest"`
+	RoutingScope  string         `json:"routing_scope,omitempty"`
+	AuthProfile   string         `json:"auth_profile,omitempty"`
 	View          string         `json:"view"`
 	ContextDigest string         `json:"context"`
 	IssuedAt      int64          `json:"issued_at"`
@@ -95,6 +97,8 @@ func (s *ReferenceSigner) Issue(capability Capability, view, contextDigest strin
 		Capability:    capability.Name,
 		Kind:          capability.Kind,
 		SchemaDigest:  capability.SchemaDigest,
+		RoutingScope:  capability.RoutingScope,
+		AuthProfile:   capability.AuthProfile,
 		View:          view,
 		ContextDigest: contextDigest,
 		IssuedAt:      now.Unix(),

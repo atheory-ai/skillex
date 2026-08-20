@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,8 +18,193 @@ import (
 	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
 	stdioConnector "github.com/atheory-ai/skillex/internal/connector/stdio"
+	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/atheory-ai/skillex/test/helpers"
 )
+
+func TestMCPBroker_StaticCatalogRefreshIsOffline(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	cfg, err := config.Load(fixtureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostConfigPath := filepath.Join(fixtureDir, ".cursor", "mcp.json")
+	hostConfigBefore, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := registry.Open(filepath.Join(fixtureDir, ".skillex", "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	result, err := registry.Refresh(reg, cfg, registry.RefreshOptions{Root: fixtureDir, DevMode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CapabilitiesAdded != 2 {
+		t.Fatalf("capabilities added = %d, want 2", result.CapabilitiesAdded)
+	}
+	capabilities, err := reg.QueryCapabilitiesBySearch("create issue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(capabilities) != 1 || capabilities[0].Capability.Name != "issues.create" {
+		t.Fatalf("offline capability search = %#v", capabilities)
+	}
+	hostConfigAfter, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hostConfigBefore, hostConfigAfter) {
+		t.Fatal("static capability refresh modified host MCP configuration")
+	}
+}
+
+func TestMCPBroker_HostDiscoversAndDescribesCapabilityThroughSkillexOnly(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	hostConfigPath := filepath.Join(fixtureDir, ".cursor", "mcp.json")
+	hostConfigBefore, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+	client := helpers.StartMCPServer(t, fixtureDir)
+	defer client.Close()
+	text, err := client.CallToolText("skillex_query", map[string]interface{}{
+		"path": "packages/app/src/issues.ts", "search": "create issue", "limit": 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Capabilities []broker.Summary `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("decoding capability query: %v\n%s", err, text)
+	}
+	issues := findCapabilitySummary(t, response.Capabilities, "io.example/issues", "issues.create")
+	if issues.Ref == "" {
+		t.Fatal("host-facing capability result omitted signed ref")
+	}
+	described, err := client.CallToolText("skillex_mcp_describe", map[string]interface{}{"ref": issues.Ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(described, `"name": "issues.create"`) || !strings.Contains(described, `"input_schema"`) {
+		t.Fatalf("unexpected capability description: %s", described)
+	}
+	if _, err := client.CallToolText("skillex_mcp_call", map[string]interface{}{
+		"ref": issues.Ref, "arguments": map[string]any{"title": "Not ready"},
+	}); err == nil {
+		t.Fatal("setup-required static capability was invokable")
+	}
+	hostConfigAfter, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hostConfigBefore, hostConfigAfter) {
+		t.Fatal("host-facing dynamic discovery modified host MCP configuration")
+	}
+}
+
+func TestMCPBroker_HostInvokesTrustedDynamicServerWithoutHostRegistration(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	fakeServer := helpers.BuildFakeMCPServer(t)
+	events := filepath.Join(t.TempDir(), "host-issues.jsonl")
+	usageEvents := filepath.Join(t.TempDir(), "usage.jsonl")
+	trustPath := filepath.Join(t.TempDir(), "mcp-trust.yaml")
+	trustDocument := fmt.Sprintf(`Version: 1
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [%q]
+    AuthProfiles: [issues-test]
+    Stdio:
+      Command: %q
+      Args: ["--fixture", %q, "--events", %q]
+      Directory: %q
+CredentialProfiles:
+  - Name: issues-test
+    Service: io.example/issues
+    Credentials:
+      - Slot: access-token
+        Sources:
+          - Env:
+              Key: SKILLEX_ISSUES_TOKEN
+        Inject:
+          StdioEnv: ISSUES_TOKEN
+Telemetry:
+  Enabled: true
+  Path: %q
+`, fixtureDir, fakeServer, filepath.Join(fixtureDir, "servers", "issues.json"), events, fixtureDir, usageEvents)
+	if err := os.WriteFile(trustPath, []byte(trustDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKILLEX_MCP_TRUST_CONFIG", trustPath)
+	t.Setenv("SKILLEX_ISSUES_TOKEN", "mapped-token")
+	t.Setenv("SKILLEX_TEST_SECRET", "must-not-reach-downstream")
+
+	hostConfigPath := filepath.Join(fixtureDir, ".cursor", "mcp.json")
+	hostConfigBefore, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+	client := helpers.StartMCPServer(t, fixtureDir)
+	defer client.Close()
+	text, err := client.CallToolText("skillex_query", map[string]interface{}{
+		"path": "packages/app/src/issues.ts", "search": "create issue", "limit": 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Capabilities []broker.Summary `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatal(err)
+	}
+	issues := findCapabilitySummary(t, response.Capabilities, "io.example/issues", "issues.create")
+	if issues.Availability != capability.AvailabilityReady {
+		t.Fatalf("availability = %s, want ready", issues.Availability)
+	}
+	called, err := client.CallToolText("skillex_mcp_call", map[string]interface{}{
+		"ref": issues.Ref, "arguments": map[string]any{"title": "Dynamic host call"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(called, `"server": "issues-fixture-server"`) || !strings.Contains(called, `"secretVisible": false`) {
+		t.Fatalf("unexpected downstream result: %s", called)
+	}
+	assertEvents(t, events, []protocolEvent{{Method: "server/discover"}, {Method: "tools/list"}, {Method: "tools/call", Tool: "issues.create"}})
+	usage, err := os.ReadFile(usageEvents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(usage, []byte(`"operation":"call"`)) || !bytes.Contains(usage, []byte(`"outcome":"success"`)) {
+		t.Fatalf("usage telemetry omitted successful call: %s", usage)
+	}
+	for _, secret := range []string{"mapped-token", "Dynamic host call", "SKILLEX_ISSUES_TOKEN", "ISSUES_TOKEN"} {
+		if bytes.Contains(usage, []byte(secret)) {
+			t.Fatalf("usage telemetry leaked %q: %s", secret, usage)
+		}
+	}
+	hostConfigAfter, err := os.ReadFile(hostConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hostConfigBefore, hostConfigAfter) {
+		t.Fatal("dynamic invocation modified host MCP configuration")
+	}
+}
 
 func TestMCPBroker_GoldenDiscoveryDescribeAndRealStdioCall(t *testing.T) {
 	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")

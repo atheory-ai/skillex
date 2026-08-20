@@ -76,14 +76,18 @@ Use --dry-run to preview what would change without writing.`,
 			}
 
 			if flagJSON {
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{
+				output := map[string]any{
 					"skills_added": result.SkillsAdded,
 					"tests_added":  result.TestsAdded,
 					"errors":       len(result.Errors),
 					"dry_run":      dryRun,
-				})
+				}
+				if cfg.MCPEnabled() {
+					output["capabilities_added"] = result.CapabilitiesAdded
+				}
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(output)
 			}
 
 			if !flagQuiet {
@@ -92,6 +96,9 @@ Use --dry-run to preview what would change without writing.`,
 					result.SkillsAdded,
 					result.TestsAdded,
 				)
+				if cfg.MCPEnabled() {
+					fmt.Fprintf(os.Stderr, "%s %d MCP capabilities\n", styleSuccess.Render("✓"), result.CapabilitiesAdded)
+				}
 			}
 
 			if !dryRun {

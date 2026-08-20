@@ -48,7 +48,15 @@ type Rule struct {
 // only name a trusted profile supplied by a user or enterprise configuration.
 type MCPConfig struct {
 	Enabled  bool         `yaml:"Enabled" json:"Enabled"`
+	Catalogs []MCPCatalog `yaml:"Catalogs,omitempty" json:"Catalogs,omitempty"`
 	Bindings []MCPBinding `yaml:"Bindings,omitempty" json:"Bindings,omitempty"`
+}
+
+// MCPCatalog identifies a metadata-only capability source. Static catalog
+// paths are resolved within the project root and are never executed.
+type MCPCatalog struct {
+	Type string `yaml:"Type" json:"Type"`
+	Path string `yaml:"Path" json:"Path"`
 }
 
 // MCPBinding selects one exact downstream server version and, optionally, a
@@ -145,6 +153,16 @@ func (c *Config) Validate() error {
 	}
 	if len(c.MCP.Bindings) == 0 {
 		return errorsForMissingBindings()
+	}
+	for i, catalog := range c.MCP.Catalogs {
+		prefix := fmt.Sprintf("MCP.Catalogs[%d]", i)
+		if catalog.Type != "static" {
+			return fmt.Errorf("%s.Type %q is unsupported (supported: static)", prefix, catalog.Type)
+		}
+		path := filepath.Clean(strings.TrimSpace(catalog.Path))
+		if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("%s.Path must be a relative path inside the project", prefix)
+		}
 	}
 
 	seen := make(map[string]struct{}, len(c.MCP.Bindings))

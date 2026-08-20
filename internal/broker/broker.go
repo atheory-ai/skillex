@@ -7,19 +7,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
+	tooljsonschema "github.com/atheory-ai/skillex/internal/jsonschema"
 )
 
 var (
-	ErrContextMismatch    = errors.New("capability reference context mismatch")
-	ErrViewMismatch       = errors.New("capability reference view mismatch")
-	ErrCapabilityChanged  = errors.New("capability changed after reference issuance")
-	ErrPolicyDenied       = errors.New("capability invocation denied by policy")
-	ErrApprovalRequired   = errors.New("capability invocation requires approval")
-	ErrCapabilityNotReady = errors.New("capability is not ready")
-	ErrMCPDisabled        = errors.New("MCP capability brokering is not enabled for this project")
+	ErrContextMismatch     = errors.New("capability reference context mismatch")
+	ErrViewMismatch        = errors.New("capability reference view mismatch")
+	ErrCapabilityChanged   = errors.New("capability changed after reference issuance")
+	ErrPolicyDenied        = errors.New("capability invocation denied by policy")
+	ErrApprovalRequired    = errors.New("capability invocation requires approval")
+	ErrCapabilityNotReady  = errors.New("capability is not ready")
+	ErrMCPDisabled         = errors.New("MCP capability brokering is not enabled for this project")
+	ErrToolArgumentInvalid = errors.New("tool arguments do not satisfy the capability input schema")
 )
 
 // Query describes the context and intent used to retrieve capabilities.
@@ -93,38 +96,69 @@ type CallResult struct {
 	Result any `json:"result"`
 }
 
+// UsageEvent is the privacy-safe broker telemetry contract. It intentionally
+// excludes arguments, results, paths, credential identities, and header values.
+type UsageEvent struct {
+	Operation    string
+	Server       string
+	Version      string
+	Kind         capability.CapabilityKind
+	Capability   string
+	Availability capability.AvailabilityStatus
+	Outcome      string
+	Duration     time.Duration
+}
+
+// Observer receives privacy-safe broker events. Recording failures must never
+// change discovery or invocation behavior.
+type Observer interface {
+	Record(ctx context.Context, event UsageEvent)
+}
+
+type Option func(*Broker)
+
+func WithObserver(observer Observer) Option {
+	return func(b *Broker) { b.observer = observer }
+}
+
 // Broker coordinates bounded discovery and lazy downstream invocation.
 type Broker struct {
 	catalog    Catalog
 	signer     *capability.ReferenceSigner
 	policy     Policy
 	connectors ConnectorFactory
+	observer   Observer
 }
 
 // New constructs a broker from protocol-neutral core interfaces.
-func New(catalog Catalog, signer *capability.ReferenceSigner, policy Policy, connectors ConnectorFactory) (*Broker, error) {
+func New(catalog Catalog, signer *capability.ReferenceSigner, policy Policy, connectors ConnectorFactory, options ...Option) (*Broker, error) {
 	if catalog == nil || signer == nil || policy == nil || connectors == nil {
 		return nil, errors.New("broker catalog, signer, policy, and connector factory are required")
 	}
-	return &Broker{catalog: catalog, signer: signer, policy: policy, connectors: connectors}, nil
+	created := &Broker{catalog: catalog, signer: signer, policy: policy, connectors: connectors}
+	for _, option := range options {
+		option(created)
+	}
+	return created, nil
 }
 
 // NewConfigured constructs the project-facing broker only after configuration
 // has explicitly enabled MCP capability brokering. Low-level tests and adapters
 // may use New directly; application entry points must use this gate.
-func NewConfigured(cfg *config.Config, catalog Catalog, signer *capability.ReferenceSigner, policy Policy, connectors ConnectorFactory) (*Broker, error) {
+func NewConfigured(cfg *config.Config, catalog Catalog, signer *capability.ReferenceSigner, policy Policy, connectors ConnectorFactory, options ...Option) (*Broker, error) {
 	if cfg == nil || !cfg.MCPEnabled() {
 		return nil, ErrMCPDisabled
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid MCP configuration: %w", err)
 	}
-	return New(catalog, signer, policy, connectors)
+	return New(catalog, signer, policy, connectors, options...)
 }
 
 // Query searches the offline catalog and issues short-lived references. It does
 // not open a downstream connection.
 func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
+	started := time.Now()
 	if query.ContextDigest == "" || query.View == "" {
 		return nil, errors.New("query context digest and view are required")
 	}
@@ -156,6 +190,9 @@ func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
 			Description:  selected.Description,
 			Availability: selected.Availability,
 		})
+		b.record(ctx, UsageEvent{Operation: "discover", Server: selected.Server.Identity.CanonicalName,
+			Version: selected.Server.Version, Kind: selected.Kind, Capability: selected.Name,
+			Availability: selected.Availability, Outcome: "returned", Duration: time.Since(started)})
 	}
 	return results, nil
 }
@@ -163,6 +200,7 @@ func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
 // Describe revalidates and resolves one selected capability without connecting
 // to its downstream server.
 func (b *Broker) Describe(ctx context.Context, ref string, request RequestContext) (capability.Capability, error) {
+	started := time.Now()
 	claims, err := b.signer.Verify(ref)
 	if err != nil {
 		return capability.Capability{}, err
@@ -188,44 +226,75 @@ func (b *Broker) Describe(ctx context.Context, ref string, request RequestContex
 		claims.SchemaDigest != selected.SchemaDigest {
 		return capability.Capability{}, ErrCapabilityChanged
 	}
+	if claims.RoutingScope != selected.RoutingScope || claims.AuthProfile != selected.AuthProfile {
+		return capability.Capability{}, ErrCapabilityChanged
+	}
+	b.record(ctx, UsageEvent{Operation: "describe", Server: selected.Server.Identity.CanonicalName,
+		Version: selected.Server.Version, Kind: selected.Kind, Capability: selected.Name,
+		Availability: selected.Availability, Outcome: "success", Duration: time.Since(started)})
 	return selected, nil
 }
 
 // Call validates a selected capability and invokes only its downstream server.
 func (b *Broker) Call(ctx context.Context, ref string, arguments map[string]any, request RequestContext) (CallResult, error) {
+	started := time.Now()
 	selected, err := b.Describe(ctx, ref, request)
 	if err != nil {
+		b.record(ctx, UsageEvent{Operation: "call", Outcome: "reference-rejected", Duration: time.Since(started)})
 		return CallResult{}, err
 	}
+	record := func(outcome string) {
+		b.record(ctx, UsageEvent{Operation: "call", Server: selected.Server.Identity.CanonicalName,
+			Version: selected.Server.Version, Kind: selected.Kind, Capability: selected.Name,
+			Availability: selected.Availability, Outcome: outcome, Duration: time.Since(started)})
+	}
 	if selected.Availability != capability.AvailabilityReady {
+		record("not-ready")
 		return CallResult{}, fmt.Errorf("%w: %s", ErrCapabilityNotReady, selected.Availability)
+	}
+	if err := tooljsonschema.Validate(selected.InputSchemaJSON, arguments); err != nil {
+		record("arguments-invalid")
+		return CallResult{}, ErrToolArgumentInvalid
 	}
 	effect, err := b.policy.Evaluate(ctx, selected, arguments)
 	if err != nil {
+		record("policy-error")
 		return CallResult{}, err
 	}
 	switch effect {
 	case PolicyAllow:
 	case PolicyDeny:
+		record("policy-denied")
 		return CallResult{}, ErrPolicyDenied
 	case PolicyApprovalRequired:
+		record("approval-required")
 		return CallResult{}, ErrApprovalRequired
 	default:
+		record("policy-error")
 		return CallResult{}, fmt.Errorf("unknown policy effect %q", effect)
 	}
 
 	connector, err := b.connectors.Open(ctx, selected)
 	if err != nil {
+		record("connector-error")
 		return CallResult{}, fmt.Errorf("opening downstream MCP server %s: %w", selected.Server.Identity.CanonicalName, err)
 	}
 	defer connector.Close()
 	result, err := connector.CallTool(ctx, selected.Name, arguments)
 	if err != nil {
+		record("tool-error")
 		return CallResult{}, fmt.Errorf("calling %s on %s: %w", selected.Name, selected.Server.Identity.CanonicalName, err)
 	}
 
 	attributed := CallResult{Server: selected.Server, Result: result}
 	attributed.Capability.Kind = selected.Kind
 	attributed.Capability.Name = selected.Name
+	record("success")
 	return attributed, nil
+}
+
+func (b *Broker) record(ctx context.Context, event UsageEvent) {
+	if b.observer != nil {
+		b.observer.Record(ctx, event)
+	}
 }

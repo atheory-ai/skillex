@@ -20,14 +20,25 @@ type RefreshOptions struct {
 
 // RefreshResult summarizes what was written.
 type RefreshResult struct {
-	SkillsAdded int
-	TestsAdded  int
-	Errors      []error
+	SkillsAdded       int
+	TestsAdded        int
+	CapabilitiesAdded int
+	Errors            []error
 }
 
 // Refresh rebuilds the registry from the given configuration.
 func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
 	result := &RefreshResult{}
+	var capabilityRecords []CapabilityRecord
+	if cfg.MCPEnabled() {
+		for _, source := range cfg.MCP.Catalogs {
+			records, err := LoadStaticCapabilityCatalog(opts.Root, source, cfg.MCP.Bindings)
+			if err != nil {
+				return nil, err
+			}
+			capabilityRecords = append(capabilityRecords, records...)
+		}
+	}
 
 	// 1. Scan
 	sc := scanner.New(opts.Root, cfg, opts.DevMode)
@@ -36,6 +47,12 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 	result.Errors = append(result.Errors, scanResult.Errors...)
+	if cfg.MCPEnabled() {
+		capabilityRecords, err = ApplyCapabilitySuggestions(capabilityRecords, scanResult.CapabilitySuggestions)
+		if err != nil {
+			return nil, fmt.Errorf("applying MCP pack suggestions: %w", err)
+		}
+	}
 
 	// 2. Link
 	lnk := linker.New(opts.Root, cfg)
@@ -80,6 +97,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 				}
 			}
 		}
+		result.CapabilitiesAdded = len(capabilityRecords)
 		return result, nil
 	}
 
@@ -151,6 +169,17 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 				result.TestsAdded++
 			}
 		}
+	}
+
+	// 6. Insert capability metadata. Catalog loading above is metadata-only and
+	// never connects to or executes a downstream MCP server.
+	for _, record := range capabilityRecords {
+		if _, err := reg.InsertCapability(record); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("inserting MCP capability %s/%s: %w",
+				record.Capability.Server.Identity.CanonicalName, record.Capability.Name, err))
+			continue
+		}
+		result.CapabilitiesAdded++
 	}
 
 	return result, nil

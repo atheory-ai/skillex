@@ -4,6 +4,9 @@ Rules:
     Skills: []
 MCP:
   Enabled: true
+  Catalogs:
+    - Type: static
+      Path: catalog.json
   Bindings:
     - Server: io.example/weather
       Version: 1.0.0

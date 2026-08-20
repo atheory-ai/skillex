@@ -34,15 +34,16 @@ Checks:
 }
 
 type doctorReport struct {
-	ConfigOK    bool     `json:"config_ok"`
-	RegistryOK  bool     `json:"registry_ok"`
-	SkillCount  int      `json:"skill_count"`
-	MCPEnabled  bool     `json:"mcp_enabled"`
-	MCPBindings int      `json:"mcp_bindings"`
-	Topics      []string `json:"topics"`
-	Tags        []string `json:"tags"`
-	Errors      []string `json:"errors"`
-	Warnings    []string `json:"warnings"`
+	ConfigOK        bool     `json:"config_ok"`
+	RegistryOK      bool     `json:"registry_ok"`
+	SkillCount      int      `json:"skill_count"`
+	MCPEnabled      bool     `json:"mcp_enabled"`
+	MCPBindings     int      `json:"mcp_bindings"`
+	MCPCapabilities int      `json:"mcp_capabilities"`
+	Topics          []string `json:"topics"`
+	Tags            []string `json:"tags"`
+	Errors          []string `json:"errors"`
+	Warnings        []string `json:"warnings"`
 }
 
 func runDoctor(root string) error {
@@ -100,6 +101,11 @@ func runDoctor(root string) error {
 			count, _ := reg.SkillCount() //nolint:errcheck
 			report.SkillCount = count
 			printCheck(true, "registry", fmt.Sprintf("%d skills indexed", count))
+			capabilityCount, _ := reg.CapabilityCount() //nolint:errcheck
+			report.MCPCapabilities = capabilityCount
+			if report.MCPEnabled {
+				printInfo("MCP capabilities", fmt.Sprintf("%d indexed", capabilityCount))
+			}
 
 			topics, _ := reg.AllTopics() //nolint:errcheck
 			report.Topics = topics

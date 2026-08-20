@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is incremented whenever a migration is added.
 // Registry.Open sets this on all databases it manages.
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 // migrateSchema applies any pending schema migrations.
 //
@@ -124,6 +124,14 @@ func migrateSchema(db *sql.DB) error {
 			db.Exec("ROLLBACK") //nolint:errcheck
 			return fmt.Errorf("indexing skill %d for full-text search: %w", skill.id, err)
 		}
+	}
+
+	// v5: capability-granular MCP catalog, views, bindings, transports, and FTS.
+	// The migration deliberately backfills no capability rows; explicit refresh
+	// from configured metadata sources owns that state.
+	if err := createCapabilitySchema(db); err != nil {
+		db.Exec("ROLLBACK") //nolint:errcheck
+		return fmt.Errorf("creating MCP capability schema: %w", err)
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)); err != nil {

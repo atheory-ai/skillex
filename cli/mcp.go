@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 	mcpserver "github.com/atheory-ai/skillex/mcp"
 )
@@ -20,6 +21,7 @@ func newMCPCmd() *cobra.Command {
 The MCP server exposes:
   - Resources: bounded skill summaries and section tables of contents
   - Tools: skillex_query for discovery and skillex_read for bounded selected content
+  - When explicitly enabled: downstream capability discovery, describe, and call tools
 
 Configure in your agent harness:
 
@@ -44,8 +46,12 @@ Configure in your agent harness:
 				return fmt.Errorf("opening registry: %w", err)
 			}
 			defer reg.Close()
+			cfg, err := config.Load(root)
+			if err != nil {
+				return err
+			}
 
-			return mcpserver.Serve(reg, Version)
+			return mcpserver.ServeConfigured(reg, cfg, root, Version)
 		},
 	}
 }

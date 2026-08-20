@@ -41,6 +41,17 @@ type SkillFile struct {
 	ExplicitScopes []string
 }
 
+// CapabilitySuggestion is non-executable relevance metadata activated from a pack.
+type CapabilitySuggestion struct {
+	ServerRef    string
+	Version      string
+	Relationship string
+	Capabilities []string
+	Scopes       []string
+	SourceType   string
+	SourceRef    string
+}
+
 // Scanner discovers skill files within a repository.
 type Scanner struct {
 	root      string
@@ -67,9 +78,10 @@ func NewWithResolvers(root string, cfg *config.Config, devMode bool, resolvers [
 
 // ScanResult holds the complete output of a scan.
 type ScanResult struct {
-	RepoSkills []SkillFile
-	DepSkills  []SkillFile
-	Errors     []error
+	RepoSkills            []SkillFile
+	DepSkills             []SkillFile
+	CapabilitySuggestions []CapabilitySuggestion
+	Errors                []error
 }
 
 // Scan performs a full discovery scan.
@@ -114,21 +126,36 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 		}
 		seen[boundaryPath] = true
 
-		depSkills, errs := s.scanDependencyBoundary(boundaryPath, rule.DependencyBoundary)
+		depSkills, suggestions, errs := s.scanDependencyBoundary(boundaryPath, rule.DependencyBoundary)
 		result.DepSkills = append(result.DepSkills, depSkills...)
+		result.CapabilitySuggestions = append(result.CapabilitySuggestions, suggestions...)
 		result.Errors = append(result.Errors, errs...)
 	}
 
 	packSkills, errs := s.scanProjectPacks()
 	result.RepoSkills = append(result.RepoSkills, packSkills...)
 	result.Errors = append(result.Errors, errs...)
+	activatedMCP, mcpErrs := packs.ActivateProjectMCPServers(s.root)
+	result.Errors = append(result.Errors, mcpErrs...)
+	for _, activation := range activatedMCP {
+		result.CapabilitySuggestions = append(result.CapabilitySuggestions, CapabilitySuggestion{
+			ServerRef:    activation.Server.Ref,
+			Version:      activation.Server.Version,
+			Relationship: activation.Server.Relationship,
+			Capabilities: append([]string(nil), activation.Server.Capabilities.Prefer...),
+			Scopes:       append([]string(nil), activation.Scopes...),
+			SourceType:   "project-pack",
+			SourceRef:    filepath.ToSlash(activation.Pack.Path),
+		})
+	}
 
 	return result, nil
 }
 
 // scanDependencyBoundary resolves dependencies at a configured boundary and scans exported skills.
-func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]SkillFile, []error) {
+func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]SkillFile, []CapabilitySuggestion, []error) {
 	var skills []SkillFile
+	var suggestions []CapabilitySuggestion
 	var errs []error
 
 	mode := DependencyModeProd
@@ -178,8 +205,9 @@ func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]Sk
 					skills = append(skills, depSkills...)
 					errs = append(errs, depErrs...)
 				case SkillExportFormatPackManifest:
-					depSkills, depErrs := s.scanDependencyPack(export.Path, *boundary, pkgRoot)
+					depSkills, depSuggestions, depErrs := s.scanDependencyPack(export.Path, *boundary, pkgRoot)
 					skills = append(skills, depSkills...)
+					suggestions = append(suggestions, depSuggestions...)
 					errs = append(errs, depErrs...)
 				default:
 					continue
@@ -188,16 +216,17 @@ func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]Sk
 		}
 	}
 
-	return skills, errs
+	return skills, suggestions, errs
 }
 
-func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkgRoot PackageRoot) ([]SkillFile, []error) {
+func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkgRoot PackageRoot) ([]SkillFile, []CapabilitySuggestion, []error) {
 	var skills []SkillFile
+	var suggestions []CapabilitySuggestion
 	var errs []error
 
 	pack, err := packs.Load(manifestPath)
 	if err != nil {
-		return nil, []error{err}
+		return nil, nil, []error{err}
 	}
 
 	ctx := packs.ActivationContext{
@@ -259,8 +288,27 @@ func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkg
 		}
 		skills = append(skills, testSfs...)
 	}
+	for _, server := range pack.Manifest.MCPServers {
+		scopes, err := packs.ActivateMCPServerWithContext(s.root, server, ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("activating pack %s MCP server %s: %w", pack.Manifest.Name, server.Ref, err))
+			continue
+		}
+		if len(scopes) == 0 {
+			continue
+		}
+		suggestions = append(suggestions, CapabilitySuggestion{
+			ServerRef:    server.Ref,
+			Version:      server.Version,
+			Relationship: server.Relationship,
+			Capabilities: append([]string(nil), server.Capabilities.Prefer...),
+			Scopes:       append([]string(nil), scopes...),
+			SourceType:   "dependency-pack",
+			SourceRef:    filepath.ToSlash(manifestPath),
+		})
+	}
 
-	return skills, errs
+	return skills, suggestions, errs
 }
 
 // scanSkilexDir reads public/ and private/ directories in a skillex export directory.

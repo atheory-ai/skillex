@@ -280,6 +280,9 @@ Rules:
       - skills/repo.md
 MCP:
   Enabled: true
+  Catalogs:
+    - Type: static
+      Path: .skillex/mcp/catalog.json
   Bindings:
     - Server: io.example/issues
       Version: 1.0.0
@@ -293,10 +296,42 @@ profile; repository configuration cannot define credentials or secret sources.
 Bindings are rejected unless MCP is explicitly enabled, and unknown version 5
 fields are rejected so security-sensitive typos do not silently pass.
 
-This is currently an experimental construction and compatibility gate for the
-broker implementation. The released `skillex_query` and `skillex_read` surface
-described below remains skill-only until capability catalog persistence and the
-additive host-facing tools are implemented.
+Trusted execution and credential mapping live outside the repository. By
+default Skillex reads the platform user config at
+`$XDG_CONFIG_HOME/skillex/mcp-trust.yaml` (or the OS equivalent). A user or
+enterprise launcher may select one exact file with
+`SKILLEX_MCP_TRUST_CONFIG`. For example:
+
+```yaml
+Version: 1
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [/absolute/path/to/project]
+    AuthProfiles: [issues-work]
+    Stdio:
+      Command: /absolute/path/to/issues-mcp
+CredentialProfiles:
+  - Name: issues-work
+    Service: io.example/issues
+    Credentials:
+      - Slot: access-token
+        Sources:
+          - Env:
+              Key: ISSUES_TOKEN
+          - Dotenv:
+              Path: "${projectRoot}/.env.mcp"
+              Key: ISSUES_TOKEN
+        Inject:
+          StdioEnv: DOWNSTREAM_ISSUES_TOKEN
+```
+
+Skillex resolves only the named source keys for the selected service/profile.
+It does not enumerate a dotenv file into the process environment and downstream
+stdio servers do not inherit the parent environment. Optional local usage
+telemetry is off by default and can be enabled in this trusted file; it records
+server/tool identities, readiness, outcome, and duration, never credentials,
+arguments, or results.
 
 ---
 
@@ -583,12 +618,14 @@ on demand. A downstream server is never written into Cursor, VS Code, or another
 host's MCP configuration.
 
 Version 4 projects cannot construct the broker. Version 5 projects must use the
-explicit `MCP.Enabled` gate shown in the configuration section. The current
-milestone includes the protocol-neutral broker core, a modern stdio connector,
-strict opt-in configuration, and process-level golden tests. Catalog ingestion,
-trusted credential-profile resolution, and additive host-facing capability
-query/describe/call tools are still under development; see the
-[implementation status](docs/mcp-capability-broker/implementation-status.md).
+explicit `MCP.Enabled` gate shown in the configuration section. Enabled projects
+get additive capability results from `skillex_query` plus
+`skillex_mcp_describe` and `skillex_mcp_call`. Skillex revalidates the signed
+reference, workspace context, binding, readiness, policy, live schema, and JSON
+Schema 2020-12 arguments before invoking the one selected server. Trusted stdio
+and stateless MCP `2026-07-28` Streamable HTTP connectors are supported. See the
+[implementation status](docs/mcp-capability-broker/implementation-status.md)
+for the remaining OAuth, registry synchronization, and hosted-service work.
 
 ---
 

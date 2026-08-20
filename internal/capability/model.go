@@ -64,6 +64,10 @@ type Capability struct {
 	OutputSchemaJSON json.RawMessage    `json:"output_schema,omitempty"`
 	SchemaDigest     string             `json:"schema_digest"`
 	Availability     AvailabilityStatus `json:"availability"`
+	// RoutingScope and AuthProfile are integrity-protected broker routing
+	// metadata. They are never serialized as capability definitions.
+	RoutingScope string `json:"-"`
+	AuthProfile  string `json:"-"`
 }
 
 // Validate checks the identity and schema invariants needed before a

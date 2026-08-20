@@ -9,6 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/atheory-ai/skillex/internal/broker"
+	"github.com/atheory-ai/skillex/internal/brokerruntime"
+	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/query"
 	"github.com/atheory-ai/skillex/internal/registry"
 )
@@ -27,8 +30,8 @@ func newQueryCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "query",
-		Short: "Query skills from the registry",
-		Long: `Query skills by path, topic, tags, package, or keyword search.
+		Short: "Query skills and configured MCP capabilities",
+		Long: `Query skills and configured MCP capabilities by path or keyword search.
 
 All filters are intersected — only skills matching all specified criteria are returned.
 
@@ -69,6 +72,17 @@ Examples:
 			defer reg.Close()
 
 			eng := query.New(reg)
+			cfg, err := config.Load(root)
+			if err != nil {
+				return err
+			}
+			if cfg.MCPEnabled() {
+				runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
+				if err != nil {
+					return fmt.Errorf("initializing MCP capability discovery: %w", err)
+				}
+				eng = query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
+			}
 
 			var topics []string
 			if topicFlag != "" {
@@ -139,6 +153,7 @@ Examples:
 					}
 				} else {
 					printSummary(resp.Results)
+					printCapabilitySummary(resp.Capabilities)
 				}
 
 			case query.ResponseTypeVocabulary:
@@ -166,6 +181,24 @@ Examples:
 	cmd.Flags().StringVar(&cursorFlag, "cursor", "", "Continuation cursor from a previous discovery response")
 
 	return cmd
+}
+
+func printCapabilitySummary(results []broker.Summary) {
+	for _, result := range results {
+		fmt.Printf("%s\n", styleSuccess.Render(result.Server.CanonicalName+"/"+result.Name))
+		if result.Title != "" {
+			fmt.Printf("  %s\n", result.Title)
+		}
+		if result.Description != "" {
+			description := result.Description
+			if len(description) > 120 {
+				description = description[:117] + "..."
+			}
+			fmt.Printf("  %s\n", styleDim.Render(description))
+		}
+		fmt.Printf("  %s\n\n", styleDim.Render(fmt.Sprintf("mcp=%s@%s  kind=%s  availability=%s",
+			result.Server.CanonicalName, result.Version, result.Kind, result.Availability)))
+	}
 }
 
 func printSummary(results []query.Result) {
@@ -205,9 +238,11 @@ func printVocabulary(v *query.Vocabulary, header string) {
 	if header != "" {
 		fmt.Fprintln(os.Stderr, styleDim.Render(header))
 	} else {
-		fmt.Fprintf(os.Stderr, "%s\n", styleDim.Render(
-			fmt.Sprintf("No filters provided — %d skills indexed. Use one of the following to query:", v.TotalSkills),
-		))
+		message := fmt.Sprintf("No filters provided — %d skills indexed. Use one of the following to query:", v.TotalSkills)
+		if v.TotalCapabilities > 0 {
+			message = fmt.Sprintf("No filters provided — %d skills and %d MCP capabilities indexed. Use one of the following to query:", v.TotalSkills, v.TotalCapabilities)
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", styleDim.Render(message))
 	}
 
 	if len(v.Topics) > 0 {

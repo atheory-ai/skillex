@@ -21,6 +21,7 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/capability"
+	tooljsonschema "github.com/atheory-ai/skillex/internal/jsonschema"
 )
 
 const (
@@ -37,6 +38,7 @@ var (
 	ErrCapabilityMissing   = errors.New("downstream MCP capability is missing")
 	ErrSchemaChanged       = errors.New("downstream MCP capability schema changed")
 	ErrToolResult          = errors.New("downstream MCP tool returned an error")
+	ErrToolResultInvalid   = errors.New("downstream MCP result does not satisfy the capability output schema")
 )
 
 // ServerConfig is trusted launch configuration for one exact server version.
@@ -122,23 +124,25 @@ func (f *Factory) Open(ctx context.Context, selected capability.Capability) (bro
 		return nil, fmt.Errorf("%w: %s", ErrSchemaChanged, selected.Name)
 	}
 	client.tools = tools
+	client.outputSchema = append(json.RawMessage(nil), selected.OutputSchemaJSON...)
 	return client, nil
 }
 
 func serverKey(name, version string) string { return name + "\x00" + version }
 
 type client struct {
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	responses chan rpcResponse
-	readErr   chan error
-	wait      chan error
-	stderr    *limitedBuffer
-	tools     map[string]toolDefinition
-	nextID    atomic.Int64
-	callMu    sync.Mutex
-	closeOnce sync.Once
-	closeErr  error
+	cmd          *exec.Cmd
+	stdin        io.WriteCloser
+	responses    chan rpcResponse
+	readErr      chan error
+	wait         chan error
+	stderr       *limitedBuffer
+	tools        map[string]toolDefinition
+	outputSchema json.RawMessage
+	nextID       atomic.Int64
+	callMu       sync.Mutex
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 func start(ctx context.Context, config ServerConfig) (*client, error) {
@@ -250,6 +254,9 @@ func (c *client) CallTool(ctx context.Context, name string, arguments map[string
 	}
 	if result.IsError {
 		return result, ErrToolResult
+	}
+	if err := tooljsonschema.Validate(c.outputSchema, result.StructuredContent); err != nil {
+		return nil, ErrToolResultInvalid
 	}
 	return result, nil
 }

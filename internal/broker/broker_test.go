@@ -140,6 +140,32 @@ func TestBrokerEnforcesPolicyBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestBrokerValidatesFullJSONSchemaBeforePolicyOrConnection(t *testing.T) {
+	ctx := context.Background()
+	selected := newTestCapability(t, "io.example/issues", "issues.create")
+	selected.InputSchemaJSON = []byte(`{
+		"$schema":"https://json-schema.org/draft/2020-12/schema",
+		"type":"object",
+		"properties":{"labels":{"type":"array","prefixItems":[{"const":"security"}],"items":{"type":"string"}}},
+		"required":["labels"],"additionalProperties":false
+	}`)
+	selected, _ = selected.WithComputedSchemaDigest()
+	catalog := &fakeCatalog{capabilities: []capability.Capability{selected}}
+	factory := &fakeConnectorFactory{}
+	engine := newTestBroker(t, catalog, allowPolicy{}, factory)
+	results, err := engine.Query(ctx, Query{ContextDigest: "sha256:repo", View: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = engine.Call(ctx, results[0].Ref, map[string]any{"labels": []any{"wrong"}}, RequestContext{ContextDigest: "sha256:repo", View: "public"})
+	if !errors.Is(err, ErrToolArgumentInvalid) {
+		t.Fatalf("Call(invalid arguments) error = %v", err)
+	}
+	if len(factory.opened) != 0 {
+		t.Fatalf("invalid arguments opened connector: %v", factory.opened)
+	}
+}
+
 func newTestBroker(t *testing.T, catalog Catalog, policy Policy, factory ConnectorFactory) *Broker {
 	t.Helper()
 	signer, err := capability.NewReferenceSigner(

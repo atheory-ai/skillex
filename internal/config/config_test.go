@@ -67,6 +67,9 @@ Rules:
     Skills: [skills/repo.md]
 MCP:
   Enabled: true
+  Catalogs:
+    - Type: static
+      Path: .skillex/mcp/catalog.json
   Bindings:
     - Server: io.example/issues
       Version: 1.0.0
@@ -86,6 +89,9 @@ MCP:
 	}
 	if len(cfg.MCP.Bindings) != 1 {
 		t.Fatalf("MCP bindings = %d, want 1", len(cfg.MCP.Bindings))
+	}
+	if len(cfg.MCP.Catalogs) != 1 || cfg.MCP.Catalogs[0].Path != ".skillex/mcp/catalog.json" {
+		t.Fatalf("MCP catalogs = %#v", cfg.MCP.Catalogs)
 	}
 	if got := cfg.MCP.Bindings[0].AuthProfile; got != "issues-work" {
 		t.Fatalf("AuthProfile = %q, want issues-work", got)
@@ -189,6 +195,24 @@ func TestLoad_MCPBindingsRequireExplicitEnablementAndExactIdentity(t *testing.T)
 				t.Fatalf("Load() error = %v, want substring %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoad_MCPStaticCatalogPathMustStayInsideProject(t *testing.T) {
+	for _, catalog := range []string{
+		"    - Type: registry\n      Path: catalog.json\n",
+		"    - Type: static\n      Path: ../catalog.json\n",
+		"    - Type: static\n      Path: /tmp/catalog.json\n",
+	} {
+		dir := t.TempDir()
+		data := "Version: 5\nRules: []\nMCP:\n  Enabled: true\n  Catalogs:\n" + catalog +
+			"  Bindings:\n    - Server: io.example/issues\n      Version: 1.0.0\n      Scope: \"**\"\n"
+		if err := os.WriteFile(filepath.Join(dir, YAMLFilename), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil {
+			t.Fatalf("Load() accepted unsafe catalog configuration:\n%s", data)
+		}
 	}
 }
 

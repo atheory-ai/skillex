@@ -1,12 +1,14 @@
 package query
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/gobwas/glob"
 )
@@ -38,15 +40,18 @@ const (
 
 // Response is the unified return type for all query executions.
 type Response struct {
-	Type          ResponseType `json:"type"`
-	Results       []Result     `json:"results,omitempty"`
-	Vocabulary    *Vocabulary  `json:"vocabulary,omitempty"`
-	Query         *Echo        `json:"query,omitempty"`
-	MatchCount    int          `json:"match_count,omitempty"`
-	ReturnedCount int          `json:"returned_count,omitempty"`
-	TooBroad      bool         `json:"too_broad,omitempty"`
-	NextCursor    string       `json:"next_cursor,omitempty"`
-	NarrowWith    *NarrowWith  `json:"narrow_with,omitempty"`
+	Type                    ResponseType     `json:"type"`
+	Results                 []Result         `json:"results,omitempty"`
+	Capabilities            []broker.Summary `json:"capabilities,omitempty"`
+	Vocabulary              *Vocabulary      `json:"vocabulary,omitempty"`
+	Query                   *Echo            `json:"query,omitempty"`
+	MatchCount              int              `json:"match_count,omitempty"`
+	ReturnedCount           int              `json:"returned_count,omitempty"`
+	CapabilityMatchCount    int              `json:"capability_match_count,omitempty"`
+	CapabilityReturnedCount int              `json:"capability_returned_count,omitempty"`
+	TooBroad                bool             `json:"too_broad,omitempty"`
+	NextCursor              string           `json:"next_cursor,omitempty"`
+	NarrowWith              *NarrowWith      `json:"narrow_with,omitempty"`
 }
 
 // Echo captures the filters that were searched, included in no_match responses.
@@ -61,10 +66,11 @@ type Echo struct {
 // Vocabulary describes the skill dimensions available in the registry.
 // All counts are scoped to the same visibility/scope rules as a real query.
 type Vocabulary struct {
-	Topics      []TopicEntry   `json:"topics,omitempty"`
-	Tags        []TagEntry     `json:"tags,omitempty"`
-	Packages    []PackageEntry `json:"packages,omitempty"`
-	TotalSkills int            `json:"total_skills"`
+	Topics            []TopicEntry   `json:"topics,omitempty"`
+	Tags              []TagEntry     `json:"tags,omitempty"`
+	Packages          []PackageEntry `json:"packages,omitempty"`
+	TotalSkills       int            `json:"total_skills"`
+	TotalCapabilities int            `json:"total_capabilities,omitempty"`
 }
 
 // TopicEntry is a topic name with the count of skills that carry it.
@@ -170,12 +176,27 @@ func (p Params) hasFilters() bool {
 
 // Engine executes structured skill queries against the registry.
 type Engine struct {
-	reg *registry.Registry
+	reg               *registry.Registry
+	capabilities      CapabilityDiscoverer
+	capabilityContext string
+	capabilityView    string
+}
+
+// CapabilityDiscoverer is the bounded, offline broker discovery surface used
+// by the shared query engine.
+type CapabilityDiscoverer interface {
+	Query(ctx context.Context, query broker.Query) ([]broker.Summary, error)
 }
 
 // New creates a new query Engine.
 func New(reg *registry.Registry) *Engine {
 	return &Engine{reg: reg}
+}
+
+// NewWithCapabilities creates a query engine that returns additive capability
+// summaries alongside existing skill results.
+func NewWithCapabilities(reg *registry.Registry, discoverer CapabilityDiscoverer, contextDigest, view string) *Engine {
+	return &Engine{reg: reg, capabilities: discoverer, capabilityContext: contextDigest, capabilityView: view}
 }
 
 // Execute runs a query and returns a typed Response.
@@ -194,9 +215,19 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	hasClassicFilters := len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
 
 	var (
-		skills []registry.Skill
-		err    error
+		skills       []registry.Skill
+		capabilities []broker.Summary
+		err          error
 	)
+	if e.capabilities != nil && (p.Search != "" || p.Path != "") {
+		capabilities, err = e.capabilities.Query(context.Background(), broker.Query{
+			Path: p.Path, Search: p.Search, ContextDigest: e.capabilityContext,
+			View: e.capabilityView,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if hasClassicFilters {
 		skills, err = e.reg.Query(p.Path, p.Package, p.Topics, p.Tags)
@@ -243,7 +274,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		}
 	}
 
-	if len(skills) == 0 {
+	if len(skills) == 0 && len(capabilities) == 0 {
 		return e.noMatchResponse(p)
 	}
 
@@ -271,6 +302,12 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	if end > matchCount {
 		end = matchCount
 	}
+	capabilityMatchCount := len(capabilities)
+	capabilityEnd := limit
+	if capabilityEnd > capabilityMatchCount {
+		capabilityEnd = capabilityMatchCount
+	}
+	capabilities = capabilities[:capabilityEnd]
 
 	results := make([]Result, 0, end-start)
 	for _, s := range skills[start:end] {
@@ -299,11 +336,15 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		results = append(results, r)
 	}
 
-	resp := &Response{Type: ResponseTypeResults, Results: results, MatchCount: matchCount, ReturnedCount: len(results)}
+	resp := &Response{
+		Type: ResponseTypeResults, Results: results, Capabilities: capabilities,
+		MatchCount: matchCount, ReturnedCount: len(results),
+		CapabilityMatchCount: capabilityMatchCount, CapabilityReturnedCount: len(capabilities),
+	}
 	if end < matchCount {
 		resp.NextCursor = encodeCursor(end)
 	}
-	resp.TooBroad = matchCount > limit
+	resp.TooBroad = matchCount > limit || capabilityMatchCount > limit
 	if resp.TooBroad {
 		resp.NarrowWith = buildNarrowWith(skills)
 	}
@@ -500,10 +541,18 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Response{
+	response := &Response{
 		Type:       ResponseTypeVocabulary,
 		Vocabulary: buildVocabulary(skills),
-	}, nil
+	}
+	if e.capabilities != nil {
+		count, err := e.reg.CapabilityCount()
+		if err != nil {
+			return nil, err
+		}
+		response.Vocabulary.TotalCapabilities = count
+	}
+	return response, nil
 }
 
 // noMatchResponse builds a no-match response with a scoped vocabulary hint.
@@ -535,7 +584,7 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 		vocab = all
 	}
 
-	return &Response{
+	response := &Response{
 		Type: ResponseTypeNoMatch,
 		Query: &Echo{
 			Path:    p.Path,
@@ -545,7 +594,15 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 			Search:  p.Search,
 		},
 		Vocabulary: buildVocabulary(vocab),
-	}, nil
+	}
+	if e.capabilities != nil {
+		count, err := e.reg.CapabilityCount()
+		if err != nil {
+			return nil, err
+		}
+		response.Vocabulary.TotalCapabilities = count
+	}
+	return response, nil
 }
 
 // buildVocabulary aggregates topic, tag, and package counts from a skill slice.
