@@ -6,8 +6,17 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
-- **MCP broker:** added explicit version 5 opt-in for contextual downstream MCP
-  discovery and invocation while preserving all version 4 skills-only behavior.
+## [0.9.0] - 2026-08-25
+
+> **Experimental:** Downstream MCP capability brokering is opt-in. Its protocol
+> and authentication flows have automated conformance coverage, but have not
+> been certified against every MCP server, identity provider, or enterprise
+> deployment. Existing skill retrieval and Skillex's skill-facing MCP server
+> remain stable.
+
+- **MCP broker (experimental):** added explicit version 5 opt-in for contextual
+  downstream MCP discovery and invocation while preserving all version 4
+  skills-only behavior.
 - **MCP indexing:** added static, standard Registry API, pack-suggested, and
   explicitly observed tool/prompt/resource-template capability metadata with
   provenance, freshness, independent pagination, and contextual facets.

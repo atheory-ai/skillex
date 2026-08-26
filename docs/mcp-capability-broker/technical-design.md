@@ -1,18 +1,16 @@
 # Technical Design: Contextual MCP Capability Broker
 
-Status: implementation in progress
+Status: experimental implementation; open-source milestones 0–4 complete
 
-Last updated: 2026-08-20
+Last updated: 2026-08-25
 
 ## 1. Purpose
 
-This document proposes an implementation design for the product requirements and
-high-level architecture in this directory. It is intentionally specific enough
-to decompose into work while leaving externally versioned schemas behind an
-explicit Phase 0 review.
-
-No implementation described here exists unless already identified as current
-repository behavior.
+This document defines the implementation design for the product requirements and
+high-level architecture in this directory. Open-source milestones 0–4 are
+implemented behind the experimental version 5 opt-in gate. Sections describing
+managed operations remain deployment design rather than bundled local behavior;
+the implementation-status document is the source of truth for that boundary.
 
 ## 2. Existing system constraints
 

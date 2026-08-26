@@ -1,8 +1,8 @@
 # High-Level Architecture: Contextual MCP Capability Broker
 
-Status: proposed
+Status: implemented for the experimental local/self-hosted broker; managed operating model proposed
 
-Last updated: 2026-08-19
+Last updated: 2026-08-25
 
 ## Architecture summary
 

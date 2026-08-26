@@ -1,10 +1,10 @@
 # Product Requirements: Contextual MCP Capability Broker
 
-Status: proposed
+Status: experimental implementation; open-source scope delivered
 
 Owners: Skillex maintainers
 
-Last updated: 2026-08-19
+Last updated: 2026-08-25
 
 ## Executive summary
 

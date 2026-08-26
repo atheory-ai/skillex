@@ -1,6 +1,6 @@
 # MCP Capability Broker Implementation Status
 
-Last updated: 2026-08-20
+Last updated: 2026-08-25
 
 ## Current milestone
 
@@ -8,6 +8,14 @@ The open-source capability-broker scope in milestones 0–4 is implemented.
 Milestone 5 is an operating model (managed synchronization, regional connector
 fleets, dashboards, and alerting) rather than a prerequisite for the local or
 self-hosted broker.
+
+The downstream capability broker ships as an experimental, explicitly opt-in
+feature in Skillex 0.9.0. Automated tests cover protocol conformance and the
+documented security boundaries; they do not constitute certification against
+every downstream MCP implementation, identity provider, or enterprise policy.
+Existing skill retrieval and Skillex's skill-facing MCP server remain stable.
+"IAP-style" support denotes verified RS256 bearer-token semantics rather than a
+certified Google IAP integration.
 
 The implemented foundation includes:
 
