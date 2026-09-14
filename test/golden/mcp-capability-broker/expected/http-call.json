@@ -1,0 +1,22 @@
+{
+  "server": {
+    "identity": {
+      "canonical_name": "io.example/issues",
+      "publisher": "example"
+    },
+    "version": "1.0.0",
+    "package_digest": "sha256:issues-fixture",
+    "status": "active"
+  },
+  "capability": {
+    "kind": "tool",
+    "name": "issues.create"
+  },
+  "result": {
+    "resultType": "complete",
+    "structuredContent": {
+      "authorized": true,
+      "transport": "http"
+    }
+  }
+}

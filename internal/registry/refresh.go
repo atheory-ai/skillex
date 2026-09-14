@@ -2,12 +2,16 @@ package registry
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/linker"
 	"github.com/atheory-ai/skillex/internal/scanner"
+	"github.com/atheory-ai/skillex/internal/trust"
 	"github.com/atheory-ai/skillex/internal/validator"
 )
 
@@ -20,14 +24,58 @@ type RefreshOptions struct {
 
 // RefreshResult summarizes what was written.
 type RefreshResult struct {
-	SkillsAdded int
-	TestsAdded  int
-	Errors      []error
+	SkillsAdded       int
+	TestsAdded        int
+	CapabilitiesAdded int
+	Errors            []error
 }
 
 // Refresh rebuilds the registry from the given configuration.
 func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
 	result := &RefreshResult{}
+	var capabilityRecords []CapabilityRecord
+	if cfg.MCPEnabled() {
+		trusted, _, err := trust.LoadConfigured()
+		if err != nil {
+			return nil, fmt.Errorf("loading trusted MCP configuration: %w", err)
+		}
+		for _, source := range cfg.MCP.Catalogs {
+			loadSource := source
+			sourceType := "static"
+			sourceRef := source.Path
+			if source.Type == "trusted" {
+				if _, ok := trusted.FindCatalogSource(source.Name); !ok {
+					return nil, fmt.Errorf("trusted MCP catalog %q is not defined in trusted configuration", source.Name)
+				}
+				loadSource = config.MCPCatalog{Type: "static", Path: trustedCatalogCacheRelPath(source.Name)}
+				sourceType = "registry-api"
+				sourceRef = source.Name
+			}
+			records, err := LoadStaticCapabilityCatalog(opts.Root, loadSource, cfg.MCP.Bindings)
+			if err != nil {
+				return nil, err
+			}
+			for i := range records {
+				records[i].SourceType = sourceType
+				records[i].SourceRef = sourceRef
+			}
+			capabilityRecords = append(capabilityRecords, records...)
+		}
+		observedPath := filepath.Join(opts.Root, ".skillex", "mcp", "observed.json")
+		if _, err := os.Stat(observedPath); err == nil {
+			records, loadErr := LoadStaticCapabilityCatalog(opts.Root, config.MCPCatalog{Type: "static", Path: ".skillex/mcp/observed.json"}, cfg.MCP.Bindings)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			for i := range records {
+				records[i].SourceType = "observed"
+				records[i].SourceRef = "trusted-introspection"
+			}
+			capabilityRecords = append(capabilityRecords, records...)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
 
 	// 1. Scan
 	sc := scanner.New(opts.Root, cfg, opts.DevMode)
@@ -36,6 +84,12 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 	result.Errors = append(result.Errors, scanResult.Errors...)
+	if cfg.MCPEnabled() {
+		capabilityRecords, err = ApplyCapabilitySuggestions(capabilityRecords, scanResult.CapabilitySuggestions)
+		if err != nil {
+			return nil, fmt.Errorf("applying MCP pack suggestions: %w", err)
+		}
+	}
 
 	// 2. Link
 	lnk := linker.New(opts.Root, cfg)
@@ -80,6 +134,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 				}
 			}
 		}
+		result.CapabilitiesAdded = len(capabilityRecords)
 		return result, nil
 	}
 
@@ -153,7 +208,22 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		}
 	}
 
+	// 6. Insert capability metadata. Catalog loading above is metadata-only and
+	// never connects to or executes a downstream MCP server.
+	for _, record := range capabilityRecords {
+		if _, err := reg.InsertCapability(record); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("inserting MCP capability %s/%s: %w",
+				record.Capability.Server.Identity.CanonicalName, record.Capability.Name, err))
+			continue
+		}
+		result.CapabilitiesAdded++
+	}
+
 	return result, nil
+}
+
+func trustedCatalogCacheRelPath(name string) string {
+	return filepath.ToSlash(filepath.Join(".skillex", "mcp", "catalogs", name+".json"))
 }
 
 // FormatErrors formats a list of errors as a readable string.

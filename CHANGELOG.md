@@ -6,6 +6,41 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **Capability descriptions:** added shared CLI/MCP byte budgets with stable
+  typed errors for invalid budgets and oversized definitions.
+- **Security:** prevent external JSON Schema resource failures from reflecting
+  sensitive URL query strings or fragments.
+- **Verification:** expanded capability-broker golden journeys across CLI/MCP
+  parity, narrowing, typed errors, HTTP, OAuth, and tenant isolation; added
+  direct connector/runtime fault tests and 50,000-capability benchmarks.
+- **Performance:** move capability filtering, counting, facets, ranking, and
+  pagination into SQLite so broad discovery hydrates and signs only the
+  requested page; align capability FTS row IDs through an automatic migration.
+
+## [0.9.0] - 2026-08-25
+
+> **Experimental:** Downstream MCP capability brokering is opt-in. Its protocol
+> and authentication flows have automated conformance coverage, but have not
+> been certified against every MCP server, identity provider, or enterprise
+> deployment. Existing skill retrieval and Skillex's skill-facing MCP server
+> remain stable.
+
+- **MCP broker (experimental):** added explicit version 5 opt-in for contextual
+  downstream MCP discovery and invocation while preserving all version 4
+  skills-only behavior.
+- **MCP indexing:** added static, standard Registry API, pack-suggested, and
+  explicitly observed tool/prompt/resource-template capability metadata with
+  provenance, freshness, independent pagination, and contextual facets.
+- **MCP transport:** added lazy trusted stdio and stateless MCP `2026-07-28`
+  Streamable HTTP connectors, live schema validation, TTL/cache-scope handling,
+  routing headers, optional discovery, and multi-round-trip input retries.
+- **MCP authentication:** added exact env/dotenv/keychain/helper/mTLS sources,
+  OAuth PKCE/CIMD/DCR, encrypted token refresh, client credentials,
+  `private_key_jwt`, workload exchange, and EMA/ID-JAG.
+- **MCP enterprise:** added privacy-safe usage reporting, stable broker error
+  codes, inbound JWT/IAP-style and mTLS principal verification, opaque tenant
+  partitions, tenant signing-key derivation, and private-view isolation.
+
 ## [0.8.3]
 
 - **Retrieval:** guide agent harnesses through bounded discovery, narrowing, and selected reads instead of bulk skill-content queries.

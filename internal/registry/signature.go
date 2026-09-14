@@ -44,9 +44,75 @@ func (r *Registry) Signature() (string, error) {
 	if err := signatureWriteTests(&b, r.db); err != nil {
 		return "", err
 	}
+	if err := signatureWriteCapabilities(&b, r.db); err != nil {
+		return "", err
+	}
 
 	sum := sha256.Sum256(b.Bytes())
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func signatureWriteCapabilities(b *bytes.Buffer, db *sql.DB) error {
+	rows, err := db.Query(`
+		SELECT s.canonical_name, s.publisher, sv.version, sv.package_digest,
+			c.kind, c.name, c.title, c.description, c.input_schema,
+			c.output_schema, c.schema_digest, c.risk, c.availability,
+			v.visibility, v.auth_partition_hash, v.cache_scope,
+			s.source_type, s.source_ref
+		FROM mcp_capabilities c
+		JOIN mcp_server_versions sv ON sv.id = c.server_version_id
+		JOIN mcp_servers s ON s.id = sv.server_id
+		JOIN mcp_capability_views v ON v.id = c.view_id
+		ORDER BY s.canonical_name, sv.version, c.kind, c.name,
+			v.auth_partition_hash`)
+	if err != nil {
+		return err
+	}
+	b.WriteString("mcp-capabilities;")
+	for rows.Next() {
+		fields := make([]string, 18)
+		if err := rows.Scan(&fields[0], &fields[1], &fields[2], &fields[3],
+			&fields[4], &fields[5], &fields[6], &fields[7], &fields[8],
+			&fields[9], &fields[10], &fields[11], &fields[12], &fields[13],
+			&fields[14], &fields[15], &fields[16], &fields[17]); err != nil {
+			return err
+		}
+		for _, field := range fields {
+			signatureWriteField(b, field)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	rows, err = db.Query(`
+		SELECT s.canonical_name, sv.version, c.kind, c.name,
+			b.scope, b.relationship, b.auth_profile
+		FROM mcp_capability_bindings b
+		JOIN mcp_capabilities c ON c.id = b.capability_id
+		JOIN mcp_server_versions sv ON sv.id = c.server_version_id
+		JOIN mcp_servers s ON s.id = sv.server_id
+		ORDER BY s.canonical_name, sv.version, c.kind, c.name,
+			b.scope, b.relationship, b.auth_profile`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	b.WriteString("mcp-bindings;")
+	for rows.Next() {
+		fields := make([]string, 7)
+		if err := rows.Scan(&fields[0], &fields[1], &fields[2], &fields[3],
+			&fields[4], &fields[5], &fields[6]); err != nil {
+			return err
+		}
+		for _, field := range fields {
+			signatureWriteField(b, field)
+		}
+	}
+	return rows.Err()
 }
 
 func signatureWriteField(b *bytes.Buffer, s string) {

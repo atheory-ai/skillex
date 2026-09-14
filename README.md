@@ -93,7 +93,8 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 - **Detector-driven activation** — built-in and pack-defined detectors activate skills from project facts such as files and dependencies.
 - **Polyglot resolver model** — Node package support now shares infrastructure with non-Node resolvers; Go modules are the first non-Node resolver.
 - **Instant retrieval** — SQLite index with structured queries plus keyword search over skill `name` and `description`. No document browsing, no embeddings.
-- **MCP native** — first-class Model Context Protocol server. Agents with MCP support get typed tool calls and resource discovery.
+- **MCP-native skill retrieval** — first-class Model Context Protocol server. Agents with MCP support get typed skill query/read calls and resource discovery.
+- **Experimental downstream MCP broker** — opt-in contextual discovery and lazy invocation of trusted downstream MCP capabilities without registering them with the host.
 - **CLI fallback** — every agent harness can call the CLI. Works in CI, scripts, and terminals.
 - **AGENTS.md manifest** — auto-generated fallback for agents that can't run MCP or shell commands.
 - **Testable** — every skill can have a co-located `.test.md` file with structured validation scenarios.
@@ -114,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh 
 To install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh | SKILLEX_VERSION=0.6.4 sh
+curl -fsSL https://raw.githubusercontent.com/atheory-ai/skillex/main/install.sh | SKILLEX_VERSION=0.9.0 sh
 ```
 
 The installer downloads the correct binary for your platform from GitHub Releases
@@ -262,6 +263,151 @@ skillex init --yaml
 | `Scope` | Glob pattern. Skills in this rule apply when the working path matches. |
 | `Skills` | Repo-local skill files to attach to this scope. |
 | `DependencyBoundary` | Path to a `package.json`. The scanner reads its dependencies and links any that export skills. |
+
+### Skills-only and experimental MCP broker opt-in
+
+Existing version 4 configuration remains skills-only. It does not initialize a
+downstream MCP catalog, credentials, policy, or connectors, and existing users
+do not need to opt out of anything.
+
+The downstream MCP capability broker is experimental in Skillex 0.9.0.
+Configuration version 5 remains skills-only unless `MCP.Enabled` is explicitly
+`true`:
+
+```yaml
+Version: 5
+Rules:
+  - Scope: "**"
+    Skills:
+      - skills/repo.md
+MCP:
+  Enabled: true
+  Catalogs:
+    - Type: static
+      Path: .skillex/mcp/catalog.json
+    - Type: trusted
+      Name: official
+  Bindings:
+    - Server: io.example/issues
+      Version: 1.0.0
+      AuthProfile: issues-work
+      Scope: "packages/app/**"
+```
+
+Each binding selects an exact canonical server version and project scope.
+`AuthProfile` is only the name of a separately trusted user or enterprise
+profile; repository configuration cannot define credentials or secret sources.
+Bindings are rejected unless MCP is explicitly enabled, and unknown version 5
+fields are rejected so security-sensitive typos do not silently pass.
+
+Trusted execution and credential mapping live outside the repository. By
+default Skillex reads the platform user config at
+`$XDG_CONFIG_HOME/skillex/mcp-trust.yaml` (or the OS equivalent). A user or
+enterprise launcher may select one exact file with
+`SKILLEX_MCP_TRUST_CONFIG`. For example:
+
+```yaml
+Version: 1
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [/absolute/path/to/project]
+    AuthProfiles: [issues-work]
+    Stdio:
+      Command: /absolute/path/to/issues-mcp
+CredentialProfiles:
+  - Name: issues-work
+    Service: io.example/issues
+    Credentials:
+      - Slot: access-token
+        Sources:
+          - Env:
+              Key: ISSUES_TOKEN
+          - Dotenv:
+              Path: "${projectRoot}/.env.mcp"
+              Key: ISSUES_TOKEN
+        Inject:
+          StdioEnv: DOWNSTREAM_ISSUES_TOKEN
+CatalogSources:
+  - Name: official
+    Type: registry-api
+    BaseURL: https://registry.modelcontextprotocol.io
+    AllowedNamespaces: [io.github.my-company]
+Telemetry:
+  Enabled: false
+  Path: /absolute/path/to/skillex-mcp-usage.jsonl
+```
+
+Skillex resolves only the named source keys for the selected service/profile.
+It does not enumerate a dotenv file into the process environment and downstream
+stdio servers do not inherit the parent environment. Exact `Keychain` and
+absolute `Helper` sources are also supported; helpers receive an empty
+environment and bounded stdout. Streamable HTTP servers may use exact header
+injection or mTLS certificate/key sources.
+
+OAuth profiles support authorization code with PKCE, URL-based Client ID
+Metadata Documents, explicitly enabled Dynamic Client Registration fallback,
+encrypted refresh-token storage, client credentials (secret or
+`private_key_jwt`), workload token exchange, and Enterprise-Managed
+Authorization with ID-JAG. Discovery validates protected-resource metadata,
+issuer, resource, audience, scopes, and HTTPS endpoints. `skillex auth status`
+does not contact the server; `skillex auth login --profile <name>` returns a
+typed, resumable login action.
+
+These authentication flows have automated protocol and security-boundary
+coverage, but are not certified integrations for every identity provider.
+Provider-specific metadata, policy, token claims, key rotation, or deployment
+requirements may require additional configuration or an adapter. In particular,
+"IAP-style" means validated RS256 bearer-token semantics, not a certified Google
+IAP integration.
+
+For example, a user-delegated remote profile can use a URL client ID (CIMD):
+
+```yaml
+CredentialProfiles:
+  - Name: issues-sso
+    Service: io.example/issues
+    OAuth:
+      Type: authorization-code
+      ProtectedResourceMetadataURL: https://mcp.example/.well-known/oauth-protected-resource
+      Resource: https://mcp.example
+      Issuer: https://login.example/tenant
+      ClientID: https://clients.example/skillex.json
+      RedirectURI: http://127.0.0.1:17832/callback
+      Scopes: [issues.read, issues.write]
+OAuthStore:
+  KeyPath: /absolute/private/path/oauth.key
+  Directory: /absolute/private/path/tokens
+```
+
+Set `OAuth.Type` to `enterprise-managed`, `client-credentials`, or
+`workload-token-exchange` for those flows. Every secret/assertion/private-key
+input uses the same ordered exact-source mapping; none may be supplied by a
+repository pack.
+
+Registry and downstream discovery are explicit synchronization operations, not
+query-time fan-out:
+
+```bash
+skillex catalog sync                         # Registry API metadata → offline cache
+skillex catalog inspect                      # trusted bound servers → tool/prompt/resource metadata
+skillex query --search "create issue"         # offline contextual search
+skillex capability describe --ref <ref> --max-bytes 24576
+skillex capability call --ref <ref> --arguments '{"title":"Bug"}'
+skillex telemetry summary                    # opted-in privacy-safe usage counts
+```
+
+`catalog inspect` is the only operation above that starts stdio servers or calls
+remote MCP endpoints. Query and describe remain offline. Observed definitions
+carry freshness metadata; expired views become `stale` and cannot be invoked
+until re-inspected. Optional local telemetry is off by default and records only
+attributed server/capability identity, readiness, outcome, and duration—never
+credentials, arguments, results, tokens, or headers.
+
+Capability discovery remains bounded even for high-match searches: SQLite
+applies visibility, scope, capability filters, full-set counts and narrowing
+facets, stable ranking, and pagination before Skillex hydrates and signs only
+the requested page.
 
 ---
 
@@ -489,7 +635,7 @@ skillex test validate --check   # exit non-zero on errors (CI)
 
 ---
 
-## MCP server
+## MCP server for skills
 
 Skillex runs as a Model Context Protocol server, providing native integration for MCP-capable agent harnesses (Cursor, Claude Code, Windsurf, and others).
 
@@ -540,6 +686,44 @@ skillex://skills/{scope}/{package}/{filename}
 
 Agents discover available resources through the MCP protocol's resource listing — no `AGENTS.md` parsing required.
 
+### Downstream MCP capability broker
+
+> **Experimental in Skillex 0.9.0.** Core discovery, routing, isolation, and
+> protocol flows have automated coverage. Downstream server and identity-provider
+> interoperability is not yet guaranteed across every vendor or enterprise
+> deployment. Enabling this feature does not weaken the required secret-isolation,
+> policy, schema-validation, or tenant-boundary behavior.
+
+The capability-broker implementation keeps the host registration model simple:
+the host registers only Skillex, and Skillex opens a selected downstream server
+on demand. A downstream server is never written into Cursor, VS Code, or another
+host's MCP configuration.
+
+Version 4 projects cannot construct the broker. Version 5 projects must use the
+explicit `MCP.Enabled` gate shown in the configuration section. Enabled projects
+get additive, independently paginated capability results from `skillex_query` plus
+`skillex_mcp_describe` and `skillex_mcp_call`. CLI `capability describe` and MCP
+`skillex_mcp_describe` enforce the same bounded output contract: 24 KiB by
+default and at most 64 KiB via `--max-bytes` or `max_bytes`. Skillex revalidates the signed
+reference, workspace context, binding, readiness, policy, live schema, and JSON
+Schema 2020-12 arguments before invoking the one selected server. Tools, prompts,
+and resource templates are indexed at capability granularity. Calls support MCP
+`2026-07-28` multi-round-trip `input_required` results and retries with
+`inputResponses` plus opaque `requestState`. Trusted stdio and stateless
+Streamable HTTP connectors are supported, including optional `server/discover`,
+list TTL/cache-scope handling, per-request metadata, and routing headers. See the
+[implementation status](docs/mcp-capability-broker/implementation-status.md).
+
+| Area | Release status |
+|---|---|
+| Skills and skill retrieval | Stable |
+| Skillex's skill-facing MCP server | Stable |
+| Downstream MCP discovery and invocation | Experimental |
+| Static, environment, dotenv, keychain, helper, and mTLS credentials | Experimental |
+| OAuth PKCE, client credentials, and workload token exchange | Experimental; conformance-tested |
+| EMA/ID-JAG and IAP-style identity | Experimental; not provider-certified |
+| Hosted multi-tenant deployment components | Integration foundation only |
+
 ---
 
 ## CLI reference
@@ -578,6 +762,7 @@ skillex query --tags <tag1,tag2>
 skillex query --package <name>
 skillex query --search "auth" --topic security
 skillex query --path <filepath> --search "<task intent>" --limit 8
+skillex query --mcp-server io.example/issues --mcp-kind tool --mcp-availability ready
 skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 
@@ -821,6 +1006,13 @@ The CLI validates structure. The agent validates behavior.
 | CLI | Universal. CI, scripts, terminals, any agent harness |
 | MCP server | Native integration for MCP-capable harnesses |
 | AGENTS.md | Last resort for agents that can't run MCP or shell commands |
+
+### Architecture and implementation status
+
+- [Experimental MCP capability broker](docs/mcp-capability-broker/README.md) — the
+  architecture and implementation in which hosts register only Skillex, while
+  Skillex discovers, selects, authenticates to, and invokes downstream MCP
+  servers dynamically.
 
 ---
 

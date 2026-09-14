@@ -146,6 +146,13 @@ func (r *Registry) Path() string {
 // Clear removes all data from the registry (for a full rebuild).
 func (r *Registry) Clear() error {
 	_, err := r.db.Exec(`
+		DELETE FROM mcp_capability_search;
+		DELETE FROM mcp_capability_bindings;
+		DELETE FROM mcp_capabilities;
+		DELETE FROM mcp_capability_views;
+		DELETE FROM mcp_transports;
+		DELETE FROM mcp_server_versions;
+		DELETE FROM mcp_servers;
 		DELETE FROM skill_tests;
 		DELETE FROM skill_scopes;
 		DELETE FROM skill_tags;

@@ -1,6 +1,7 @@
 package packs
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,12 +16,13 @@ const Filename = "pack.yaml"
 
 // Manifest describes a Skillex pack.
 type Manifest struct {
-	Name        string     `yaml:"name"`
-	Version     string     `yaml:"version"`
-	Description string     `yaml:"description"`
-	Source      string     `yaml:"source"`
-	Detectors   Detectors  `yaml:"detectors"`
-	Skills      []SkillRef `yaml:"skills"`
+	Name        string         `yaml:"name"`
+	Version     string         `yaml:"version"`
+	Description string         `yaml:"description"`
+	Source      string         `yaml:"source"`
+	Detectors   Detectors      `yaml:"detectors"`
+	Skills      []SkillRef     `yaml:"skills"`
+	MCPServers  []MCPServerRef `yaml:"mcp-servers"`
 }
 
 // Detectors maps friendly detector names to match rules.
@@ -48,6 +50,24 @@ type SkillRef struct {
 	ActivateWhen ActivateWhen `yaml:"activate-when"`
 	Scope        string       `yaml:"scope"`
 	Files        []string     `yaml:"files"`
+}
+
+// MCPServerRef is a non-executable, non-secret suggestion shipped by a pack.
+// A pack can express relevance, but trusted local or enterprise configuration
+// remains the only authority that can configure a transport or credentials.
+type MCPServerRef struct {
+	Ref          string                `yaml:"ref"`
+	Version      string                `yaml:"version"`
+	Relationship string                `yaml:"relationship"`
+	ActivateWhen ActivateWhen          `yaml:"activate-when"`
+	Scope        string                `yaml:"scope"`
+	Files        []string              `yaml:"files"`
+	Capabilities MCPServerCapabilities `yaml:"capabilities"`
+}
+
+// MCPServerCapabilities narrows a server suggestion to named capabilities.
+type MCPServerCapabilities struct {
+	Prefer []string `yaml:"prefer"`
 }
 
 // ActivateWhen contains refresh-time activation conditions.
@@ -94,6 +114,13 @@ type ActivatedSkill struct {
 	Scopes []string
 }
 
+// ActivatedMCPServer is a contextual server suggestion whose activation rules matched.
+type ActivatedMCPServer struct {
+	Pack   *Pack
+	Server MCPServerRef
+	Scopes []string
+}
+
 // DetectorRegistration records where a detector definition came from.
 type DetectorRegistration struct {
 	Name   string
@@ -114,7 +141,9 @@ func Load(path string) (*Pack, error) {
 	}
 
 	var manifest Manifest
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&manifest); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
@@ -135,8 +164,8 @@ func (p *Pack) Validate() error {
 	if strings.TrimSpace(p.Manifest.Name) == "" {
 		errs = append(errs, "name is required")
 	}
-	if len(p.Manifest.Skills) == 0 {
-		errs = append(errs, "skills must contain at least one entry")
+	if len(p.Manifest.Skills) == 0 && len(p.Manifest.MCPServers) == 0 {
+		errs = append(errs, "skills or mcp-servers must contain at least one entry")
 	}
 
 	for name, detector := range p.Manifest.Detectors {
@@ -188,10 +217,46 @@ func (p *Pack) Validate() error {
 		}
 	}
 
+	for i, server := range p.Manifest.MCPServers {
+		prefix := fmt.Sprintf("mcp-servers[%d]", i)
+		if strings.TrimSpace(server.Ref) == "" {
+			errs = append(errs, prefix+".ref is required")
+		}
+		if strings.TrimSpace(server.Version) == "" || strings.ContainsAny(server.Version, "*<>=^~ ") {
+			errs = append(errs, prefix+".version must be an exact version")
+		}
+		if server.Relationship != "suggested" {
+			errs = append(errs, prefix+".relationship must be suggested")
+		}
+		if len(server.ActivateWhen.FilesPresent) == 0 &&
+			len(server.ActivateWhen.FilesMatching) == 0 &&
+			len(server.ActivateWhen.DependencyDeclared) == 0 &&
+			strings.TrimSpace(server.ActivateWhen.Detector) == "" {
+			errs = append(errs, prefix+".activate-when must contain files-present, files-matching, dependency-declared, or detector")
+		}
+		if err := validateScope(server.Scope, prefix); err != nil {
+			errs = append(errs, err.Error())
+		}
+		for j, name := range server.Capabilities.Prefer {
+			if strings.TrimSpace(name) == "" {
+				errs = append(errs, fmt.Sprintf("%s.capabilities.prefer[%d] is required", prefix, j))
+			}
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid pack %s: %s", p.Path, strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func validateScope(scope, prefix string) error {
+	switch scope {
+	case "", "subtree", "repo", "directory", "matching-files", "nearest-ancestor", "boundary":
+		return nil
+	default:
+		return fmt.Errorf("%s.scope must be one of: repo, subtree, directory, matching-files, nearest-ancestor, boundary", prefix)
+	}
 }
 
 // BuiltInDetectors returns Skillex's intentionally small baseline detector set.
@@ -364,6 +429,51 @@ func ActivateProject(root string) ([]ActivatedSkill, []error) {
 	return activated, errs
 }
 
+// ActivateProjectMCPServers discovers contextually relevant MCP suggestions in
+// project-local packs. It evaluates metadata only and never configures or starts
+// a downstream server.
+func ActivateProjectMCPServers(root string) ([]ActivatedMCPServer, []error) {
+	var activated []ActivatedMCPServer
+	var errs []error
+	var projectPacks []*Pack
+
+	for _, manifestPath := range ProjectManifestPaths(root) {
+		pack, err := Load(manifestPath)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		projectPacks = append(projectPacks, pack)
+	}
+
+	registry, err := NewDetectorRegistry()
+	if err != nil {
+		return activated, append(errs, err)
+	}
+	for _, pack := range projectPacks {
+		if err := registry.RegisterAll(pack.Manifest.Detectors, pack.Manifest.Name, false); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	active, detectorErrs := registry.Evaluate(root, ActivationContext{})
+	errs = append(errs, detectorErrs...)
+	ctx := ActivationContext{DetectorKnown: registry.KnownMap(), DetectorActive: active}
+
+	for _, pack := range projectPacks {
+		for _, server := range pack.Manifest.MCPServers {
+			scopes, err := ActivateMCPServerWithContext(root, server, ctx)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("activating pack %s MCP server %s: %w", pack.Manifest.Name, server.Ref, err))
+				continue
+			}
+			if len(scopes) > 0 {
+				activated = append(activated, ActivatedMCPServer{Pack: pack, Server: server, Scopes: scopes})
+			}
+		}
+	}
+	return activated, errs
+}
+
 // ContextForPack evaluates built-in and pack-defined detectors for a dependency context.
 func ContextForPack(root string, pack *Pack, ctx ActivationContext) (ActivationContext, []error) {
 	registry, err := NewDetectorRegistry()
@@ -453,6 +563,47 @@ func ActivateSkillWithContext(root string, skill SkillRef, ctx ActivationContext
 	return scopes, nil
 }
 
+// ActivateMCPServerWithContext resolves contextual scopes for a pack suggestion.
+func ActivateMCPServerWithContext(root string, server MCPServerRef, ctx ActivationContext) ([]string, error) {
+	return activateWithContext(root, server.ActivateWhen, server.Scope, server.Files, ctx)
+}
+
+func activateWithContext(root string, when ActivateWhen, scope string, files []string, ctx ActivationContext) ([]string, error) {
+	matches, err := activationMatches(root, when)
+	if err != nil {
+		return nil, err
+	}
+	dependencyMatched := DependencyMatches(ctx.Dependency, when.DependencyDeclared)
+	detectorMatched, err := DetectorActive(ctx, when.Detector)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 && !dependencyMatched && !detectorMatched {
+		return nil, nil
+	}
+	if scope == "matching-files" && len(files) > 0 {
+		matches = nil
+		for _, pattern := range files {
+			fileMatches, err := MatchRepoFiles(root, pattern)
+			if err != nil {
+				return nil, err
+			}
+			matches = appendUnique(matches, fileMatches...)
+		}
+	}
+	if scope == "boundary" {
+		return ScopeForContext(ctx, scope), nil
+	}
+	if len(matches) == 0 {
+		return ScopeForContext(ctx, scope), nil
+	}
+	var scopes []string
+	for _, match := range matches {
+		scopes = appendUnique(scopes, ScopeForMatch(match, scope)...)
+	}
+	return scopes, nil
+}
+
 // DetectorActive reports whether the named detector matched in the context.
 func DetectorActive(ctx ActivationContext, name string) (bool, error) {
 	if strings.TrimSpace(name) == "" {
@@ -486,8 +637,12 @@ func DependencyMatches(dep DependencyFact, conditions []DependencyCondition) boo
 
 // ActivationMatches returns repo files that satisfy a skill's file activation rules.
 func ActivationMatches(root string, skill SkillRef) ([]string, error) {
+	return activationMatches(root, skill.ActivateWhen)
+}
+
+func activationMatches(root string, when ActivateWhen) ([]string, error) {
 	var matches []string
-	for _, pattern := range append(skill.ActivateWhen.FilesPresent, skill.ActivateWhen.FilesMatching...) {
+	for _, pattern := range append(when.FilesPresent, when.FilesMatching...) {
 		fileMatches, err := MatchRepoFiles(root, pattern)
 		if err != nil {
 			return nil, err

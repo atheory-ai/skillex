@@ -1,0 +1,5 @@
+io.example/issues/issues.create
+  Create issue
+  Create an issue in the configured tracker.
+  mcp=io.example/issues@1.0.0  kind=tool  availability=setup-required
+

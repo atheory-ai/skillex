@@ -1,0 +1,7 @@
+{
+  "cross_subject_partition_isolated": true,
+  "cross_tenant_partition_isolated": true,
+  "cross_tenant_reference_rejected": true,
+  "partition_prefix": "tenant:v1:",
+  "raw_identity_hidden": true
+}

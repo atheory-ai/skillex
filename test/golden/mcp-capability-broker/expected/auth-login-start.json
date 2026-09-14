@@ -1,0 +1,6 @@
+{
+  "type": "authorization_required",
+  "profile": "issues-test",
+  "authorization_url": "<authorization-url>",
+  "next_action": "open the URL, then rerun with --callback '<full redirected URL>'"
+}

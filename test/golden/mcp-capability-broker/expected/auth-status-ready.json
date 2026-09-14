@@ -1,0 +1,11 @@
+{
+  "bindings": [
+    {
+      "server": "io.example/issues",
+      "version": "1.0.0",
+      "profile": "issues-test",
+      "scope": "packages/app/**",
+      "availability": "ready"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is incremented whenever a migration is added.
 // Registry.Open sets this on all databases it manages.
-const currentSchemaVersion = 4
+const currentSchemaVersion = 6
 
 // migrateSchema applies any pending schema migrations.
 //
@@ -85,44 +85,77 @@ func migrateSchema(db *sql.DB) error {
 		}
 	}
 	// v4: full-text discovery across metadata, headings, and skill bodies.
-	if _, err := db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skill_search USING fts5(skill_id UNINDEXED, name, description, headings, body)`); err != nil {
-		db.Exec("ROLLBACK") //nolint:errcheck
-		return fmt.Errorf("creating full-text search index: %w", err)
-	}
-	if _, err := db.Exec(`DELETE FROM skill_search`); err != nil {
-		db.Exec("ROLLBACK") //nolint:errcheck
-		return fmt.Errorf("clearing full-text search index: %w", err)
-	}
-	rows, err := db.Query(`SELECT id, COALESCE(name,''), COALESCE(description,''), content FROM skills`)
-	if err != nil {
-		db.Exec("ROLLBACK") //nolint:errcheck
-		return fmt.Errorf("reading skills for full-text index: %w", err)
-	}
-	type ftsSkill struct {
-		id                         int64
-		name, description, content string
-	}
-	var ftsSkills []ftsSkill
-	for rows.Next() {
-		var id int64
-		var name, description, content string
-		if err := rows.Scan(&id, &name, &description, &content); err != nil {
+	if ver < 4 {
+		if _, err := db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skill_search USING fts5(skill_id UNINDEXED, name, description, headings, body)`); err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("creating full-text search index: %w", err)
+		}
+		if _, err := db.Exec(`DELETE FROM skill_search`); err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("clearing full-text search index: %w", err)
+		}
+		rows, err := db.Query(`SELECT id, COALESCE(name,''), COALESCE(description,''), content FROM skills`)
+		if err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("reading skills for full-text index: %w", err)
+		}
+		type ftsSkill struct {
+			id                         int64
+			name, description, content string
+		}
+		var ftsSkills []ftsSkill
+		for rows.Next() {
+			var id int64
+			var name, description, content string
+			if err := rows.Scan(&id, &name, &description, &content); err != nil {
+				rows.Close()
+				db.Exec("ROLLBACK") //nolint:errcheck
+				return err
+			}
+			ftsSkills = append(ftsSkills, ftsSkill{id, name, description, content})
+		}
+		if err := rows.Err(); err != nil {
 			rows.Close()
 			db.Exec("ROLLBACK") //nolint:errcheck
 			return err
 		}
-		ftsSkills = append(ftsSkills, ftsSkill{id, name, description, content})
-	}
-	if err := rows.Err(); err != nil {
 		rows.Close()
-		db.Exec("ROLLBACK") //nolint:errcheck
-		return err
+		for _, skill := range ftsSkills {
+			if _, err := db.Exec(`INSERT INTO skill_search (skill_id, name, description, headings, body) VALUES (?, ?, ?, ?, ?)`, skill.id, skill.name, skill.description, headingsText(skill.content), skill.content); err != nil {
+				db.Exec("ROLLBACK") //nolint:errcheck
+				return fmt.Errorf("indexing skill %d for full-text search: %w", skill.id, err)
+			}
+		}
 	}
-	rows.Close()
-	for _, skill := range ftsSkills {
-		if _, err := db.Exec(`INSERT INTO skill_search (skill_id, name, description, headings, body) VALUES (?, ?, ?, ?, ?)`, skill.id, skill.name, skill.description, headingsText(skill.content), skill.content); err != nil {
+
+	// v5: capability-granular MCP catalog, views, bindings, transports, and FTS.
+	// The migration deliberately backfills no capability rows; explicit refresh
+	// from configured metadata sources owns that state.
+	if err := createCapabilitySchema(db); err != nil {
+		db.Exec("ROLLBACK") //nolint:errcheck
+		return fmt.Errorf("creating MCP capability schema: %w", err)
+	}
+
+	// v6: align the capability FTS rowid with the relational capability ID so
+	// broad ranked queries use an integer primary-key join instead of casting
+	// and scanning the unindexed compatibility column.
+	if ver < 6 {
+		if _, err := db.Exec(`DELETE FROM mcp_capability_search`); err != nil {
 			db.Exec("ROLLBACK") //nolint:errcheck
-			return fmt.Errorf("indexing skill %d for full-text search: %w", skill.id, err)
+			return fmt.Errorf("clearing capability full-text index: %w", err)
+		}
+		if _, err := db.Exec(`INSERT INTO mcp_capability_search
+			(rowid, capability_id, server, name, title, description, schema_summary, binding)
+			SELECT c.id, c.id, s.canonical_name, c.name, c.title, c.description,
+				CAST(c.input_schema AS TEXT) || ' ' || CAST(c.output_schema AS TEXT),
+				COALESCE(group_concat(b.relationship || ' ' || b.scope || ' ' || b.auth_profile, ' '), '')
+			FROM mcp_capabilities c
+			JOIN mcp_server_versions sv ON sv.id = c.server_version_id
+			JOIN mcp_servers s ON s.id = sv.server_id
+			LEFT JOIN mcp_capability_bindings b ON b.capability_id = c.id
+			GROUP BY c.id`); err != nil {
+			db.Exec("ROLLBACK") //nolint:errcheck
+			return fmt.Errorf("rebuilding capability full-text index: %w", err)
 		}
 	}
 

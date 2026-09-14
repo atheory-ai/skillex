@@ -33,6 +33,81 @@ skills:
 	}
 }
 
+func TestLoadMCPOnlyPackAndActivateSuggestion(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	writePackTestFile(t, filepath.Join(root, "skillex", Filename), `name: issue-tools
+version: 1.0.0
+mcp-servers:
+  - ref: io.example/issues
+    version: 2.1.0
+    relationship: suggested
+    activate-when:
+      detector: go
+    scope: repo
+    capabilities:
+      prefer:
+        - issues.create
+`)
+
+	pack, err := Load(filepath.Join(root, "skillex", Filename))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(pack.Manifest.MCPServers) != 1 {
+		t.Fatalf("MCP servers = %d, want 1", len(pack.Manifest.MCPServers))
+	}
+	activated, errs := ActivateProjectMCPServers(root)
+	if len(errs) > 0 {
+		t.Fatalf("ActivateProjectMCPServers() errors = %v", errs)
+	}
+	if len(activated) != 1 || activated[0].Server.Ref != "io.example/issues" {
+		t.Fatalf("activated = %#v", activated)
+	}
+	if got, want := activated[0].Scopes, []string{"**"}; !sameStrings(got, want) {
+		t.Fatalf("scopes = %v, want %v", got, want)
+	}
+}
+
+func TestPackMCPServerCannotContainExecutionOrAuthConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	writePackTestFile(t, filepath.Join(dir, Filename), `name: unsafe
+mcp-servers:
+  - ref: io.example/issues
+    version: 1.0.0
+    relationship: suggested
+    command: node
+    auth-profile: secret
+    activate-when:
+      detector: go
+`)
+
+	_, err := Load(filepath.Join(dir, Filename))
+	if err == nil {
+		t.Fatal("Load() error = nil, want unknown execution/auth fields rejected")
+	}
+	if !strings.Contains(err.Error(), "field command not found") && !strings.Contains(err.Error(), "field auth-profile not found") {
+		t.Fatalf("Load() error = %v, want forbidden field rejection", err)
+	}
+}
+
+func TestPackMCPServerRequiresExactSuggestedVersion(t *testing.T) {
+	dir := t.TempDir()
+	writePackTestFile(t, filepath.Join(dir, Filename), `name: invalid
+mcp-servers:
+  - ref: io.example/issues
+    version: ^1.0.0
+    relationship: required
+    activate-when:
+      detector: go
+`)
+
+	_, err := Load(filepath.Join(dir, Filename))
+	if err == nil || !strings.Contains(err.Error(), "exact version") || !strings.Contains(err.Error(), "must be suggested") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
 func TestLoadInvalidPackReportsIssues(t *testing.T) {
 	dir := t.TempDir()
 	writePackTestFile(t, filepath.Join(dir, Filename), `name: ""

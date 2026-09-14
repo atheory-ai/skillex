@@ -45,6 +45,10 @@ packages, follow repo conventions, and work safely in a codebase.`,
 		newDoctorCmd(),
 		newVersionCmd(),
 		newMCPCmd(),
+		newCapabilityCmd(),
+		newAuthCmd(),
+		newCatalogCmd(),
+		newTelemetryCmd(),
 	)
 }
 

@@ -17,6 +17,8 @@ tags: [discovery, compatibility, golden-tests]
 
 - Keep CLI and MCP behavior aligned over the shared query and registry implementation.
 - When changing search, headings, body indexing, or ranking, account for registry schema migration and fresh-index behavior.
+- Keep capability pagination inside SQLite: apply visibility, scope, server, kind, availability, count, facets, stable ordering, and offset/limit before hydrating definitions or issuing references.
+- Calculate narrowing facets across the complete filtered candidate set, while hydrating and signing only the requested result page.
 - Update generated `AGENTS.md` guidance when the recommended discovery or read flow changes.
 
 ## Prove the change
@@ -24,3 +26,4 @@ tags: [discovery, compatibility, golden-tests]
 - Add focused unit coverage for parsing, ranking, pagination, or migration details.
 - Add acceptance and golden coverage for observable summaries, narrowing, pagination, selected reads, and MCP parity.
 - Test broad queries as well as exact matches; bounded retrieval is successful only when it helps an agent narrow safely.
+- Benchmark broad capability discovery at 50,000 records with allocation reporting; reject implementations that hydrate the complete match set before pagination.

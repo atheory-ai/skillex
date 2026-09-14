@@ -1,0 +1,10 @@
+{
+  "type": "no_match",
+  "vocabulary": {
+    "total_skills": 0,
+    "total_capabilities": 2
+  },
+  "query": {
+    "server": "io.example/missing"
+  }
+}

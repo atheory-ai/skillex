@@ -12,6 +12,8 @@ Skillex helps agents load the right guidance for the code they are working on wi
 - Activates pack-shipped skills from project files, dependencies, and detectors
 - Lets packages and Go modules ship `skillex/pack.yaml` with their code
 - Exposes the index through both MCP and a CLI fallback
+- Can experimentally discover and invoke trusted downstream MCP capabilities
+  without registering them individually with the host
 - Generates `AGENTS.md` instructions for agents that cannot use MCP directly
 
 ## Recommended install
@@ -34,6 +36,19 @@ yarn add -D @atheory-ai/skillex
 
 The wrapper package installs the correct native binary for your platform through
 npm `optionalDependencies`.
+
+## Experimental downstream MCP broker
+
+Skillex 0.9.0 includes an explicitly opt-in downstream MCP capability broker.
+The host registers only Skillex; enabled projects can discover contextual MCP
+capabilities and have Skillex invoke the selected trusted server lazily. Existing
+skills-only projects are unchanged.
+
+This broker and its authentication integrations are experimental. The protocol
+flows have automated conformance coverage, but interoperability is not certified
+for every MCP server, identity provider, or enterprise deployment. See the
+[main project documentation](https://github.com/atheory-ai/skillex#downstream-mcp-capability-broker)
+for configuration, security boundaries, and the current support matrix.
 
 ## Quick start
 

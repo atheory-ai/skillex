@@ -1,0 +1,21 @@
+{
+  "name": "weather-fixture-server",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "weather.lookup",
+      "title": "Weather lookup",
+      "description": "Look up weather for a location.",
+      "inputSchema": {
+        "required": ["location"],
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}
