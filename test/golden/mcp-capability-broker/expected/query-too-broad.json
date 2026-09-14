@@ -1,0 +1,47 @@
+{
+  "type": "results",
+  "capabilities": [
+    {
+      "ref": "<capability-ref>",
+      "server": {
+        "canonical_name": "io.example/issues",
+        "publisher": "example"
+      },
+      "version": "1.0.0",
+      "kind": "tool",
+      "name": "issues.create",
+      "title": "Create issue",
+      "description": "Create an issue in the configured tracker.",
+      "availability": "setup-required"
+    }
+  ],
+  "capability_match_count": 2,
+  "capability_returned_count": 1,
+  "too_broad": true,
+  "next_cursor": "eyJzIjowLCJjIjoxfQ",
+  "narrow_with": {
+    "servers": [
+      {
+        "value": "io.example/issues",
+        "count": 1
+      },
+      {
+        "value": "io.example/weather",
+        "count": 1
+      }
+    ],
+    "capability_kinds": [
+      {
+        "value": "tool",
+        "count": 2
+      }
+    ],
+    "availability": [
+      {
+        "value": "setup-required",
+        "count": 2
+      }
+    ],
+    "advice": "This query is broad. Narrow it with a suggested path, topic, tag, package, or more specific search terms before reading content."
+  }
+}

@@ -119,6 +119,39 @@ type CapabilityBinding struct {
 	AuthProfile  string `json:"auth_profile,omitempty"`
 }
 
+// CapabilityFacet is a candidate-scoped capability filter value.
+type CapabilityFacet struct {
+	Value string
+	Count int
+}
+
+// CapabilityFacets contains narrowing values calculated across every match.
+type CapabilityFacets struct {
+	Servers      []CapabilityFacet
+	Kinds        []CapabilityFacet
+	Availability []CapabilityFacet
+}
+
+// CapabilityQuery bounds and filters an offline capability search.
+type CapabilityQuery struct {
+	Search       string
+	Path         string
+	Server       string
+	Kind         capability.CapabilityKind
+	Availability capability.AvailabilityStatus
+	View         string
+	Limit        int
+	Offset       int
+	AllViews     bool
+}
+
+// CapabilityPage contains one hydrated page plus SQL-derived result metadata.
+type CapabilityPage struct {
+	Records    []CapabilityRecord
+	MatchCount int
+	Facets     CapabilityFacets
+}
+
 // ApplyCapabilitySuggestions overlays pack-provided relevance onto catalog
 // metadata and creates bounded placeholder entries for explicitly preferred
 // capabilities that have not yet been cataloged. Suggestions never add a
@@ -458,12 +491,12 @@ func (r *Registry) InsertCapability(record CapabilityRecord) (int64, error) {
 		}
 		bindingSearch = append(bindingSearch, binding.Relationship, binding.Scope, binding.AuthProfile)
 	}
-	if _, err := tx.Exec(`DELETE FROM mcp_capability_search WHERE capability_id = ?`, capabilityID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM mcp_capability_search WHERE rowid = ?`, capabilityID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(`INSERT INTO mcp_capability_search
-		(capability_id, server, name, title, description, schema_summary, binding)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, capabilityID,
+		(rowid, capability_id, server, name, title, description, schema_summary, binding)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, capabilityID, capabilityID,
 		selected.Server.Identity.CanonicalName, selected.Name, selected.Title,
 		selected.Description, schemaSearchText(selected), strings.Join(bindingSearch, " ")); err != nil {
 		return 0, err
@@ -499,19 +532,127 @@ func (r *Registry) AllCapabilities() ([]CapabilityRecord, error) {
 
 // QueryCapabilitiesBySearch performs capability-granular FTS discovery.
 func (r *Registry) QueryCapabilitiesBySearch(search string) ([]CapabilityRecord, error) {
-	tokens := searchTokens(search)
-	if len(tokens) == 0 {
-		return r.AllCapabilities()
+	page, err := r.QueryCapabilityPage(CapabilityQuery{Search: search, AllViews: true})
+	return page.Records, err
+}
+
+// QueryCapabilityPage lets SQLite filter, count, facet, rank, and page before
+// full capability definitions and bindings are hydrated.
+func (r *Registry) QueryCapabilityPage(query CapabilityQuery) (CapabilityPage, error) {
+	if query.Offset < 0 || query.Limit < 0 {
+		return CapabilityPage{}, errors.New("capability query limit and offset cannot be negative")
 	}
-	terms := make([]string, len(tokens))
-	for i, token := range tokens {
-		terms[i] = `"` + strings.ReplaceAll(token, `"`, `""`) + `"`
+	from := capabilityFrom
+	var where []string
+	var args []any
+	tokens := searchTokens(query.Search)
+	if len(tokens) > 0 {
+		terms := make([]string, len(tokens))
+		for i, token := range tokens {
+			terms[i] = `"` + strings.ReplaceAll(token, `"`, `""`) + `"`
+		}
+		from += ` JOIN mcp_capability_search f ON f.rowid = c.id`
+		where = append(where, `mcp_capability_search MATCH ?`, `rank MATCH 'bm25(8.0, 8.0, 6.0, 4.0, 2.0, 1.0)'`)
+		args = append(args, strings.Join(terms, " OR "))
 	}
-	return r.queryCapabilities(capabilitySelect+`
-		JOIN mcp_capability_search f ON c.id = CAST(f.capability_id AS INTEGER)
-		WHERE mcp_capability_search MATCH ?
-		ORDER BY bm25(mcp_capability_search, 8.0, 8.0, 6.0, 4.0, 2.0, 1.0),
-		s.canonical_name, sv.version, c.kind, c.name`, strings.Join(terms, " OR "))
+	if !query.AllViews {
+		where = append(where, `(v.auth_partition_hash = 'public' OR v.auth_partition_hash = ?)`)
+		args = append(args, query.View)
+	}
+	if query.Server != "" {
+		where = append(where, `s.canonical_name = ?`)
+		args = append(args, query.Server)
+	}
+	if query.Kind != "" {
+		where = append(where, `c.kind = ?`)
+		args = append(args, query.Kind)
+	}
+	availabilityExpression := `CASE WHEN v.expires_at <> '' AND datetime(v.expires_at) < datetime('now') THEN 'stale' ELSE c.availability END`
+	if query.Availability != "" {
+		where = append(where, availabilityExpression+` = ?`)
+		args = append(args, query.Availability)
+	}
+	if query.Path != "" {
+		path := filepath.ToSlash(strings.TrimPrefix(query.Path, "./"))
+		globIDs, err := r.matchingCapabilityGlobIDs(path)
+		if err != nil {
+			return CapabilityPage{}, err
+		}
+		bindingConditions := []string{
+			`b.pattern_type = 'universal'`,
+			`(b.pattern_type = 'exact' AND b.path_prefix = ?)`,
+			`(b.pattern_type = 'prefix' AND ? LIKE b.path_prefix || '%')`,
+		}
+		args = append(args, path, path)
+		if len(globIDs) > 0 {
+			placeholders := make([]string, len(globIDs))
+			for i, id := range globIDs {
+				placeholders[i] = "?"
+				args = append(args, id)
+			}
+			bindingConditions = append(bindingConditions, `(b.pattern_type = 'glob' AND b.capability_id IN (`+strings.Join(placeholders, ",")+`))`)
+		}
+		where = append(where, `EXISTS (SELECT 1 FROM mcp_capability_bindings b WHERE b.capability_id = c.id AND (`+strings.Join(bindingConditions, " OR ")+`))`)
+	}
+	whereSQL := ""
+	if len(where) > 0 {
+		whereSQL = ` WHERE ` + strings.Join(where, ` AND `)
+	}
+
+	matchCount, facets, err := r.queryCapabilityMetadata(from, whereSQL, availabilityExpression, args)
+	if err != nil {
+		return CapabilityPage{}, err
+	}
+	page := CapabilityPage{MatchCount: matchCount, Facets: facets}
+	if query.Offset >= page.MatchCount {
+		return page, nil
+	}
+
+	order := ` ORDER BY s.canonical_name, sv.version, c.kind, c.name`
+	if len(tokens) > 0 {
+		order = ` ORDER BY rank, s.canonical_name, sv.version, c.kind, c.name`
+	}
+	pageArgs := append([]any(nil), args...)
+	limit := ""
+	if query.Limit > 0 {
+		limit = ` LIMIT ? OFFSET ?`
+		pageArgs = append(pageArgs, query.Limit, query.Offset)
+	} else if query.Offset > 0 {
+		limit = ` LIMIT -1 OFFSET ?`
+		pageArgs = append(pageArgs, query.Offset)
+	}
+	page.Records, err = r.queryCapabilities(capabilityColumns+from+whereSQL+order+limit, pageArgs...)
+	return page, err
+}
+
+func (r *Registry) queryCapabilityMetadata(from, whereSQL, availabilityExpression string, args []any) (int, CapabilityFacets, error) {
+	query := `WITH candidates AS MATERIALIZED (
+		SELECT s.canonical_name AS server, c.kind AS kind, ` + availabilityExpression + ` AS availability ` + from + whereSQL + `
+	)
+	SELECT
+		(SELECT COUNT(*) FROM candidates),
+		COALESCE((SELECT json_group_array(json_object('value', value, 'count', count)) FROM
+			(SELECT server AS value, COUNT(*) AS count FROM candidates GROUP BY server ORDER BY server)), '[]'),
+		COALESCE((SELECT json_group_array(json_object('value', value, 'count', count)) FROM
+			(SELECT kind AS value, COUNT(*) AS count FROM candidates GROUP BY kind ORDER BY kind)), '[]'),
+		COALESCE((SELECT json_group_array(json_object('value', value, 'count', count)) FROM
+			(SELECT availability AS value, COUNT(*) AS count FROM candidates GROUP BY availability ORDER BY availability)), '[]')`
+	var count int
+	var serversJSON, kindsJSON, availabilityJSON string
+	if err := r.db.QueryRow(query, args...).Scan(&count, &serversJSON, &kindsJSON, &availabilityJSON); err != nil {
+		return 0, CapabilityFacets{}, err
+	}
+	var facets CapabilityFacets
+	if err := json.Unmarshal([]byte(serversJSON), &facets.Servers); err != nil {
+		return 0, CapabilityFacets{}, err
+	}
+	if err := json.Unmarshal([]byte(kindsJSON), &facets.Kinds); err != nil {
+		return 0, CapabilityFacets{}, err
+	}
+	if err := json.Unmarshal([]byte(availabilityJSON), &facets.Availability); err != nil {
+		return 0, CapabilityFacets{}, err
+	}
+	return count, facets, nil
 }
 
 // ResolveCapability retrieves one exact current capability definition.
@@ -539,15 +680,18 @@ func (r *Registry) ResolveCapabilityView(server, version string, kind capability
 	return &records[0], nil
 }
 
-const capabilitySelect = `SELECT c.id, s.canonical_name, s.publisher, sv.version,
+const capabilityColumns = `SELECT c.id, s.canonical_name, s.publisher, sv.version,
 	sv.package_digest, sv.status, c.kind, c.name, c.title, c.description,
 	c.input_schema, c.output_schema, c.schema_digest, c.availability,
 	v.visibility, v.auth_partition_hash, v.cache_scope, v.observed_at, v.expires_at, s.source_type,
-	s.source_ref, c.risk, c.raw_definition
-	FROM mcp_capabilities c
+	s.source_ref, c.risk, c.raw_definition `
+
+const capabilityFrom = `FROM mcp_capabilities c
 	JOIN mcp_server_versions sv ON sv.id = c.server_version_id
 	JOIN mcp_servers s ON s.id = sv.server_id
 	JOIN mcp_capability_views v ON v.id = c.view_id`
+
+const capabilitySelect = capabilityColumns + capabilityFrom
 
 func (r *Registry) queryCapabilities(query string, args ...any) ([]CapabilityRecord, error) {
 	rows, err := r.db.Query(query, args...)

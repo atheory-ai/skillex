@@ -392,7 +392,7 @@ query-time fan-out:
 skillex catalog sync                         # Registry API metadata → offline cache
 skillex catalog inspect                      # trusted bound servers → tool/prompt/resource metadata
 skillex query --search "create issue"         # offline contextual search
-skillex capability describe --ref <ref>      # offline selected definition
+skillex capability describe --ref <ref> --max-bytes 24576
 skillex capability call --ref <ref> --arguments '{"title":"Bug"}'
 skillex telemetry summary                    # opted-in privacy-safe usage counts
 ```
@@ -403,6 +403,11 @@ carry freshness metadata; expired views become `stale` and cannot be invoked
 until re-inspected. Optional local telemetry is off by default and records only
 attributed server/capability identity, readiness, outcome, and duration—never
 credentials, arguments, results, tokens, or headers.
+
+Capability discovery remains bounded even for high-match searches: SQLite
+applies visibility, scope, capability filters, full-set counts and narrowing
+facets, stable ranking, and pagination before Skillex hydrates and signs only
+the requested page.
 
 ---
 
@@ -697,7 +702,9 @@ host's MCP configuration.
 Version 4 projects cannot construct the broker. Version 5 projects must use the
 explicit `MCP.Enabled` gate shown in the configuration section. Enabled projects
 get additive, independently paginated capability results from `skillex_query` plus
-`skillex_mcp_describe` and `skillex_mcp_call`. Skillex revalidates the signed
+`skillex_mcp_describe` and `skillex_mcp_call`. CLI `capability describe` and MCP
+`skillex_mcp_describe` enforce the same bounded output contract: 24 KiB by
+default and at most 64 KiB via `--max-bytes` or `max_bytes`. Skillex revalidates the signed
 reference, workspace context, binding, readiness, policy, live schema, and JSON
 Schema 2020-12 arguments before invoking the one selected server. Tools, prompts,
 and resource templates are indexed at capability granularity. Calls support MCP

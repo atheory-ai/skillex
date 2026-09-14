@@ -1,0 +1,31 @@
+{
+  "server": {
+    "identity": {
+      "canonical_name": "io.example/issues",
+      "publisher": "example"
+    },
+    "version": "1.0.0",
+    "package_digest": "sha256:issues-fixture",
+    "status": "active"
+  },
+  "kind": "tool",
+  "name": "issues.create",
+  "title": "Create issue",
+  "description": "Create an issue in the configured tracker.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "additionalProperties": false
+  },
+  "schema_digest": "sha256:516fdc5bb6647123b21ac6cb6cd8b9dbdf5fc54223040d642140cf537571f2f7",
+  "availability": "setup-required",
+  "observed_at": "0001-01-01T00:00:00Z",
+  "expires_at": "0001-01-01T00:00:00Z"
+}

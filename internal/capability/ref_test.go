@@ -73,3 +73,28 @@ func testCapability(t *testing.T) Capability {
 	}
 	return capability
 }
+
+func BenchmarkReferenceIssueAndVerify(b *testing.B) {
+	now := time.Unix(1_800_000_000, 0)
+	signer, err := NewReferenceSigner([]byte("0123456789abcdef0123456789abcdef"), time.Minute, WithClock(func() time.Time { return now }))
+	if err != nil {
+		b.Fatal(err)
+	}
+	selected, err := (Capability{
+		Server: ServerVersion{Identity: ServerIdentity{CanonicalName: "io.example/issues"}, Version: "1.0.0"},
+		Kind:   CapabilityTool, Name: "issues.search", InputSchemaJSON: []byte(`{"type":"object"}`), Availability: AvailabilityReady,
+	}).WithComputedSchemaDigest()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for range b.N {
+		ref, err := signer.Issue(selected, "private:workspace", "sha256:context")
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := signer.Verify(ref); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

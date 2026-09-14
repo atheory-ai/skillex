@@ -12,6 +12,7 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/brokerruntime"
+	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/mcperror"
 	"github.com/atheory-ai/skillex/internal/query"
@@ -102,6 +103,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		describeTool := mcplib.NewTool("skillex_mcp_describe",
 			mcplib.WithDescription("Describe one selected downstream MCP capability from a ref returned by skillex_query. This is offline and does not connect to the downstream server."),
 			mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Capability ref returned by skillex_query")),
+			mcplib.WithNumber("max_bytes", mcplib.Description("Maximum encoded description bytes (default 24576, max 65536)")),
 		)
 		s.AddTool(describeTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			return handleCapabilityDescribe(ctx, runtime, req)
@@ -240,13 +242,14 @@ func handleQuery(eng *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToo
 
 func handleCapabilityDescribe(ctx context.Context, runtime *brokerruntime.Runtime, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ref, _ := req.Params.Arguments["ref"].(string)
+	maxBytes, _ := req.Params.Arguments["max_bytes"].(float64)
 	selected, err := runtime.Broker.Describe(ctx, ref, broker.RequestContext{ContextDigest: runtime.ContextDigest, View: runtime.View})
 	if err != nil {
 		return toolError(err), nil
 	}
-	data, err := json.MarshalIndent(selected, "", "  ")
+	data, err := capability.MarshalDescription(selected, int(maxBytes))
 	if err != nil {
-		return nil, err
+		return toolError(err), nil
 	}
 	return mcplib.NewToolResultText(string(data)), nil
 }

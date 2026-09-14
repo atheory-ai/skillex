@@ -95,6 +95,29 @@ func TestBrokerQueriesOfflineAndInvokesOnlySelectedServer(t *testing.T) {
 	}
 }
 
+func TestBrokerQueryPagePreservesCatalogMetadata(t *testing.T) {
+	ctx := context.Background()
+	capabilities := []capability.Capability{
+		newTestCapability(t, "io.example/tools", "one"),
+		newTestCapability(t, "io.example/tools", "two"),
+		newTestCapability(t, "io.example/tools", "three"),
+	}
+	catalog := &fakeCatalog{capabilities: capabilities}
+	engine := newTestBroker(t, catalog, allowPolicy{}, &fakeConnectorFactory{})
+	page, err := engine.QueryPage(ctx, Query{
+		Search: "tool", ContextDigest: "sha256:repo-context", View: "public", Limit: 1, Offset: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.MatchCount != 3 || len(page.Summaries) != 1 || page.Summaries[0].Name != "two" {
+		t.Fatalf("discovery page = %#v", page)
+	}
+	if page.Summaries[0].Ref == "" {
+		t.Fatal("paged summary omitted signed reference")
+	}
+}
+
 func TestBrokerInvokesPromptAndResourceTemplateCapabilities(t *testing.T) {
 	ctx := context.Background()
 	server := capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: "io.example/content"}, Version: "1"}
@@ -235,8 +258,17 @@ type fakeCatalog struct {
 	resolveCalls int
 }
 
-func (f *fakeCatalog) Search(context.Context, Query) ([]capability.Capability, error) {
-	return append([]capability.Capability(nil), f.capabilities...), nil
+func (f *fakeCatalog) Search(_ context.Context, query Query) (CatalogPage, error) {
+	capabilities := append([]capability.Capability(nil), f.capabilities...)
+	matchCount := len(capabilities)
+	if query.Offset > len(capabilities) {
+		query.Offset = len(capabilities)
+	}
+	capabilities = capabilities[query.Offset:]
+	if query.Limit > 0 && len(capabilities) > query.Limit {
+		capabilities = capabilities[:query.Limit]
+	}
+	return CatalogPage{Capabilities: capabilities, MatchCount: matchCount}, nil
 }
 
 func (f *fakeCatalog) Resolve(_ context.Context, claims capability.ReferenceClaims) (capability.Capability, error) {
@@ -290,3 +322,34 @@ func (f *fakeConnector) ReadResource(_ context.Context, uri string) (any, error)
 }
 
 func (*fakeConnector) Close() error { return nil }
+
+func BenchmarkBrokerDiscoveryPage(b *testing.B) {
+	capabilities := make([]capability.Capability, 20)
+	for i := range capabilities {
+		selected, err := (capability.Capability{
+			Server: capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: fmt.Sprintf("io.example/server-%02d", i)}, Version: "1.0.0"},
+			Kind:   capability.CapabilityTool, Name: fmt.Sprintf("tool.%02d", i), InputSchemaJSON: []byte(`{"type":"object"}`),
+			Availability: capability.AvailabilityReady,
+		}).WithComputedSchemaDigest()
+		if err != nil {
+			b.Fatal(err)
+		}
+		capabilities[i] = selected
+	}
+	signer, err := capability.NewReferenceSigner([]byte("0123456789abcdef0123456789abcdef"), time.Minute)
+	if err != nil {
+		b.Fatal(err)
+	}
+	engine, err := New(&fakeCatalog{capabilities: capabilities}, signer, allowPolicy{}, &fakeConnectorFactory{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	query := Query{Search: "tool", ContextDigest: "sha256:repo", View: "public", Limit: 20}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, err := engine.Query(context.Background(), query); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

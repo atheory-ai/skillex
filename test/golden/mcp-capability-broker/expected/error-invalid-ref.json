@@ -1,0 +1,5 @@
+{
+  "code": "CAPABILITY_REF_INVALID",
+  "message": "invalid capability reference",
+  "retryable": false
+}

@@ -25,6 +25,10 @@ func From(err error) Problem {
 	switch {
 	case errors.Is(err, capability.ErrInvalidReference):
 		problem.Code = "CAPABILITY_REF_INVALID"
+	case errors.Is(err, capability.ErrDescriptionBudgetInvalid):
+		problem.Code, problem.Action = "CAPABILITY_DESCRIPTION_BUDGET_INVALID", "set max_bytes between 1 and 65536"
+	case errors.Is(err, capability.ErrDescriptionTooLarge):
+		problem.Code, problem.Action = "CAPABILITY_DESCRIPTION_TOO_LARGE", "increase max_bytes up to 65536"
 	case errors.Is(err, capability.ErrExpiredReference):
 		problem.Code, problem.Action = "CAPABILITY_REF_EXPIRED", "query again to obtain a fresh capability reference"
 	case errors.Is(err, broker.ErrContextMismatch), errors.Is(err, broker.ErrViewMismatch):

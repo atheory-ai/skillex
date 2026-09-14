@@ -75,17 +75,17 @@ type readinessCatalog struct {
 	projectRoot string
 }
 
-func (c readinessCatalog) Search(ctx context.Context, query broker.Query) ([]capability.Capability, error) {
-	results, err := c.Catalog.Search(ctx, query)
+func (c readinessCatalog) Search(ctx context.Context, query broker.Query) (broker.CatalogPage, error) {
+	page, err := c.Catalog.Search(ctx, query)
 	if err != nil {
-		return nil, err
+		return broker.CatalogPage{}, err
 	}
-	for i := range results {
-		if results[i].Availability != capability.AvailabilityStale {
-			results[i].Availability = c.trusted.Ready(results[i], c.projectRoot)
+	for i := range page.Capabilities {
+		if page.Capabilities[i].Availability != capability.AvailabilityStale {
+			page.Capabilities[i].Availability = c.trusted.Ready(page.Capabilities[i], c.projectRoot)
 		}
 	}
-	return results, nil
+	return page, nil
 }
 
 func (c readinessCatalog) Resolve(ctx context.Context, claims capability.ReferenceClaims) (capability.Capability, error) {

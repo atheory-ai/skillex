@@ -243,14 +243,17 @@ and a separate owner-only trusted configuration file.
 6. Ask the harness for a task that matches exactly one downstream capability.
    Verify `skillex_query` returns its attributed signed ref, describe stays
    offline, and call opens only the selected server.
-7. Exercise a tool that returns `input_required`; fulfill the request and verify
+7. Run a broad capability query with a small limit. Verify `too_broad`, total
+   matches, narrowing facets, and the continuation cursor remain stable while
+   each page contains no more than the requested limit.
+8. Exercise a tool that returns `input_required`; fulfill the request and verify
    the retry echoes `inputResponses` and byte-exact `requestState`.
-8. Let an observed snapshot expire. Verify the capability becomes `stale` and
+9. Let an observed snapshot expire. Verify the capability becomes `stale` and
    cannot be called until inspection refreshes it.
-9. Enable local telemetry, make successful and denied calls, then run
+10. Enable local telemetry, make successful and denied calls, then run
    `skillex telemetry summary`. Inspect the JSONL for arguments, results, tokens,
    headers, dotenv keys, and helper output; none should be present.
-10. Compare the host configuration with the saved copy. No downstream MCP server
+11. Compare the host configuration with the saved copy. No downstream MCP server
     should have been added or modified.
 
 **What to look for:**
@@ -485,4 +488,7 @@ Before any release, verify:
 - [ ] Pack authoring docs tested by someone who has not worked on the implementation.
 - [ ] Project-local pack and package/module-shipped pack flows tested manually.
 - [ ] Go module pack flow tested without network access or `go mod` mutation.
+- [ ] The 50,000-capability exact/broad benchmark was run with `-benchmem`; broad
+      discovery hydrates only the requested page and shows no material regression
+      from the documented baseline.
 - [ ] `skillex version` reports the correct version number.

@@ -36,6 +36,7 @@ type Query struct {
 	ContextDigest string
 	View          string
 	Limit         int
+	Offset        int
 }
 
 // Summary is a bounded capability discovery result.
@@ -50,6 +51,33 @@ type Summary struct {
 	Availability capability.AvailabilityStatus `json:"availability"`
 }
 
+// Facet is a candidate-scoped capability filter value.
+type Facet struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+// DiscoveryFacets contains narrowing values across the full matched set.
+type DiscoveryFacets struct {
+	Servers      []Facet
+	Kinds        []Facet
+	Availability []Facet
+}
+
+// CatalogPage is one bounded catalog page plus full-set metadata.
+type CatalogPage struct {
+	Capabilities []capability.Capability
+	MatchCount   int
+	Facets       DiscoveryFacets
+}
+
+// DiscoveryPage is one bounded signed-summary page plus full-set metadata.
+type DiscoveryPage struct {
+	Summaries  []Summary
+	MatchCount int
+	Facets     DiscoveryFacets
+}
+
 // RequestContext binds a selected reference to the current workspace/request
 // view. It is rechecked at describe and invocation time.
 type RequestContext struct {
@@ -59,7 +87,7 @@ type RequestContext struct {
 
 // Catalog is the indexed, offline source used for discovery and resolution.
 type Catalog interface {
-	Search(ctx context.Context, query Query) ([]capability.Capability, error)
+	Search(ctx context.Context, query Query) (CatalogPage, error)
 	Resolve(ctx context.Context, claims capability.ReferenceClaims) (capability.Capability, error)
 }
 
@@ -195,14 +223,24 @@ func NewConfigured(cfg *config.Config, catalog Catalog, signer *capability.Refer
 // Query searches the offline catalog and issues short-lived references. It does
 // not open a downstream connection.
 func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
+	page, err := b.QueryPage(ctx, query)
+	return page.Summaries, err
+}
+
+// QueryPage searches one bounded catalog page and preserves full-set metadata.
+func (b *Broker) QueryPage(ctx context.Context, query Query) (DiscoveryPage, error) {
 	started := time.Now()
 	if query.ContextDigest == "" || query.View == "" {
-		return nil, errors.New("query context digest and view are required")
+		return DiscoveryPage{}, errors.New("query context digest and view are required")
 	}
-	capabilities, err := b.catalog.Search(ctx, query)
+	page, err := b.catalog.Search(ctx, query)
 	if err != nil {
-		return nil, err
+		return DiscoveryPage{}, err
 	}
+	if page.MatchCount == 0 && len(page.Capabilities) > 0 {
+		page.MatchCount = len(page.Capabilities)
+	}
+	capabilities := page.Capabilities
 	if query.Limit > 0 && len(capabilities) > query.Limit {
 		capabilities = capabilities[:query.Limit]
 	}
@@ -211,11 +249,11 @@ func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
 	for _, selected := range capabilities {
 		selected, err = selected.WithComputedSchemaDigest()
 		if err != nil {
-			return nil, fmt.Errorf("preparing capability %s: %w", selected.Name, err)
+			return DiscoveryPage{}, fmt.Errorf("preparing capability %s: %w", selected.Name, err)
 		}
 		ref, err := b.signer.Issue(selected, query.View, query.ContextDigest)
 		if err != nil {
-			return nil, fmt.Errorf("issuing capability reference: %w", err)
+			return DiscoveryPage{}, fmt.Errorf("issuing capability reference: %w", err)
 		}
 		results = append(results, Summary{
 			Ref:          ref,
@@ -231,7 +269,7 @@ func (b *Broker) Query(ctx context.Context, query Query) ([]Summary, error) {
 			Version: selected.Server.Version, Kind: selected.Kind, Capability: selected.Name,
 			Availability: selected.Availability, Outcome: "returned", Duration: time.Since(started)})
 	}
-	return results, nil
+	return DiscoveryPage{Summaries: results, MatchCount: page.MatchCount, Facets: page.Facets}, nil
 }
 
 // Describe revalidates and resolves one selected capability without connecting

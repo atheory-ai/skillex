@@ -34,11 +34,11 @@ func TestRegistrySearchFiltersByCapabilityBindingScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	matched, err := catalog.Search(context.Background(), broker.Query{Path: "packages/app/src/main.go", Search: "issue"})
-	if err != nil || len(matched) != 1 {
+	if err != nil || len(matched.Capabilities) != 1 {
 		t.Fatalf("matching search = %#v, %v", matched, err)
 	}
 	unmatched, err := catalog.Search(context.Background(), broker.Query{Path: "packages/other/main.go", Search: "issue"})
-	if err != nil || len(unmatched) != 0 {
+	if err != nil || len(unmatched.Capabilities) != 0 {
 		t.Fatalf("out-of-scope search = %#v, %v", unmatched, err)
 	}
 }
@@ -61,7 +61,7 @@ func TestRegistryNeverReturnsOrResolvesAnotherPrivateView(t *testing.T) {
 	}
 	catalog, _ := NewRegistry(reg)
 	results, err := catalog.Search(context.Background(), broker.Query{Search: "Private", View: "tenant-a"})
-	if err != nil || len(results) != 1 {
+	if err != nil || len(results.Capabilities) != 1 {
 		t.Fatalf("private search = %#v, %v", results, err)
 	}
 	claims := capability.ReferenceClaims{Server: "io.example/private", Version: "1", Kind: capability.CapabilityTool, Capability: "private.read", View: "tenant-a"}

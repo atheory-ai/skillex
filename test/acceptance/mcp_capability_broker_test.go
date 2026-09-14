@@ -7,10 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +23,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/config"
 	stdioConnector "github.com/atheory-ai/skillex/internal/connector/stdio"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/tenant"
 	"github.com/atheory-ai/skillex/test/helpers"
 )
 
@@ -166,6 +171,382 @@ func TestMCPBroker_HostDiscoversAndDescribesCapabilityThroughSkillexOnly(t *test
 	if !bytes.Equal(hostConfigBefore, hostConfigAfter) {
 		t.Fatal("host-facing dynamic discovery modified host MCP configuration")
 	}
+}
+
+func TestMCPBroker_GoldenCLIAndMCPQueryParity(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+
+	args := []string{"query", "--path", "packages/app/src/issues.ts", "--search", "create issue", "--json"}
+	cli := helpers.Run(t, fixtureDir, args...)
+	if cli.ExitCode != 0 {
+		t.Fatalf("CLI query failed: %s", cli.Stderr)
+	}
+
+	client := helpers.StartMCPServer(t, fixtureDir)
+	defer client.Close()
+	mcpText, err := client.CallToolText("skillex_query", map[string]interface{}{
+		"path": "packages/app/src/issues.ts", "search": "create issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNormalizedJSONEqual(t, []byte(cli.Stdout), []byte(mcpText))
+
+	human := helpers.Run(t, fixtureDir, "query", "--path", "packages/app/src/issues.ts", "--search", "create issue")
+	if human.ExitCode != 0 {
+		t.Fatalf("human query failed: %s", human.Stderr)
+	}
+	assertGoldenBytes(t, filepath.Join(fixtureDir, "expected", "query-human.txt"), []byte(human.Stdout))
+}
+
+func TestMCPBroker_GoldenBroadAndNoMatchContracts(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+
+	broad := helpers.Run(t, fixtureDir, "query", "--path", "packages/app/src/issues.ts", "--limit", "1", "--json")
+	if broad.ExitCode != 0 {
+		t.Fatalf("broad query failed: %s", broad.Stderr)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "query-too-broad.json"), []byte(broad.Stdout))
+
+	noMatch := helpers.Run(t, fixtureDir, "query", "--mcp-server", "io.example/missing", "--json")
+	if noMatch.ExitCode != 0 {
+		t.Fatalf("no-match query failed: %s", noMatch.Stderr)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "query-no-match.json"), []byte(noMatch.Stdout))
+}
+
+func TestMCPBroker_GoldenDescribeAndTypedError(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+
+	client := helpers.StartMCPServer(t, fixtureDir)
+	defer client.Close()
+	queryText, err := client.CallToolText("skillex_query", map[string]interface{}{"mcp_server": "io.example/issues"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var discovered struct {
+		Capabilities []broker.Summary `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(queryText), &discovered); err != nil || len(discovered.Capabilities) != 1 {
+		t.Fatalf("decoding discovered capability: %v\n%s", err, queryText)
+	}
+	described, err := client.CallToolText("skillex_mcp_describe", map[string]interface{}{"ref": discovered.Capabilities[0].Ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "describe.json"), []byte(described))
+	tooLarge := mcpToolErrorText(t, client, "skillex_mcp_describe", map[string]interface{}{
+		"ref": discovered.Capabilities[0].Ref, "max_bytes": 32,
+	})
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "error-description-too-large.json"), []byte(tooLarge))
+	invalidBudget := mcpToolErrorText(t, client, "skillex_mcp_describe", map[string]interface{}{
+		"ref": discovered.Capabilities[0].Ref, "max_bytes": 65537,
+	})
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "error-description-budget-invalid.json"), []byte(invalidBudget))
+
+	invalidRef := mcpToolErrorText(t, client, "skillex_mcp_describe", map[string]interface{}{"ref": "mcp-tool:v1:tampered"})
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "error-invalid-ref.json"), []byte(invalidRef))
+}
+
+func mcpToolErrorText(t *testing.T, client *helpers.MCPClient, name string, arguments map[string]interface{}) string {
+	t.Helper()
+	raw, err := client.CallTool(name, arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError || len(result.Content) != 1 {
+		t.Fatalf("typed MCP error envelope = %s", raw)
+	}
+	return result.Content[0].Text
+}
+
+func TestMCPBroker_GoldenHTTPInvocation(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	var methods []string
+	var methodsMu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		var rpc struct {
+			ID     int64          `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&rpc); err != nil {
+			t.Errorf("decoding HTTP MCP request: %v", err)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		methodsMu.Lock()
+		methods = append(methods, rpc.Method)
+		methodsMu.Unlock()
+		if request.Header.Get("Authorization") != "Bearer exact-http-token" {
+			t.Errorf("Authorization = %q", request.Header.Get("Authorization"))
+		}
+		var result any
+		switch rpc.Method {
+		case "server/discover":
+			result = map[string]any{"supportedVersions": []string{"2026-07-28"}}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{
+				"name": "issues.create", "inputSchema": map[string]any{
+					"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}},
+					"required": []string{"title"}, "additionalProperties": false,
+				},
+			}}}
+		case "tools/call":
+			result = map[string]any{"resultType": "complete", "structuredContent": map[string]any{
+				"authorized": true, "transport": "http",
+			}}
+		default:
+			t.Errorf("unexpected HTTP MCP method %q", rpc.Method)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}); err != nil {
+			t.Errorf("encoding HTTP MCP response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	trustPath := filepath.Join(t.TempDir(), "mcp-trust.yaml")
+	trustDocument := fmt.Sprintf(`Version: 1
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [%q]
+    AuthProfiles: [issues-test]
+    HTTP:
+      Endpoint: %q
+CredentialProfiles:
+  - Name: issues-test
+    Service: io.example/issues
+    Credentials:
+      - Slot: token
+        Sources:
+          - Env:
+              Key: SKILLEX_HTTP_TOKEN
+        Inject:
+          HTTPHeader:
+            Name: Authorization
+            Format: "Bearer ${value}"
+`, fixtureDir, server.URL)
+	if err := os.WriteFile(trustPath, []byte(trustDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKILLEX_MCP_TRUST_CONFIG", trustPath)
+	t.Setenv("SKILLEX_HTTP_TOKEN", "exact-http-token")
+	refresh := helpers.Run(t, fixtureDir, "refresh")
+	if refresh.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", refresh.Stderr)
+	}
+	client := helpers.StartMCPServer(t, fixtureDir)
+	defer client.Close()
+	queryText, err := client.CallToolText("skillex_query", map[string]interface{}{
+		"path": "packages/app/src/issues.ts", "mcp_server": "io.example/issues",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var discovered struct {
+		Capabilities []broker.Summary `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(queryText), &discovered); err != nil || len(discovered.Capabilities) != 1 {
+		t.Fatalf("decoding query: %v\n%s", err, queryText)
+	}
+	called, err := client.CallToolText("skillex_mcp_call", map[string]interface{}{
+		"ref": discovered.Capabilities[0].Ref, "arguments": map[string]any{"title": "HTTP journey"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "http-call.json"), []byte(called))
+	methodsMu.Lock()
+	defer methodsMu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"server/discover", "tools/list", "tools/call"}) {
+		t.Fatalf("HTTP MCP methods = %#v", methods)
+	}
+}
+
+func TestMCPBroker_GoldenOAuthLoginAndReadinessRetry(t *testing.T) {
+	fixtureDir := helpers.CopyGoldenFixture(t, "mcp-capability-broker")
+	var tokenForm url.Values
+	var tokenFormMu sync.Mutex
+	var serverURL string
+	authServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/resource-metadata":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"resource": serverURL, "authorization_servers": []string{serverURL}, "scopes_supported": []string{"issues:write"},
+			})
+		case "/.well-known/oauth-authorization-server":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"issuer": serverURL, "authorization_endpoint": serverURL + "/authorize", "token_endpoint": serverURL + "/token",
+				"code_challenge_methods_supported": []string{"S256"}, "authorization_response_iss_parameter_supported": true,
+			})
+		case "/token":
+			if err := request.ParseForm(); err != nil {
+				t.Errorf("parsing token form: %v", err)
+			}
+			tokenFormMu.Lock()
+			tokenForm = request.PostForm
+			tokenFormMu.Unlock()
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"access_token": "oauth-access", "refresh_token": "oauth-refresh", "token_type": "Bearer",
+				"expires_in": 300, "scope": "issues:write",
+			})
+		default:
+			t.Errorf("unexpected OAuth path %q", request.URL.Path)
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer authServer.Close()
+	serverURL = authServer.URL
+
+	storeDir := t.TempDir()
+	trustPath := filepath.Join(t.TempDir(), "mcp-trust.yaml")
+	trustDocument := fmt.Sprintf(`Version: 1
+OAuthStore:
+  KeyPath: %q
+  Directory: %q
+Servers:
+  - Server: io.example/issues
+    Version: 1.0.0
+    AllowedProjects: [%q]
+    AuthProfiles: [issues-test]
+    HTTP:
+      Endpoint: %q
+CredentialProfiles:
+  - Name: issues-test
+    Service: io.example/issues
+    OAuth:
+      Type: authorization-code
+      ProtectedResourceMetadataURL: %q
+      Resource: %q
+      Scopes: [issues:write]
+      ClientID: skillex-test-client
+      ClientAuthMethod: none
+      RedirectURI: http://127.0.0.1/callback
+`, filepath.Join(storeDir, "oauth.key"), filepath.Join(storeDir, "tokens"), fixtureDir, serverURL+"/mcp", serverURL+"/resource-metadata", serverURL)
+	if err := os.WriteFile(trustPath, []byte(trustDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKILLEX_MCP_TRUST_CONFIG", trustPath)
+
+	status := helpers.Run(t, fixtureDir, "auth", "status", "--profile", "issues-test", "--json")
+	if status.ExitCode != 0 {
+		t.Fatalf("initial auth status failed: %s", status.Stderr)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "auth-status-login-required.json"), []byte(status.Stdout))
+
+	started := helpers.Run(t, fixtureDir, "auth", "login", "--profile", "issues-test", "--json")
+	if started.ExitCode != 0 {
+		t.Fatalf("starting OAuth login failed: %s", started.Stderr)
+	}
+	var login struct {
+		AuthorizationURL string `json:"authorization_url"`
+	}
+	if err := json.Unmarshal([]byte(started.Stdout), &login); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(login.AuthorizationURL)
+	if err != nil || parsed.Query().Get("state") == "" || parsed.Query().Get("code_challenge_method") != "S256" {
+		t.Fatalf("authorization URL = %q, %v", login.AuthorizationURL, err)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "auth-login-start.json"), []byte(started.Stdout))
+
+	callback := "http://127.0.0.1/callback?code=accepted&state=" + url.QueryEscape(parsed.Query().Get("state")) + "&iss=" + url.QueryEscape(serverURL)
+	completed := helpers.Run(t, fixtureDir, "auth", "login", "--profile", "issues-test", "--callback", callback, "--json")
+	if completed.ExitCode != 0 {
+		t.Fatalf("completing OAuth login failed: %s", completed.Stderr)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "auth-login-complete.json"), []byte(completed.Stdout))
+	tokenFormMu.Lock()
+	grantType := tokenForm.Get("grant_type")
+	codeVerifier := tokenForm.Get("code_verifier")
+	resource := tokenForm.Get("resource")
+	tokenFormSnapshot := tokenForm.Encode()
+	tokenFormMu.Unlock()
+	if grantType != "authorization_code" || codeVerifier == "" || resource != serverURL {
+		t.Fatalf("OAuth token form = %s", tokenFormSnapshot)
+	}
+
+	status = helpers.Run(t, fixtureDir, "auth", "status", "--profile", "issues-test", "--json")
+	if status.ExitCode != 0 {
+		t.Fatalf("ready auth status failed: %s", status.Stderr)
+	}
+	assertNormalizedJSONGolden(t, filepath.Join(fixtureDir, "expected", "auth-status-ready.json"), []byte(status.Stdout))
+}
+
+func TestMCPBroker_GoldenTenantPartitionAndReferenceIsolation(t *testing.T) {
+	partitionKey := []byte("0123456789abcdef0123456789abcdef")
+	masterKey := []byte("abcdef0123456789abcdef0123456789")
+	principalA := tenant.Principal{TenantID: "tenant-a", Subject: "user-a", Kind: tenant.PrincipalUser}
+	principalB := tenant.Principal{TenantID: "tenant-a", Subject: "user-b", Kind: tenant.PrincipalUser}
+	principalC := tenant.Principal{TenantID: "tenant-b", Subject: "user-a", Kind: tenant.PrincipalUser}
+	partitionA, err := tenant.Partition(partitionKey, principalA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partitionB, _ := tenant.Partition(partitionKey, principalB)
+	partitionC, _ := tenant.Partition(partitionKey, principalC)
+	keyA, err := tenant.DeriveSigningKey(masterKey, principalA.TenantID, "capability-refs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyC, err := tenant.DeriveSigningKey(masterKey, principalC.TenantID, "capability-refs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := func() time.Time { return time.Unix(1_800_000_000, 0) }
+	signerA, _ := capability.NewReferenceSigner(keyA, 5*time.Minute, capability.WithClock(clock))
+	signerC, _ := capability.NewReferenceSigner(keyC, 5*time.Minute, capability.WithClock(clock))
+	selected := loadGoldenCapabilityCatalog(t, helpers.GoldenPath("mcp-capability-broker/catalog.json")).Capabilities[0]
+	ref, err := signerA.Issue(selected, partitionA, "sha256:workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signerA.Verify(ref); err != nil {
+		t.Fatal(err)
+	}
+	_, crossTenantErr := signerC.Verify(ref)
+	rawIdentityHidden := true
+	for _, sensitive := range []string{principalA.TenantID, principalA.Subject, principalB.Subject, principalC.TenantID} {
+		rawIdentityHidden = rawIdentityHidden && !strings.Contains(partitionA, sensitive) && !strings.Contains(ref, sensitive)
+	}
+	result, err := json.Marshal(map[string]any{
+		"cross_subject_partition_isolated": partitionA != partitionB,
+		"cross_tenant_partition_isolated":  partitionA != partitionC,
+		"cross_tenant_reference_rejected":  errors.Is(crossTenantErr, capability.ErrInvalidReference),
+		"partition_prefix":                 "tenant:v1:",
+		"raw_identity_hidden":              rawIdentityHidden,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNormalizedJSONGolden(t, helpers.GoldenPath("mcp-capability-broker/expected/tenant-isolation.json"), result)
 }
 
 func TestMCPBroker_HostInvokesTrustedDynamicServerWithoutHostRegistration(t *testing.T) {
@@ -455,8 +836,18 @@ func loadGoldenCapabilityCatalog(t *testing.T, path string) *goldenCapabilityCat
 	return &catalog
 }
 
-func (c *goldenCapabilityCatalog) Search(context.Context, broker.Query) ([]capability.Capability, error) {
-	return append([]capability.Capability(nil), c.Capabilities...), nil
+func (c *goldenCapabilityCatalog) Search(_ context.Context, query broker.Query) (broker.CatalogPage, error) {
+	capabilities := append([]capability.Capability(nil), c.Capabilities...)
+	matchCount := len(capabilities)
+	offset := query.Offset
+	if offset > matchCount {
+		offset = matchCount
+	}
+	capabilities = capabilities[offset:]
+	if query.Limit > 0 && len(capabilities) > query.Limit {
+		capabilities = capabilities[:query.Limit]
+	}
+	return broker.CatalogPage{Capabilities: capabilities, MatchCount: matchCount}, nil
 }
 
 func (c *goldenCapabilityCatalog) Resolve(_ context.Context, claims capability.ReferenceClaims) (capability.Capability, error) {
@@ -502,6 +893,72 @@ func assertCapabilityQueryGolden(t *testing.T, expectedPath string, results []br
 	if !reflect.DeepEqual(actual, expected) {
 		pretty, _ := json.MarshalIndent(actual, "", "  ")
 		t.Fatalf("capability query differs from golden output\nactual:\n%s\nexpected:\n%s", pretty, expectedJSON)
+	}
+}
+
+func assertNormalizedJSONGolden(t *testing.T, expectedPath string, actualJSON []byte) {
+	t.Helper()
+	expectedJSON, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNormalizedJSONEqual(t, expectedJSON, actualJSON)
+}
+
+func assertNormalizedJSONEqual(t *testing.T, expectedJSON, actualJSON []byte) {
+	t.Helper()
+	var actual, expected any
+	if err := json.Unmarshal(actualJSON, &actual); err != nil {
+		t.Fatalf("invalid actual JSON: %v\n%s", err, actualJSON)
+	}
+	if err := json.Unmarshal(expectedJSON, &expected); err != nil {
+		t.Fatalf("invalid expected JSON: %v\n%s", err, expectedJSON)
+	}
+	normalizeCapabilityRefs(actual)
+	normalizeCapabilityRefs(expected)
+	if !reflect.DeepEqual(actual, expected) {
+		pretty, _ := json.MarshalIndent(actual, "", "  ")
+		t.Fatalf("JSON differs from golden output\nactual:\n%s\nexpected:\n%s", pretty, expectedJSON)
+	}
+}
+
+func normalizeCapabilityRefs(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if key == "message" {
+				if text, ok := child.(string); ok && strings.HasPrefix(text, "capability description ") {
+					typed[key] = "<description-budget-error>"
+					continue
+				}
+			}
+			if key == "authorization_url" {
+				typed[key] = "<authorization-url>"
+				continue
+			}
+			if key == "ref" {
+				if text, ok := child.(string); ok && strings.HasPrefix(text, "mcp-tool:") {
+					typed[key] = "<capability-ref>"
+				}
+				continue
+			}
+			normalizeCapabilityRefs(child)
+		}
+	case []any:
+		for _, child := range typed {
+			normalizeCapabilityRefs(child)
+		}
+	}
+}
+
+func assertGoldenBytes(t *testing.T, expectedPath string, actual []byte) {
+	t.Helper()
+	expected, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, expected) {
+		t.Fatalf("output differs from golden\nactual:\n%s\nexpected:\n%s", actual, expected)
 	}
 }
 

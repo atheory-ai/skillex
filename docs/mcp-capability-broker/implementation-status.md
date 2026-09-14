@@ -1,6 +1,6 @@
 # MCP Capability Broker Implementation Status
 
-Last updated: 2026-08-25
+Last updated: 2026-09-14
 
 ## Current milestone
 
@@ -67,6 +67,13 @@ The process-level acceptance harness adds:
 - proof that arguments and structured results cross the real MCP wire;
 - proof that live schema drift prevents `tools/call`;
 - proof that the parent environment and host MCP configuration are unchanged.
+- golden CLI and MCP query parity, including human-readable output;
+- golden broad-query narrowing, capability no-match, bounded describe, and
+  stable typed-error contracts;
+- golden Streamable HTTP invocation, OAuth PKCE readiness/retry, and tenant
+  partition/reference-isolation journeys;
+- direct stdio and HTTP fault coverage for timeout, crash, malformed JSON-RPC,
+  oversized responses, HTTP failure, and downstream isolation.
 
 The project configuration boundary includes:
 
@@ -154,3 +161,17 @@ The automated gates include golden query compatibility, real subprocess MCP
 calls, explicit introspection, exact credential injection, telemetry redaction,
 OAuth/EMA conformance, MRTR retry behavior, schema drift, cache partitioning,
 and cross-tenant view rejection.
+
+Direct package coverage now exercises the principal runtime and connector paths
+instead of relying only on acceptance subprocesses: `internal/connector/stdio`
+is 44.5%, `internal/brokerruntime` is 60.3%, and
+`internal/connector/streamhttp` is 75.6% in focused runs.
+
+Capability benchmarks cover signed-reference issue/verification, broker result
+assembly, JSON Schema validation, and exact/broad discovery over 50,000 indexed
+capabilities. Exact discovery is approximately 0.8 ms on the development host.
+Broad discovery is approximately 0.3 seconds and allocates about 121 KiB, down
+from approximately 4.3 seconds and 326 MiB. SQLite now filters, counts, facets,
+ranks, and pages the candidate set before Skillex hydrates and signs only the
+requested page. Real-provider interoperability certification remains a manual
+pre-release activity.

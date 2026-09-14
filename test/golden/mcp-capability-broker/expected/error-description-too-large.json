@@ -1,0 +1,6 @@
+{
+  "code": "CAPABILITY_DESCRIPTION_TOO_LARGE",
+  "message": "<description-budget-error>",
+  "retryable": false,
+  "next_action": "increase max_bytes up to 65536"
+}

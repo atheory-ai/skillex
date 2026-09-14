@@ -29,25 +29,17 @@ func NewRegistry(reg *registry.Registry) (*Registry, error) {
 
 // Search returns capability definitions matching intent and project scope. It
 // performs no authentication, network requests, or downstream process starts.
-func (c *Registry) Search(_ context.Context, query broker.Query) ([]capability.Capability, error) {
-	records, err := c.registry.QueryCapabilitiesBySearch(query.Search)
+func (c *Registry) Search(_ context.Context, query broker.Query) (broker.CatalogPage, error) {
+	page, err := c.registry.QueryCapabilityPage(registry.CapabilityQuery{
+		Search: query.Search, Path: query.Path, Server: query.Server, Kind: query.Kind,
+		Availability: query.Availability, View: query.View, Limit: query.Limit, Offset: query.Offset,
+	})
 	if err != nil {
-		return nil, err
+		return broker.CatalogPage{}, err
 	}
-	results := make([]capability.Capability, 0, len(records))
-	for _, record := range records {
-		if record.AuthPartitionHash != "public" && record.AuthPartitionHash != query.View {
-			continue
-		}
-		if query.Server != "" && record.Capability.Server.Identity.CanonicalName != query.Server ||
-			query.Kind != "" && record.Capability.Kind != query.Kind ||
-			query.Availability != "" && record.Capability.Availability != query.Availability {
-			continue
-		}
+	results := make([]capability.Capability, 0, len(page.Records))
+	for _, record := range page.Records {
 		binding, ok := matchingBinding(record, query.Path)
-		if query.Path != "" && !ok {
-			continue
-		}
 		selected := record.Capability
 		if ok {
 			selected.RoutingScope = binding.Scope
@@ -55,7 +47,18 @@ func (c *Registry) Search(_ context.Context, query broker.Query) ([]capability.C
 		}
 		results = append(results, selected)
 	}
-	return results, nil
+	return broker.CatalogPage{Capabilities: results, MatchCount: page.MatchCount, Facets: broker.DiscoveryFacets{
+		Servers: capabilityFacets(page.Facets.Servers), Kinds: capabilityFacets(page.Facets.Kinds),
+		Availability: capabilityFacets(page.Facets.Availability),
+	}}, nil
+}
+
+func capabilityFacets(values []registry.CapabilityFacet) []broker.Facet {
+	results := make([]broker.Facet, len(values))
+	for i, value := range values {
+		results[i] = broker.Facet{Value: value.Value, Count: value.Count}
+	}
+	return results
 }
 
 // Resolve retrieves the exact current definition named by a selected ref.

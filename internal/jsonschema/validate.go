@@ -11,6 +11,8 @@ import (
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+var errExternalResourceLoading = errors.New("external JSON Schema resource loading is disabled")
+
 // Validate compiles a bounded in-memory schema and validates a JSON-compatible value.
 func Validate(schema []byte, value any) error {
 	if len(bytes.TrimSpace(schema)) == 0 || bytes.Equal(bytes.TrimSpace(schema), []byte("null")) {
@@ -29,6 +31,9 @@ func Validate(schema []byte, value any) error {
 	}
 	compiled, err := compiler.Compile(resource)
 	if err != nil {
+		if errors.Is(err, errExternalResourceLoading) || strings.Contains(err.Error(), errExternalResourceLoading.Error()) {
+			return fmt.Errorf("invalid JSON Schema: %w", errExternalResourceLoading)
+		}
 		return fmt.Errorf("invalid JSON Schema: %w", err)
 	}
 	return compiled.Validate(value)
@@ -37,7 +42,7 @@ func Validate(schema []byte, value any) error {
 type rejectExternalLoader struct{}
 
 func (rejectExternalLoader) Load(url string) (any, error) {
-	return nil, errors.New("external JSON Schema resource loading is disabled: " + safeURL(url))
+	return nil, fmt.Errorf("%w: %s", errExternalResourceLoading, safeURL(url))
 }
 
 func safeURL(value string) string {

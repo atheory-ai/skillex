@@ -1,0 +1,6 @@
+{
+  "code": "CAPABILITY_DESCRIPTION_BUDGET_INVALID",
+  "message": "<description-budget-error>",
+  "retryable": false,
+  "next_action": "set max_bytes between 1 and 65536"
+}

@@ -240,6 +240,65 @@ func TestToolMultiRoundTripEchoesResponsesAndOpaqueRequestState(t *testing.T) {
 	}
 }
 
+func TestFactoryContainsHTTPTransportFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport roundTripperFunc
+		wantError string
+	}{
+		{
+			name: "timeout",
+			transport: func(*http.Request) (*http.Response, error) {
+				return nil, context.DeadlineExceeded
+			},
+			wantError: "context deadline exceeded",
+		},
+		{
+			name: "malformed JSON-RPC",
+			transport: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{")), Header: http.Header{}}, nil
+			},
+			wantError: "invalid JSON-RPC",
+		},
+		{
+			name: "oversized response",
+			transport: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", maxMessageBytes+1))), Header: http.Header{}}, nil
+			},
+			wantError: "response exceeds message limit",
+		},
+		{
+			name: "downstream outage",
+			transport: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("unavailable")), Header: http.Header{}}, nil
+			},
+			wantError: "HTTP status 503",
+		},
+	}
+	selected, err := (capability.Capability{
+		Server: capability.ServerVersion{Identity: capability.ServerIdentity{CanonicalName: "io.example/failure"}, Version: "1"},
+		Kind:   capability.CapabilityTool, Name: "tool", InputSchemaJSON: json.RawMessage(`{}`),
+	}).WithComputedSchemaDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			factory, err := NewFactory([]ServerConfig{{
+				CanonicalName: "io.example/failure", Version: "1", Endpoint: "https://source.example/mcp",
+				HTTPClient: &http.Client{Transport: test.transport},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = factory.Open(context.Background(), selected)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Open() error = %v, want substring %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }

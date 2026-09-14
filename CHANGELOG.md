@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **Capability descriptions:** added shared CLI/MCP byte budgets with stable
+  typed errors for invalid budgets and oversized definitions.
+- **Security:** prevent external JSON Schema resource failures from reflecting
+  sensitive URL query strings or fragments.
+- **Verification:** expanded capability-broker golden journeys across CLI/MCP
+  parity, narrowing, typed errors, HTTP, OAuth, and tenant isolation; added
+  direct connector/runtime fault tests and 50,000-capability benchmarks.
+- **Performance:** move capability filtering, counting, facets, ranking, and
+  pagination into SQLite so broad discovery hydrates and signs only the
+  requested page; align capability FTS row IDs through an automatic migration.
+
 ## [0.9.0] - 2026-08-25
 
 > **Experimental:** Downstream MCP capability brokering is opt-in. Its protocol

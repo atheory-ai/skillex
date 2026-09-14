@@ -14,6 +14,7 @@ func TestStableCodesSurviveWrappedErrors(t *testing.T) {
 		code string
 	}{
 		{fmt.Errorf("verify: %w", capability.ErrExpiredReference), "CAPABILITY_REF_EXPIRED"},
+		{fmt.Errorf("describe: %w", capability.ErrDescriptionTooLarge), "CAPABILITY_DESCRIPTION_TOO_LARGE"},
 		{fmt.Errorf("auth: %w", auth.ErrLoginRequired), "AUTH_LOGIN_REQUIRED"},
 		{fmt.Errorf("scope: %w", auth.ErrScopeRequired), "AUTH_SCOPE_REQUIRED"},
 	}

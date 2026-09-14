@@ -10,6 +10,7 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/brokerruntime"
+	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func newCapabilityCmd() *cobra.Command {
 
 func newCapabilityDescribeCmd() *cobra.Command {
 	var ref string
+	var maxBytes int
 	cmd := &cobra.Command{
 		Use: "describe --ref <capability-ref>", Short: "Describe one selected MCP capability without connecting downstream",
 		Args: cobra.NoArgs,
@@ -41,12 +43,16 @@ func newCapabilityDescribeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "  ")
-			return encoder.Encode(selected)
+			encoded, err := capability.MarshalDescription(selected, maxBytes)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(os.Stdout, string(encoded))
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&ref, "ref", "", "Capability ref returned by skillex query")
+	cmd.Flags().IntVar(&maxBytes, "max-bytes", capability.DefaultDescriptionMaxBytes, "Maximum encoded description bytes (up to 65536)")
 	return cmd
 }
 

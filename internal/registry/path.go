@@ -159,6 +159,27 @@ func (r *Registry) QueryByPath(path string) ([]Skill, error) {
 	)
 }
 
+func (r *Registry) matchingCapabilityGlobIDs(path string) ([]int64, error) {
+	rows, err := r.db.Query(`SELECT capability_id, scope FROM mcp_capability_bindings
+		WHERE pattern_type = 'glob' AND (path_prefix = '' OR ? LIKE path_prefix || '%')`, path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var scope string
+		if err := rows.Scan(&id, &scope); err != nil {
+			return nil, err
+		}
+		if globMatchPath(scope, path) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
 // scanIDs drains a single-column int64 result set into ids.
 func scanIDs(rows *sql.Rows, ids map[int64]bool) error {
 	defer rows.Close()

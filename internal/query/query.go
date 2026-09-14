@@ -196,7 +196,7 @@ type Engine struct {
 // CapabilityDiscoverer is the bounded, offline broker discovery surface used
 // by the shared query engine.
 type CapabilityDiscoverer interface {
-	Query(ctx context.Context, query broker.Query) ([]broker.Summary, error)
+	QueryPage(ctx context.Context, query broker.Query) (broker.DiscoveryPage, error)
 }
 
 // New creates a new query Engine.
@@ -230,16 +230,25 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	}
 
 	hasClassicFilters := len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != ""
+	cursor := decodeCursor(p.Cursor)
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 8
+	}
+	if limit > 20 {
+		limit = 20
+	}
 
 	var (
-		skills       []registry.Skill
-		capabilities []broker.Summary
-		err          error
+		skills         []registry.Skill
+		capabilityPage broker.DiscoveryPage
+		err            error
 	)
 	if e.capabilities != nil && (p.Search != "" || p.Path != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != "") {
-		capabilities, err = e.capabilities.Query(context.Background(), broker.Query{
+		capabilityPage, err = e.capabilities.QueryPage(context.Background(), broker.Query{
 			Path: p.Path, Search: p.Search, ContextDigest: e.capabilityContext,
 			View: e.capabilityView, Server: p.Server, Kind: capability.CapabilityKind(p.CapabilityKind), Availability: capability.AvailabilityStatus(p.Availability),
+			Limit: limit, Offset: cursor.Capabilities,
 		})
 		if err != nil {
 			return nil, err
@@ -291,7 +300,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		}
 	}
 
-	if len(skills) == 0 && len(capabilities) == 0 {
+	if len(skills) == 0 && capabilityPage.MatchCount == 0 {
 		return e.noMatchResponse(p)
 	}
 
@@ -304,31 +313,19 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
 	}
 	matchCount := len(skills)
-	cursor := decodeCursor(p.Cursor)
 	if cursor.Skills > matchCount {
 		cursor.Skills = matchCount
-	}
-	limit := p.Limit
-	if limit <= 0 {
-		limit = 8
-	}
-	if limit > 20 {
-		limit = 20
 	}
 	end := cursor.Skills + limit
 	if end > matchCount {
 		end = matchCount
 	}
-	capabilityMatchCount := len(capabilities)
-	allCapabilities := append([]broker.Summary(nil), capabilities...)
+	capabilities := capabilityPage.Summaries
+	capabilityMatchCount := capabilityPage.MatchCount
 	if cursor.Capabilities > capabilityMatchCount {
 		cursor.Capabilities = capabilityMatchCount
 	}
-	capabilityEnd := cursor.Capabilities + limit
-	if capabilityEnd > capabilityMatchCount {
-		capabilityEnd = capabilityMatchCount
-	}
-	capabilities = capabilities[cursor.Capabilities:capabilityEnd]
+	capabilityEnd := cursor.Capabilities + len(capabilities)
 
 	results := make([]Result, 0, end-cursor.Skills)
 	for _, s := range skills[cursor.Skills:end] {
@@ -367,7 +364,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 	}
 	resp.TooBroad = matchCount > limit || capabilityMatchCount > limit
 	if resp.TooBroad {
-		resp.NarrowWith = buildNarrowWith(skills, allCapabilities)
+		resp.NarrowWith = buildNarrowWith(skills, capabilityPage.Facets)
 	}
 	return resp, nil
 }
@@ -547,7 +544,7 @@ func decodeCursor(cursor string) discoveryCursor {
 	return discoveryCursor{Skills: n}
 }
 
-func buildNarrowWith(skills []registry.Skill, capabilities []broker.Summary) *NarrowWith {
+func buildNarrowWith(skills []registry.Skill, capabilityFacets broker.DiscoveryFacets) *NarrowWith {
 	counts := func(values func(registry.Skill) []string) []Facet {
 		m := map[string]int{}
 		for _, s := range skills {
@@ -572,26 +569,19 @@ func buildNarrowWith(skills []registry.Skill, capabilities []broker.Summary) *Na
 		}
 		return out
 	}
-	capabilityCounts := func(value func(broker.Summary) string) []Facet {
-		m := map[string]int{}
-		for _, selected := range capabilities {
-			if item := value(selected); item != "" {
-				m[item]++
-			}
+	convertFacets := func(values []broker.Facet) []Facet {
+		out := make([]Facet, len(values))
+		for i, value := range values {
+			out[i] = Facet{Value: value.Value, Count: value.Count}
 		}
-		out := make([]Facet, 0, len(m))
-		for value, count := range m {
-			out = append(out, Facet{Value: value, Count: count})
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
 		return out
 	}
 	return &NarrowWith{
 		Topics: counts(func(s registry.Skill) []string { return s.Topics }), Tags: counts(func(s registry.Skill) []string { return s.Tags }),
 		Packages: counts(func(s registry.Skill) []string { return []string{s.PackageName} }), Paths: counts(func(s registry.Skill) []string { return s.Scopes }),
-		Servers:      capabilityCounts(func(s broker.Summary) string { return s.Server.CanonicalName }),
-		Kinds:        capabilityCounts(func(s broker.Summary) string { return string(s.Kind) }),
-		Availability: capabilityCounts(func(s broker.Summary) string { return string(s.Availability) }),
+		Servers:      convertFacets(capabilityFacets.Servers),
+		Kinds:        convertFacets(capabilityFacets.Kinds),
+		Availability: convertFacets(capabilityFacets.Availability),
 		Advice:       "This query is broad. Narrow it with a suggested path, topic, tag, package, or more specific search terms before reading content.",
 	}
 }

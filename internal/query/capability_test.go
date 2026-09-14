@@ -60,6 +60,9 @@ func TestCapabilityOnlyResultsUseIndependentContinuationOffset(t *testing.T) {
 	if len(second.Capabilities) != 1 || second.Capabilities[0].Name != "three" || second.NextCursor != "" {
 		t.Fatalf("second capability page = %#v", second)
 	}
+	if discoverer.query.Offset != 2 || discoverer.query.Limit != 2 {
+		t.Fatalf("second broker query = %#v", discoverer.query)
+	}
 }
 
 type fakeCapabilityDiscoverer struct {
@@ -67,7 +70,16 @@ type fakeCapabilityDiscoverer struct {
 	query   broker.Query
 }
 
-func (f *fakeCapabilityDiscoverer) Query(_ context.Context, query broker.Query) ([]broker.Summary, error) {
+func (f *fakeCapabilityDiscoverer) QueryPage(_ context.Context, query broker.Query) (broker.DiscoveryPage, error) {
 	f.query = query
-	return append([]broker.Summary(nil), f.results...), nil
+	matchCount := len(f.results)
+	offset := query.Offset
+	if offset > matchCount {
+		offset = matchCount
+	}
+	results := append([]broker.Summary(nil), f.results[offset:]...)
+	if query.Limit > 0 && len(results) > query.Limit {
+		results = results[:query.Limit]
+	}
+	return broker.DiscoveryPage{Summaries: results, MatchCount: matchCount}, nil
 }
