@@ -491,4 +491,6 @@ Before any release, verify:
 - [ ] The 50,000-capability exact/broad benchmark was run with `-benchmem`; broad
       discovery hydrates only the requested page and shows no material regression
       from the documented baseline.
+- [ ] The Homebrew formula renderer tests pass, and a release or recovery run
+      installs the exact published archive checksums from `atheory-ai/homebrew-tap`.
 - [ ] `skillex version` reports the correct version number.

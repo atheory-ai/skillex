@@ -60,17 +60,3 @@ release:
     name: skillex
   draft: false
   prerelease: auto
-
-brews:
-  - name: skillex
-    repository:
-      owner: atheory-ai
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/atheory-ai/skillex"
-    description: "Skill management for AI agents — versioned, dependency-aware documentation surfaced via CLI and MCP"
-    license: "Apache-2.0"
-    install: |
-      bin.install "skillex"
-    test: |
-      system "#{bin}/skillex", "version"

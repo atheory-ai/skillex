@@ -15,3 +15,12 @@ Success criteria:
   - States that the existing version is already released
   - Does not recommend republishing npm or creating a new version solely for Homebrew
   - Recommends a focused recovery path and checking credentials and tool invocation
+
+## Validation: Homebrew recovery
+
+Prompt: npm and the GitHub release succeeded, but Homebrew publication failed after the release became immutable. How should I recover it?
+Success criteria:
+  - Does not retag, rebuild archives, or republish npm
+  - Uses the existing version's published checksums to render the formula
+  - Uses the separate tap token for the cross-repository update
+  - Runs the Recover Homebrew Publication workflow idempotently

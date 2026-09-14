@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **Release recovery:** publish Homebrew formulas deterministically from the
+  already-published release checksums, with a tested existing-tag recovery
+  workflow that never rebuilds or republishes immutable release artifacts.
+
+## [0.9.0] - 2026-08-25
+
 - **Capability descriptions:** added shared CLI/MCP byte budgets with stable
   typed errors for invalid budgets and oversized definitions.
 - **Security:** prevent external JSON Schema resource failures from reflecting
@@ -16,8 +22,6 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 - **Performance:** move capability filtering, counting, facets, ranking, and
   pagination into SQLite so broad discovery hydrates and signs only the
   requested page; align capability FTS row IDs through an automatic migration.
-
-## [0.9.0] - 2026-08-25
 
 > **Experimental:** Downstream MCP capability brokering is opt-in. Its protocol
 > and authentication flows have automated conformance coverage, but have not

@@ -19,6 +19,8 @@ tags: [versioning, github-actions, publishing]
 The workflow verifies the tag, builds archives, signs them, generates an SBOM, attests provenance, uploads release assets, packages npm tarballs, publishes npm after environment approval, publishes the GitHub release, then publishes Homebrew.
 
 - Preserve that ordering: npm packaging recreates `dist/`, so archive assets must be captured before npm packaging.
+- Render the Homebrew formula from the checksums of the exact archives already uploaded to the GitHub release. Never rebuild archives in the Homebrew publication job.
+- Use the separate tap token only to check out and push `atheory-ai/homebrew-tap`; the default workflow token cannot write across repositories.
 - Keep the minimal GitHub Actions permissions required by each release step, including provenance attestation.
 - Keep release-only credentials in GitHub secrets; never put their values in code, skills, logs, or issue text.
 
@@ -27,4 +29,4 @@ The workflow verifies the tag, builds archives, signs them, generates an SBOM, a
 - Inspect the failed job and its logs before changing code. A tag run can expose paths ordinary PR CI does not execute.
 - If verification fails before publishing, fix the workflow or product defect, increment the patch version, merge it, and tag the new version.
 - If npm and the GitHub release have already succeeded, that version is released. Do not create another version or attempt to republish npm solely to repair a downstream Homebrew failure.
-- Repair a downstream publication with a purpose-built recovery path against the existing tag. Confirm the required token and current tool invocation before retrying.
+- Repair Homebrew with the `Recover Homebrew Publication` workflow against the existing published version. It downloads `checksums.txt`, renders the formula, and idempotently updates the tap without rebuilding release assets.

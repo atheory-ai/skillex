@@ -17,6 +17,7 @@ UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v '/test/acceptance$$')
         verify verify-unit \
         dist release-snapshot \
         npm-stage npm-pack npm-publish version-sync \
+		test-release-scripts \
         refresh doctor \
         release-tag clean \
         test-setup test-acceptance test-perf test-clean \
@@ -45,6 +46,9 @@ test-unit:
 
 test-race:
 	$(GO) test -race $(UNIT_PACKAGES)
+
+test-release-scripts:
+	node --test scripts/*.test.mjs
 
 # ── Lint / static analysis ────────────────────────────────────────────
 
@@ -209,6 +213,7 @@ help:
 	@echo "  make verify-unit       fmt-check + vet + unit tests + build"
 	@echo "  make verify            full pre-PR gate (+ lint + acceptance)"
 	@echo "  make test-race         Run tests with the race detector"
+	@echo "  make test-release-scripts  Test release artifact renderers"
 	@echo "  make lint              golangci-lint"
 	@echo "  make vuln              govulncheck"
 	@echo "  make release-snapshot  Local goreleaser snapshot"
