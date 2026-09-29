@@ -14,7 +14,8 @@ Prompt: I added a repository skill. How do I validate it and update agent instru
 Success criteria:
   - Requires a co-located .test.md file
   - Uses skillex test validate --check
-  - Uses refresh and inspection of generated AGENTS.md guidance
+  - Uses refresh to reindex skills and verifies agent instruction files remain unchanged
+  - Uses init to regenerate and inspect the managed AGENTS.md guidance when its generator changes
 
 ## Validation: capability query optimization
 

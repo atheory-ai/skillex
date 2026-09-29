@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/atheory-ai/skillex/internal/registry"
 )
 
 const (
@@ -14,28 +12,8 @@ const (
 	markerEnd   = "<!-- skillex:end -->"
 )
 
-// GenerateSection creates the AGENTS.md section content from registry data.
-func GenerateSection(reg *registry.Registry) (string, error) {
-	topics, err := reg.AllTopics()
-	if err != nil {
-		return "", fmt.Errorf("fetching topics: %w", err)
-	}
-
-	tags, err := reg.AllTags()
-	if err != nil {
-		return "", fmt.Errorf("fetching tags: %w", err)
-	}
-
-	scopes, err := reg.AllScopes()
-	if err != nil {
-		return "", fmt.Errorf("fetching scopes: %w", err)
-	}
-
-	packages, err := reg.AllPackages()
-	if err != nil {
-		return "", fmt.Errorf("fetching packages: %w", err)
-	}
-
+// GenerateSection creates the stable Skillex bootstrap section for AGENTS.md.
+func GenerateSection() string {
 	var sb strings.Builder
 
 	sb.WriteString(markerStart + "\n")
@@ -59,44 +37,9 @@ func GenerateSection(reg *registry.Registry) (string, error) {
 	sb.WriteString("  skillex read --ref <ref-from-query> --section <optional-section-id>\n")
 	sb.WriteString("```\n\n")
 
-	if len(scopes) > 0 {
-		sb.WriteString("### Available scopes\n\n")
-		for _, scope := range scopes {
-			sb.WriteString(fmt.Sprintf("  - %s\n", scope))
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(topics) > 0 {
-		sb.WriteString("### Available topics\n\n")
-		sb.WriteString("  ")
-		sb.WriteString(strings.Join(topics, ", "))
-		sb.WriteString("\n\n")
-	}
-
-	if len(tags) > 0 {
-		sb.WriteString("### Available tags\n\n")
-		sb.WriteString("  ")
-		sb.WriteString(strings.Join(tags, ", "))
-		sb.WriteString("\n\n")
-	}
-
-	if len(packages) > 0 {
-		sb.WriteString("### Packages with skills\n\n")
-		for _, p := range packages {
-			version := p.Version
-			if version == "" {
-				version = "unknown"
-			}
-			sb.WriteString(fmt.Sprintf("  %s (%s) — %d public, %d private\n",
-				p.Name, version, p.Public, p.Private))
-		}
-		sb.WriteString("\n")
-	}
-
 	sb.WriteString(markerEnd + "\n")
 
-	return sb.String(), nil
+	return sb.String()
 }
 
 // UpdateFile writes (or updates) the skillex section in the AGENTS.md file.

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **Agent bootstrap:** stop embedding scopes, topics, tags, and package
+  inventories in `AGENTS.md`; keep only MCP-first discovery instructions and
+  CLI fallbacks. Agent instruction and bridge files are now owned by `init`;
+  `refresh` only rebuilds the registry and never modifies them.
 - **Release recovery:** publish Homebrew formulas deterministically from the
   already-published release checksums, with a tested existing-tag recovery
   workflow that never rebuilds or republishes immutable release artifacts.

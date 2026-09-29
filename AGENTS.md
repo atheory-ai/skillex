@@ -37,31 +37,4 @@ If MCP is not available, query skills via the command line. If the repository do
   skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 
-### Available scopes
-
-  - **
-  - .github/workflows/release.yml
-  - .goreleaser.yaml
-  - CHANGELOG.md
-  - Makefile
-  - VERSION
-  - cli/query.go
-  - cli/read.go
-  - docs/manual-testing.md
-  - internal/agents/**
-  - internal/packs/**
-  - internal/query/**
-  - internal/registry/**
-  - mcp/server.go
-  - test/**
-  - test/acceptance/pack_test.go
-
-### Available topics
-
-  golden-tests, integration, mcp, packs, registry, release-recovery, releases, repo-conventions, retrieval, testing
-
-### Available tags
-
-  acceptance, boundaries, compatibility, cross-repository, discovery, getting-started, github-actions, golden-tests, publishing, skillex-packs, verification, versioning, workflow
-
 <!-- skillex:end -->

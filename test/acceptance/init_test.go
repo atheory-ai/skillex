@@ -50,10 +50,69 @@ func TestInit_BootstrapEmptyRepo(t *testing.T) {
 		t.Error(".skillex/ directory not created")
 	}
 
-	// AGENTS.md exists
-	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
-		t.Error("AGENTS.md not created")
+	// AGENTS.md contains only the stable discovery bootstrap.
+	agentsContent, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal("AGENTS.md not created")
 	}
+	agentsText := string(agentsContent)
+	for _, required := range []string{"skillex_query", "skillex_read", "### CLI (fallback)"} {
+		if !strings.Contains(agentsText, required) {
+			t.Errorf("AGENTS.md missing %q:\n%s", required, agentsText)
+		}
+	}
+	for _, legacyHeading := range []string{"### Available scopes", "### Available topics", "### Available tags", "### Packages with skills"} {
+		if strings.Contains(agentsText, legacyHeading) {
+			t.Errorf("AGENTS.md must not embed legacy inventory %q:\n%s", legacyHeading, agentsText)
+		}
+	}
+}
+
+func TestInit_UpdatesAgentBridges(t *testing.T) {
+	t.Run("root files", func(t *testing.T) {
+		dir := helpers.CopyFixture(t, "monorepo-pnpm")
+		for _, name := range []string{"CLAUDE.md", "GEMINI.md"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("# Existing\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		res := helpers.Run(t, dir, "init", "--yes")
+		if res.ExitCode != 0 {
+			t.Fatalf("init failed (exit %d): %s", res.ExitCode, res.Stderr)
+		}
+
+		for _, name := range []string{"CLAUDE.md", "GEMINI.md"} {
+			content, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatalf("reading %s: %v", name, err)
+			}
+			if !strings.Contains(string(content), "@AGENTS.md") {
+				t.Fatalf("%s missing AGENTS.md bridge:\n%s", name, content)
+			}
+		}
+	})
+
+	t.Run("claude directory", func(t *testing.T) {
+		dir := helpers.CopyFixture(t, "monorepo-pnpm")
+		if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		res := helpers.Run(t, dir, "init", "--yes")
+		if res.ExitCode != 0 {
+			t.Fatalf("init failed (exit %d): %s", res.ExitCode, res.Stderr)
+		}
+
+		path := filepath.Join(dir, ".claude", "CLAUDE.md")
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if !strings.Contains(string(content), "@../AGENTS.md") {
+			t.Fatalf("%s missing relative AGENTS.md bridge:\n%s", path, content)
+		}
+	})
 }
 
 func TestInit_HarnessCursor(t *testing.T) {
@@ -140,5 +199,22 @@ func TestInit_Idempotent(t *testing.T) {
 
 	if string(before) != string(after) {
 		t.Errorf("skillex.yaml changed after idempotent init:\nbefore: %s\nafter: %s", before, after)
+	}
+
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	firstAgents, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = helpers.Run(t, dir, "init", "--yes")
+	if res.ExitCode != 0 {
+		t.Fatalf("second init failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
+	secondAgents, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstAgents) != string(secondAgents) {
+		t.Errorf("AGENTS.md changed after idempotent init:\nfirst: %s\nsecond: %s", firstAgents, secondAgents)
 	}
 }

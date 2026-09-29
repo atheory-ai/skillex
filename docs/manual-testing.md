@@ -341,9 +341,9 @@ and a separate owner-only trusted configuration file.
    - Does it tell you the registry is stale?
    - Is the remedy obvious (run `skillex refresh`)?
 
-2. Run `skillex refresh`. Check the AGENTS.md diff.
-   - Is the manifest update sensible?
-   - Any surprising additions or removals?
+2. Record the contents of `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`, then run `skillex refresh`.
+   - Are all agent instruction and bridge files byte-for-byte unchanged?
+   - Did refresh limit its writes to the registry?
 
 3. Run `skillex doctor`.
    - Does it surface any new issues (skills without tests, missing frontmatter)?

@@ -125,10 +125,7 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 		return err
 	}
 
-	section, err := agents.GenerateSection(reg)
-	if err != nil {
-		return err
-	}
+	section := agents.GenerateSection()
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	if err := agents.UpdateFile(agentsPath, section); err != nil {
 		return err

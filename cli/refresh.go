@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/atheory-ai/skillex/internal/agents"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 )
@@ -98,23 +97,6 @@ Use --dry-run to preview what would change without writing.`,
 				)
 				if cfg.MCPEnabled() {
 					fmt.Fprintf(os.Stderr, "%s %d MCP capabilities\n", styleSuccess.Render("✓"), result.CapabilitiesAdded)
-				}
-			}
-
-			if !dryRun {
-				agentsPath := filepath.Join(root, "AGENTS.md")
-				section, err := agents.GenerateSection(reg)
-				if err != nil {
-					return fmt.Errorf("generating AGENTS.md section: %w", err)
-				}
-				if err := agents.UpdateFile(agentsPath, section); err != nil {
-					return fmt.Errorf("updating AGENTS.md: %w", err)
-				}
-				if _, err := agents.UpdateBridgeFiles(root); err != nil {
-					return fmt.Errorf("updating agent bridge files: %w", err)
-				}
-				if !flagQuiet {
-					fmt.Fprintln(os.Stderr, styleSuccess.Render("✓")+" AGENTS.md updated")
 				}
 			}
 
