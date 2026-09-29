@@ -96,7 +96,7 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 - **MCP-native skill retrieval** — first-class Model Context Protocol server. Agents with MCP support get typed skill query/read calls and resource discovery.
 - **Experimental downstream MCP broker** — opt-in contextual discovery and lazy invocation of trusted downstream MCP capabilities without registering them with the host.
 - **CLI fallback** — every agent harness can call the CLI. Works in CI, scripts, and terminals.
-- **AGENTS.md manifest** — auto-generated fallback for agents that can't run MCP or shell commands.
+- **AGENTS.md bootstrap** — stable MCP-first and CLI fallback instructions without copying registry inventories into agent context.
 - **Testable** — every skill can have a co-located `.test.md` file with structured validation scenarios.
 - **Non-invasive** — dependencies never modify your repo. No lockfile mutation, no network calls at query time.
 
@@ -872,7 +872,7 @@ Vendored skills land in `skillex/vendor/<source>/` with:
 
 ## AGENTS.md
 
-On every `refresh`, Skillex auto-generates (or updates) a section in `AGENTS.md`. This serves as a fallback for agents that support neither MCP nor shell execution.
+`skillex init` creates or updates a stable bootstrap section in `AGENTS.md`. It tells agents how to discover and read skills through MCP, with CLI commands as a fallback. Skill inventories remain in the registry and are retrieved on demand rather than copied into agent context. `skillex refresh` rebuilds only the registry and never modifies agent instruction files.
 
 ```markdown
 <!-- skillex:start -->
@@ -889,19 +889,6 @@ if available (preferred), otherwise use the CLI commands below.
 ...
 - `skillex query --search "<concepts>"`
 ...
-
-### Available scopes
-  - **
-  - packages/app-a/**
-
-### Available topics
-  error-handling, configuration, migration, authentication
-
-### Available tags
-  v2, breaking-change, deprecated, getting-started
-
-### Packages with skills
-  @acme/foo (2.3.1) — 3 public, 2 private
 <!-- skillex:end -->
 ```
 

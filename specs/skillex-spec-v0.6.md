@@ -90,7 +90,7 @@ Skillex has a core engine with three interface layers:
 
 1. **CLI** — the foundation. Built with Cobra for command structure, Bubbletea for interactive TUI (e.g., `skillex doctor`), and Lipgloss for styled terminal output. Structured data goes to stdout (for piping), human-readable styled output goes to stderr. Every agent harness can call this.
 2. **MCP Server** — the native integration layer for agents that support Model Context Protocol. Skills are exposed as MCP resources that agents discover through the protocol. Query is exposed as a typed tool with parameters for path, topic, tags, and package. No `AGENTS.md` parsing or shell command construction needed.
-3. **AGENTS.md manifest** — the fallback for agents that just read files. Auto-generated on every refresh. Lists available scopes, topics, tags, packages, and query examples. The agent reads it once at session start and knows how to call the CLI.
+3. **AGENTS.md bootstrap** — stable instructions that route agents to MCP-first discovery or CLI fallback commands. Registry inventories are queried on demand rather than copied into agent context.
 
 ## 4. Core Concepts
 
@@ -687,11 +687,11 @@ Configuration in agent harnesses follows their standard MCP setup. For example, 
 
 - **MCP** — preferred when the agent harness supports it. Typed parameters, structured responses, resource discovery. No shell escaping, no stdout parsing.
 - **CLI** — universal fallback. Works with every agent harness. Also the right choice for CI, scripting, and human use.
-- **AGENTS.md** — last resort for agents that neither support MCP nor can reliably execute shell commands. Also serves as human-readable documentation of what's available.
+- **AGENTS.md** — stable bootstrap instructions that route agents to MCP or the CLI without embedding a potentially stale registry inventory in context.
 
-## 9. AGENTS.md Manifest
+## 9. AGENTS.md Bootstrap
 
-On every refresh, skillex auto-generates (or updates) a section in the repo's `AGENTS.md`. This section serves two purposes: it teaches the agent how to interact with skillex, and it provides a manifest of what's available.
+During repository initialization, skillex creates or updates a section in the repo's `AGENTS.md`. This section teaches the agent how to interact with skillex. Skills and discovery vocabulary remain in the registry and are retrieved on demand. Refresh rebuilds only the registry and does not modify `AGENTS.md` or tool-specific bridge files.
 
 The generated section is MCP-first — it tells the agent to prefer the MCP server when available and fall back to CLI commands otherwise.
 
@@ -705,41 +705,21 @@ if available (preferred), otherwise use the CLI commands below.
 
 If the `skillex` MCP server is connected, use it directly:
 
-- Use the `skillex_query` tool with parameters: path, topic, tags, package, format.
-- Browse available skills through MCP resource discovery.
+- Start with `skillex_query` using path, topic, tags, package, or search filters.
+- Narrow broad results, then use `skillex_read` with a selected result reference.
+- Browse skill tables of contents through MCP resource discovery.
 
 ### CLI (fallback)
 
 If MCP is not available, query skills via the command line:
 
-  skillex query --path <filepath>
+  skillex query --search "<concepts>"
+  skillex query --path <filepath> --limit 8
   skillex query --topic <topic> --tags <tags>
-  skillex query --package <package>
-  skillex query --path <glob> --topic <topic> --format content
-
-### Available scopes
-
-  - */** (repo-wide)
-  - packages/app-a/**
-  - packages/app-b/**
-
-### Available topics
-
-  error-handling, configuration, migration,
-  authentication, testing, deployment
-
-### Available tags
-
-  v2, breaking-change, deprecated, security,
-  getting-started
-
-### Packages with skills
-
-  @acme/foo (2.3.1) — 3 public, 2 private
-  @acme/bar (1.0.0) — 1 public
+  skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 
-This section is generated from the registry. The LLM reads it once at session start and knows exactly what's available and how to ask for it.
+The section is deliberately independent of current registry contents. The LLM uses bounded discovery to learn what is currently available, and routine refreshes never churn committed agent instructions.
 
 Skillex manages only its own section in `AGENTS.md`, delimited by markers. It does not modify other content.
 

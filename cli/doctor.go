@@ -167,7 +167,7 @@ func runDoctor(root string) error {
 	// 4. Check AGENTS.md
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
-		warns = append(warns, "AGENTS.md not found — run 'skillex refresh' to generate")
+		warns = append(warns, "AGENTS.md not found — run 'skillex init' to configure agent integration")
 		printCheck(false, "AGENTS.md", "not found")
 	} else {
 		printCheck(true, "AGENTS.md", "present")

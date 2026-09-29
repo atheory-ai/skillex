@@ -6,7 +6,8 @@ Prompt: I need to change query behavior and update this repository's own skills.
 Success criteria:
   - Identifies the query, registry, CLI/MCP, acceptance, golden, and skills areas appropriately
   - Recommends bounded Skillex discovery before reading content
-  - Recommends refreshing generated agent instructions after skill changes
+  - Uses refresh to reindex skill changes without modifying agent instruction files
+  - Uses init to regenerate agent instructions when their generator changes
   - Does not recommend editing the generated AGENTS.md block by hand
 
 ## Validation: run from source

@@ -35,6 +35,26 @@ func TestDoctor_ReportsExplicitMCPOptIn(t *testing.T) {
 	}
 }
 
+func TestDoctor_MissingAgentsMdRecommendsInit(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+
+	var report doctorReport
+	helpers.RunJSON(t, dir, &report, "doctor")
+
+	for _, warning := range report.Warnings {
+		if strings.Contains(warning, "AGENTS.md not found") {
+			if !strings.Contains(warning, "skillex init") {
+				t.Fatalf("missing AGENTS.md warning should recommend init, got %q", warning)
+			}
+			if strings.Contains(warning, "skillex refresh") {
+				t.Fatalf("missing AGENTS.md warning must not recommend refresh, got %q", warning)
+			}
+			return
+		}
+	}
+	t.Fatalf("doctor warnings missing AGENTS.md guidance: %v", report.Warnings)
+}
+
 func TestDoctor_MissingTestCoverage(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 
