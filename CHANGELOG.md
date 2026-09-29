@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-29
+
 - **Agent bootstrap:** stop embedding scopes, topics, tags, and package
   inventories in `AGENTS.md`; keep only MCP-first discovery instructions and
   CLI fallbacks. Agent instruction and bridge files are now owned by `init`;
