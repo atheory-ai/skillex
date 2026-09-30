@@ -1,6 +1,7 @@
 package acceptance
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +217,80 @@ func TestInit_Idempotent(t *testing.T) {
 	}
 	if string(firstAgents) != string(secondAgents) {
 		t.Errorf("AGENTS.md changed after idempotent init:\nfirst: %s\nsecond: %s", firstAgents, secondAgents)
+	}
+}
+
+func TestInit_InvocationStrategies(t *testing.T) {
+	for _, tc := range []struct{ strategy, command, prefix string }{
+		{"global", "skillex", "skillex"},
+		{"npm", "npm", "npm exec --offline --no -- skillex"},
+		{"pnpm", "pnpm", "pnpm exec skillex"},
+		{"yarn-classic", "yarn", "yarn run skillex"},
+		{"yarn-berry", "yarn", "yarn run skillex"},
+		{"source", "./.skillex/bin/skillex", "./.skillex/bin/skillex"},
+	} {
+		for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
+			t.Run(tc.strategy+"/"+harness.name, func(t *testing.T) {
+				dir := t.TempDir()
+				res := helpers.Run(t, dir, "init", "--yes", "--invocation", tc.strategy, "--harness", harness.name)
+				if res.ExitCode != 0 {
+					t.Fatal(res.Stderr)
+				}
+				data, err := os.ReadFile(filepath.Join(dir, harness.path))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var cfg struct {
+					Servers map[string]struct {
+						Command string   `json:"command"`
+						Args    []string `json:"args"`
+					} `json:"mcpServers"`
+				}
+				if err := json.Unmarshal(data, &cfg); err != nil {
+					t.Fatal(err)
+				}
+				server := cfg.Servers["skillex"]
+				if server.Command != tc.command || strings.Join(append([]string{server.Command}, server.Args...), " ") != tc.prefix+" mcp" {
+					t.Fatalf("wrong server: %#v", server)
+				}
+				agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(agents), tc.prefix+" query --search") {
+					t.Fatalf("wrong AGENTS: %s", agents)
+				}
+				res = helpers.Run(t, dir, "init", "--yes")
+				if res.ExitCode != 0 {
+					t.Fatal(res.Stderr)
+				}
+				after, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+				if string(after) != string(agents) {
+					t.Fatal("invocation was rediscovered")
+				}
+			})
+		}
+	}
+}
+
+func TestInit_DetectsLocalAndCachesSelection(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"@atheory-ai/skillex":"1.0.0"},"packageManager":"pnpm@10.0"}`), 0o644)
+	res := helpers.Run(t, dir, "init", "--yes")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "skillex.json"))
+	if !strings.Contains(string(before), `"PackageManager": "pnpm"`) {
+		t.Fatal(string(before))
+	}
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{}`), 0o644)
+	res = helpers.Run(t, dir, "init", "--yes")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "skillex.json"))
+	if string(before) != string(after) {
+		t.Fatal("cached selection changed")
 	}
 }

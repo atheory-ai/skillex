@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,10 +15,11 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var (
-		yes     bool
-		pkg     bool
-		harness string
-		useYAML bool
+		yes        bool
+		pkg        bool
+		harness    string
+		invocation string
+		useYAML    bool
 	)
 
 	cmd := &cobra.Command{
@@ -41,24 +43,30 @@ Flags:
   --yes      Accept all defaults without prompting`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
+			if invocation != "" {
+				if _, err := parseInvocation(invocation); err != nil {
+					return err
+				}
+			}
 
 			if pkg {
 				return initPackage(root, yes)
 			}
-			return initRepo(root, yes, harness, useYAML)
+			return initRepo(root, yes, harness, useYAML, invocation)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Accept all defaults without prompting")
 	cmd.Flags().BoolVar(&pkg, "package", false, "Initialize as a skill-exporting package")
 	cmd.Flags().StringVar(&harness, "harness", "", "Configure MCP for harness: cursor, claude-code, windsurf")
+	cmd.Flags().StringVar(&invocation, "invocation", "", "Invocation: global, npm, pnpm, yarn-classic, yarn-berry, source")
 	cmd.Flags().BoolVar(&useYAML, "yaml", false, "Generate skillex.yaml instead of the default skillex.json")
 
 	return cmd
 }
 
 // initRepo sets up a repository root for skillex.
-func initRepo(root string, yes bool, harness string, useYAML bool) error {
+func initRepo(root string, yes bool, harness string, useYAML bool, invocation string) error {
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, styleHeader.Render("  skillex init  "))
 	}
@@ -70,11 +78,24 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 		configFormat = config.FormatYAML
 	}
 
+	if invocation == "" {
+		if _, err := config.Load(root); err != nil {
+			invocation = detectInvocation(root)
+			if !yes && terminalInput() {
+				invocation, err = chooseInvocation(os.Stdin, os.Stderr, invocation)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	steps := []struct {
 		desc string
 		fn   func() error
 	}{
 		{fmt.Sprintf("Creating %s", configPath), func() error { return createSkilexConfig(root, yes, configFormat) }},
+		{"Selecting project invocation", func() error { return setupInvocation(root, yes, invocation) }},
 		{"Creating skills/ directory", func() error { return createSkillsDir(root) }},
 		{"Creating .skillex/ directory", func() error { return os.MkdirAll(filepath.Join(root, ".skillex"), 0o755) }},
 		{"Writing AGENTS.md", func() error { return createAgentsMD(root) }},
@@ -125,7 +146,7 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 		return err
 	}
 
-	section := agents.GenerateSection()
+	section := agents.GenerateSectionWithCommand(cfg.Install.CLI())
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	if err := agents.UpdateFile(agentsPath, section); err != nil {
 		return err
@@ -139,8 +160,8 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 			styleSuccess.Render("✓"), result.SkillsAdded)
 		fmt.Fprintln(os.Stderr, "\nNext steps:")
 		fmt.Fprintln(os.Stderr, "  • Edit skills/repo.md to add your first repo-level skill")
-		fmt.Fprintln(os.Stderr, "  • Run 'skillex refresh' after making changes")
-		fmt.Fprintln(os.Stderr, "  • Run 'skillex doctor' to check for issues")
+		fmt.Fprintf(os.Stderr, "  • Run '%s refresh' after making changes\n", cfg.Install.CLI())
+		fmt.Fprintf(os.Stderr, "  • Run '%s doctor' to check for issues\n", cfg.Install.CLI())
 	}
 
 	return nil
@@ -226,6 +247,11 @@ func createSkilexConfig(root string, yes bool, format config.Format) error {
 	}
 
 	cfg := config.DefaultConfig()
+	install, err := parseInvocation(detectInvocation(root))
+	if err != nil {
+		return err
+	}
+	cfg.Install = install
 	data, err := config.Marshal(cfg, format)
 	if err != nil {
 		return err
@@ -280,15 +306,16 @@ func createAgentsMD(root string) error {
 }
 
 func configureMCP(root, harness string) error {
-	mcpConfig := `{
-  "mcpServers": {
-    "skillex": {
-      "command": "skillex",
-      "args": ["mcp"]
-    }
-  }
-}
-`
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	command, prefix := cfg.Install.Command()
+	server := map[string]any{"command": command, "args": append(prefix, "mcp")}
+	mcpConfig, err := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{"skillex": server}}, "", "  ")
+	if err != nil {
+		return err
+	}
 	var configPath string
 	switch harness {
 	case "cursor":
@@ -312,7 +339,7 @@ func configureMCP(root, harness string) error {
 		return nil
 	}
 
-	return os.WriteFile(configPath, []byte(mcpConfig), 0o644) //nolint:gosec // G306: MCP harness config the user owns
+	return os.WriteFile(configPath, append(mcpConfig, '\n'), 0o644) //nolint:gosec // G306: MCP harness config the user owns
 }
 
 func addSkilexToPackageJSON(path string) error {

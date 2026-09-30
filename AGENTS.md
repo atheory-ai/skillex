@@ -31,10 +31,10 @@ If the `skillex` MCP server is connected, use it directly:
 If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:
 
 ```
-  skillex query --search "<concepts>"
-  skillex query --path <filepath> --limit 8
-  skillex query --topic <topic> --tags <tags>
-  skillex read --ref <ref-from-query> --section <optional-section-id>
+  ./.skillex/bin/skillex query --search "<concepts>"
+  ./.skillex/bin/skillex query --path <filepath> --limit 8
+  ./.skillex/bin/skillex query --topic <topic> --tags <tags>
+  ./.skillex/bin/skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 
 <!-- skillex:end -->

@@ -167,6 +167,34 @@ This creates:
 - `AGENTS.md` — auto-generated agent instructions (MCP + CLI)
 - `.skillex/index.db` — the registry (rebuilt on each refresh)
 
+Setup detects a pinned `@atheory-ai/skillex` dev dependency and package manager
+once, and records `Install` in `skillex.json` or `skillex.yaml`. Interactive setup
+confirms the choice; `--yes` uses the detected local dependency or a global binary.
+Generated agent and MCP commands use that recorded choice on subsequent runs.
+Run commands from the project root after installing the project's dependencies.
+
+```sh
+npm exec --offline --no -- skillex init --yes
+pnpm exec skillex init --yes
+yarn run skillex init --yes
+skillex init --yes --invocation global
+./.skillex/bin/skillex init --yes --invocation source
+```
+
+Override detection with `--invocation npm`, `pnpm`, `yarn-classic`, `yarn-berry`,
+`global`, or `source`. npm uses offline execution with install confirmation
+disabled; pnpm uses `exec`; both Yarn Classic and Berry use `run`. No generated
+command uses `npx -y` or `dlx` to fetch packages. Source mode uses the checkout's
+`.skillex/bin/skillex` (built with `make dev-binary`); Go-installed binaries use
+global mode. Existing configurations without `Install` retain global behavior
+unless setup detects a local dependency or an explicit override is provided.
+
+```yaml
+Install:
+  Strategy: local-dev-dependency
+  PackageManager: pnpm
+```
+
 To also configure MCP for your agent harness:
 
 ```bash

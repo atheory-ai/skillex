@@ -31,9 +31,10 @@ const (
 
 // Config represents the root skillex configuration.
 type Config struct {
-	Version int        `yaml:"Version" json:"Version"`
-	Rules   []Rule     `yaml:"Rules" json:"Rules"`
-	MCP     *MCPConfig `yaml:"MCP,omitempty" json:"MCP,omitempty"`
+	Install *InstallConfig `yaml:"Install,omitempty" json:"Install,omitempty"`
+	Version int            `yaml:"Version" json:"Version"`
+	Rules   []Rule         `yaml:"Rules" json:"Rules"`
+	MCP     *MCPConfig     `yaml:"MCP,omitempty" json:"MCP,omitempty"`
 }
 
 // Rule defines a scope-to-skills mapping, with optional dependency boundary.
@@ -132,6 +133,9 @@ func Load(root string) (*Config, error) {
 // Validate enforces the configuration-version and explicit MCP opt-in
 // boundary without changing the behavior of existing version 4 projects.
 func (c *Config) Validate() error {
+	if err := c.Install.Validate(); err != nil {
+		return err
+	}
 	switch c.Version {
 	case SkillsOnlyConfigVersion:
 		if c.MCP != nil {
