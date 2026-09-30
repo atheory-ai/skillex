@@ -174,16 +174,24 @@ Generated agent and MCP commands use that recorded choice on subsequent runs.
 Run commands from the project root after installing the project's dependencies.
 
 ```sh
-npm exec --offline --no -- skillex init --yes
-pnpm exec skillex init --yes
+node ./node_modules/@atheory-ai/skillex/bin/skillex.js init --yes
+pnpm --config.verify-deps-before-run=false --config.manage-package-manager-versions=false --config.pm-on-fail=ignore exec ./node_modules/.bin/skillex init --yes
 yarn run skillex init --yes
 skillex init --yes --invocation global
 ./.skillex/bin/skillex init --yes --invocation source
 ```
 
 Override detection with `--invocation npm`, `pnpm`, `yarn-classic`, `yarn-berry`,
-`global`, or `source`. npm uses offline execution with install confirmation
-disabled; pnpm uses `exec`; both Yarn Classic and Berry use `run`. No generated
+`global`, or `source`. npm projects retain `PackageManager: npm` in configuration
+and invoke the installed wrapper directly with
+`node ./node_modules/@atheory-ai/skillex/bin/skillex.js`. This avoids npm's global
+and cached-package fallback and update checks: a missing local package fails.
+pnpm uses `exec` with dependency auto-installation and package-manager
+version downloads explicitly disabled. Its command names the local
+`./node_modules/.bin/skillex` shim (`.cmd` on Windows), so a missing local install
+cannot fall back to a global Skillex. Both pnpm 10 and pnpm 11+ configuration
+switches are included; pnpm must already be installed before starting MCP.
+Both Yarn Classic and Berry use `run`. No generated
 command uses `npx -y` or `dlx` to fetch packages. Source mode uses the checkout's
 `.skillex/bin/skillex` (built with `make dev-binary`); Go-installed binaries use
 global mode. Existing configurations without `Install` retain global behavior
