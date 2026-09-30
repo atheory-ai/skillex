@@ -62,9 +62,18 @@ func (i *InstallConfig) Command() (string, []string) {
 	}
 	switch i.PackageManager {
 	case "npm":
-		return "npm", []string{"exec", "--offline", "--no", "--", "skillex"}
+		// npm exec can use a global or cached package when the local install is
+		// missing. Running the installed wrapper directly fails closed instead.
+		return "node", []string{"./node_modules/@atheory-ai/skillex/bin/skillex.js"}
 	case "pnpm":
-		return "pnpm", []string{"exec", "skillex"}
+		// pnpm 11+ installs stale/missing dependencies before exec by default.
+		// Disable that gate and automatic pnpm version downloads (v10 and v11+).
+		// An explicit shim path also prevents fallback to a global skillex on PATH.
+		binary := "./node_modules/.bin/skillex"
+		if runtime.GOOS == "windows" {
+			binary += ".cmd"
+		}
+		return "pnpm", []string{"--config.verify-deps-before-run=false", "--config.manage-package-manager-versions=false", "--config.pm-on-fail=ignore", "exec", binary}
 	default:
 		return "yarn", []string{"run", "skillex"}
 	}

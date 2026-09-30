@@ -224,8 +224,8 @@ func TestInit_Idempotent(t *testing.T) {
 func TestInit_InvocationStrategies(t *testing.T) {
 	for _, tc := range []struct{ strategy, command, prefix string }{
 		{"global", "skillex", "skillex"},
-		{"npm", "npm", "npm exec --offline --no -- skillex"},
-		{"pnpm", "pnpm", "pnpm exec skillex"},
+		{"npm", "node", "node ./node_modules/@atheory-ai/skillex/bin/skillex.js"},
+		{"pnpm", "pnpm", "pnpm --config.verify-deps-before-run=false --config.manage-package-manager-versions=false --config.pm-on-fail=ignore exec ./node_modules/.bin/skillex"},
 		{"yarn-classic", "yarn", "yarn run skillex"},
 		{"yarn-berry", "yarn", "yarn run skillex"},
 		{"source", "./.skillex/bin/skillex", "./.skillex/bin/skillex"},
@@ -233,6 +233,9 @@ func TestInit_InvocationStrategies(t *testing.T) {
 		if tc.strategy == "source" && runtime.GOOS == "windows" {
 			tc.command += ".exe"
 			tc.prefix += ".exe"
+		}
+		if tc.strategy == "pnpm" && runtime.GOOS == "windows" {
+			tc.prefix += ".cmd"
 		}
 		for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
 			t.Run(tc.strategy+"/"+harness.name, func(t *testing.T) {
