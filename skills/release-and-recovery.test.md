@@ -24,3 +24,12 @@ Success criteria:
   - Uses the existing version's published checksums to render the formula
   - Uses the separate tap token for the cross-repository update
   - Runs the Recover Homebrew Publication workflow idempotently
+
+## Validation: npm failure after canonical publication
+
+Prompt: The GitHub Release was published, but building the npm wrapper failed. Must I rebuild or delete the GitHub release?
+Success criteria:
+  - States that the canonical binaries are already released
+  - Keeps npm packaging and publication independent of GitHub Release publication
+  - Does not recommend deleting, retagging, or rebuilding the canonical archives
+  - Explains that npm contains only a version-pinned acquisition wrapper

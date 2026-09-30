@@ -87,10 +87,10 @@ verify-unit: fmt-check vet test-unit build
 # Full release gate (includes acceptance + lint).
 verify: fmt-check vet lint test-unit test-acceptance build
 
-# ── Cross-compilation (for npm packaging) ─────────────────────────────
+# ── Cross-compilation (local binaries) ─────────────────────────────
 
 # Local cross-compile; produces binaries at dist/skillex-<os>-<arch>{.exe}
-# for use by npm-stage. Goreleaser handles release archive production
+# for local inspection. Goreleaser handles release archive production
 # separately (see release-snapshot).
 dist: clean
 	GOOS=darwin  GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/skillex-darwin-x64      ./cmd/skillex
@@ -111,39 +111,17 @@ release-snapshot:
 version-sync:
 	node scripts/set-npm-version.mjs $(PACKAGE_VERSION)
 
-# Stage: copy dist/ binaries (from `make dist`) into each platform
-# package's bin/ directory.
-npm-stage: version-sync dist
-	cp dist/skillex-darwin-arm64   npm/darwin-arm64/bin/skillex
-	cp dist/skillex-darwin-x64     npm/darwin-x64/bin/skillex
-	cp dist/skillex-linux-x64      npm/linux-x64/bin/skillex
-	cp dist/skillex-linux-arm64    npm/linux-arm64/bin/skillex
-	cp dist/skillex-win32-x64.exe  npm/win32-x64/bin/skillex.exe
-	chmod +x npm/darwin-arm64/bin/skillex \
-	         npm/darwin-x64/bin/skillex   \
-	         npm/linux-x64/bin/skillex    \
-	         npm/linux-arm64/bin/skillex
-	@echo "Binaries staged. Run 'make npm-pack' to create tarballs."
+# npm packages contain only the wrapper; GitHub Release archives are canonical.
+npm-stage: version-sync
+	mkdir -p dist
 
-# Pack all packages into dist/ as .tgz files (dry-run publish).
 npm-pack: npm-stage
-	cd npm/darwin-arm64 && npm pack --pack-destination ../../dist
-	cd npm/darwin-x64   && npm pack --pack-destination ../../dist
-	cd npm/linux-x64    && npm pack --pack-destination ../../dist
-	cd npm/linux-arm64  && npm pack --pack-destination ../../dist
-	cd npm/win32-x64    && npm pack --pack-destination ../../dist
-	cd npm/skillex      && npm pack --pack-destination ../../dist
-	@echo "Tarballs written to dist/. Inspect before publishing."
+	cd npm/skillex && npm pack --pack-destination ../../dist
+	@echo "Wrapper tarball written to dist/. Inspect before publishing."
 
-# Manual fallback. Normal release path is the GitHub Actions release
-# workflow with cosign signing.
+# Manual fallback after the matching GitHub Release is available.
 npm-publish: npm-stage
-	cd npm/darwin-arm64 && npm publish --access public --provenance
-	cd npm/darwin-x64   && npm publish --access public --provenance
-	cd npm/linux-x64    && npm publish --access public --provenance
-	cd npm/linux-arm64  && npm publish --access public --provenance
-	cd npm/win32-x64    && npm publish --access public --provenance
-	cd npm/skillex      && npm publish --access public --provenance
+	cd npm/skillex && npm publish --access public --provenance
 
 # ── Repo workflow ─────────────────────────────────────────────────────
 
