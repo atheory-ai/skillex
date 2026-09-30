@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/gobwas/glob"
 	"gopkg.in/yaml.v3"
 )
@@ -16,13 +17,14 @@ const Filename = "pack.yaml"
 
 // Manifest describes a Skillex pack.
 type Manifest struct {
-	Name        string         `yaml:"name"`
-	Version     string         `yaml:"version"`
-	Description string         `yaml:"description"`
-	Source      string         `yaml:"source"`
-	Detectors   Detectors      `yaml:"detectors"`
-	Skills      []SkillRef     `yaml:"skills"`
-	MCPServers  []MCPServerRef `yaml:"mcp-servers"`
+	Name        string                 `yaml:"name"`
+	Version     string                 `yaml:"version"`
+	Description string                 `yaml:"description"`
+	Source      string                 `yaml:"source"`
+	Detectors   Detectors              `yaml:"detectors"`
+	Skills      []SkillRef             `yaml:"skills"`
+	MCPServers  []MCPServerRef         `yaml:"mcp-servers"`
+	Registry    map[string]interface{} `yaml:"registry"`
 }
 
 // Detectors maps friendly detector names to match rules.
@@ -102,9 +104,10 @@ type DependencyFact struct {
 
 // Pack is a parsed manifest with its filesystem location.
 type Pack struct {
-	Path     string
-	Dir      string
-	Manifest Manifest
+	Path          string
+	Dir           string
+	Manifest      Manifest
+	VerifiedFiles map[string][]byte
 }
 
 // ActivatedSkill is a manifest skill whose activation rules matched the repo.
@@ -135,7 +138,23 @@ type DetectorRegistry struct {
 
 // Load reads and validates a pack manifest.
 func Load(path string) (*Pack, error) {
-	data, err := os.ReadFile(path)
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	path = filepath.Clean(absolute)
+	var data []byte
+	var verifiedFiles map[string][]byte
+	if strings.Contains(filepath.ToSlash(path), "/.skillex/packs/") {
+		lock, err := packregistry.ValidateDirectory(filepath.Dir(path))
+		if err != nil {
+			return nil, fmt.Errorf("validating installed pack: %w", err)
+		}
+		verifiedFiles = lock.VerifiedFiles
+		data = verifiedFiles[Filename]
+	} else {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +167,10 @@ func Load(path string) (*Pack, error) {
 	}
 
 	pack := &Pack{
-		Path:     path,
-		Dir:      filepath.Dir(path),
-		Manifest: manifest,
+		Path:          path,
+		Dir:           filepath.Dir(path),
+		Manifest:      manifest,
+		VerifiedFiles: verifiedFiles,
 	}
 	if err := pack.Validate(); err != nil {
 		return nil, err
@@ -199,6 +219,10 @@ func (p *Pack) Validate() error {
 			errs = append(errs, prefix+".file is required")
 		} else if !isSafeRelativePath(skill.File) {
 			errs = append(errs, prefix+".file must be a relative path inside the pack")
+		} else if p.VerifiedFiles != nil {
+			if _, ok := p.VerifiedFiles[skill.File]; !ok {
+				errs = append(errs, fmt.Sprintf("%s.file %q not in verified archive", prefix, skill.File))
+			}
 		} else if _, err := os.Stat(filepath.Join(p.Dir, skill.File)); err != nil {
 			errs = append(errs, fmt.Sprintf("%s.file %q not found", prefix, skill.File))
 		}
@@ -500,18 +524,19 @@ func ProjectManifestPaths(root string) []string {
 		paths = append(paths, rootPack)
 	}
 
-	packsDir := filepath.Join(root, "skillex", "packs")
-	entries, err := os.ReadDir(packsDir)
-	if err != nil {
-		return paths
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	for _, packsDir := range []string{filepath.Join(root, "skillex", "packs"), filepath.Join(root, ".skillex", "packs")} {
+		entries, err := os.ReadDir(packsDir)
+		if err != nil {
 			continue
 		}
-		path := filepath.Join(packsDir, entry.Name(), Filename)
-		if fileExists(path) {
-			paths = append(paths, path)
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			path := filepath.Join(packsDir, entry.Name(), Filename)
+			if fileExists(path) {
+				paths = append(paths, path)
+			}
 		}
 	}
 

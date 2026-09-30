@@ -1,0 +1,25 @@
+{
+  "packs": [
+    {
+      "description": "Engine-compatible signed test pack",
+      "handle": "test",
+      "name": "test.example",
+      "tarball": {
+        "sha256": "2fb369f0782c0d303d17aee821a06182bb81652a1b10282694c97860c211427a",
+        "size": 353,
+        "url": "https://fixture.invalid/pack.tar.gz"
+      },
+      "tier": "community",
+      "version": "1.0.0"
+    }
+  ],
+  "registry": "test-fixture",
+  "revocations": [
+    {
+      "name": "test.example",
+      "reason": "fixture revocation",
+      "version": "1.0.0"
+    }
+  ],
+  "schemaVersion": 1
+}
