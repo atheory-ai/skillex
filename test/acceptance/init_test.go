@@ -299,3 +299,110 @@ func TestInit_DetectsLocalAndCachesSelection(t *testing.T) {
 		t.Fatal("cached selection changed")
 	}
 }
+
+func TestInit_MergesExistingHarnessConfig(t *testing.T) {
+	for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
+		t.Run(harness.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, harness.path)
+			os.MkdirAll(filepath.Dir(path), 0o755)
+			original := `{"settings":{"largeNumber":12345678901234567890},"mcpServers":{"other":{"command":"other","env":{"TOKEN":"keep"}}}}`
+			os.WriteFile(path, []byte(original), 0o600)
+			res := helpers.Run(t, dir, "init", "--yes", "--harness", harness.name, "--invocation", "pnpm")
+			if res.ExitCode != 0 {
+				t.Fatal(res.Stderr)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"12345678901234567890", `"TOKEN": "keep"`, `"command": "pnpm"`, `"other"`} {
+				if !strings.Contains(string(data), want) {
+					t.Fatal(string(data))
+				}
+			}
+			info, _ := os.Stat(path)
+			if info.Mode().Perm() != 0o600 {
+				t.Fatal("permissions changed")
+			}
+			res = helpers.Run(t, dir, "init", "--yes", "--harness", harness.name)
+			if res.ExitCode != 0 {
+				t.Fatal(res.Stderr)
+			}
+			after, _ := os.ReadFile(path)
+			if string(after) != string(data) {
+				t.Fatal("identical config rewritten")
+			}
+		})
+	}
+}
+
+func TestInit_PreservesExistingSkillexUnlessOverridden(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+	original := `{"mcpServers":{"skillex":{"command":"custom","args":["serve"],"env":{"TOKEN":"keep"},"timeout":60}}}`
+	os.WriteFile(path, []byte(original), 0o600)
+	res := helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code", "--invocation", "pnpm")
+	if res.ExitCode == 0 || !strings.Contains(res.Stderr, "--overwrite-mcp") {
+		t.Fatal(res.Stderr)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != original {
+		t.Fatal("conflicting server changed")
+	}
+	res = helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code", "--overwrite-mcp")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	data, _ = os.ReadFile(path)
+	for _, want := range []string{`"command": "pnpm"`, `"TOKEN": "keep"`, `"timeout": 60`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatal(string(data))
+		}
+	}
+}
+
+func TestInit_RefusesInvalidHarnessConfigs(t *testing.T) {
+	for _, original := range []string{`broken`, `null`, `[]`, `{"mcpServers":null}`, `{"mcpServers":[]}`, `{"mcpServers":{"skillex":null}}`} {
+		t.Run(original, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".mcp.json")
+			os.WriteFile(path, []byte(original), 0o644)
+			res := helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code")
+			if res.ExitCode == 0 {
+				t.Fatal("invalid configuration accepted")
+			}
+			data, _ := os.ReadFile(path)
+			if string(data) != original {
+				t.Fatal("invalid file mutated")
+			}
+		})
+	}
+}
+
+func TestInit_NoninteractiveMCPIsExplicit(t *testing.T) {
+	for _, args := range [][]string{{"init", "--yes"}, {"init", "--no-mcp"}, {"init"}} {
+		dir := t.TempDir()
+		os.Mkdir(filepath.Join(dir, ".claude"), 0o755)
+		res := helpers.Run(t, dir, args...)
+		if res.ExitCode != 0 {
+			t.Fatal(res.Stderr)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".mcp.json")); !os.IsNotExist(err) {
+			t.Fatal("noninteractive init configured MCP implicitly")
+		}
+		if strings.Contains(res.Stderr, "Configure harness-managed") {
+			t.Fatal("noninteractive prompt")
+		}
+	}
+	for _, args := range [][]string{{"init", "--yes", "--harness", "unknown"}, {"init", "--yes", "--harness", "cursor", "--no-mcp"}, {"init", "--yes", "--overwrite-mcp"}} {
+		dir := t.TempDir()
+		res := helpers.Run(t, dir, args...)
+		if res.ExitCode == 0 {
+			t.Fatal("invalid flags accepted")
+		}
+		if _, err := os.Stat(filepath.Join(dir, "skillex.json")); !os.IsNotExist(err) {
+			t.Fatal("invalid flags wrote project config")
+		}
+	}
+}

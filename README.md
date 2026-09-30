@@ -195,13 +195,27 @@ Install:
   PackageManager: pnpm
 ```
 
-To also configure MCP for your agent harness:
+Interactive `skillex init` offers harness-managed stdio MCP configuration for
+Cursor, Claude Code, or Windsurf. It suggests a harness when one is clearly
+present and lets you choose `none`. `--yes` and noninteractive runs configure MCP
+only with an explicit `--harness`; use `--no-mcp` to skip the interactive offer.
+Setup writes configuration without starting a server or background process.
+
+To configure MCP explicitly for your agent harness:
 
 ```bash
 skillex init --harness cursor       # writes .cursor/mcp.json
 skillex init --harness claude-code  # writes .mcp.json (project root)
 skillex init --harness windsurf     # writes .windsurf/mcp.json
 ```
+
+Existing JSON configurations are merged, preserving other servers and settings.
+Malformed configurations are rejected without changing the file. If a `skillex`
+entry already uses a different command, setup preserves it and reports a conflict;
+use `--harness <name> --overwrite-mcp` to update its command and arguments while
+retaining other fields such as `env` and timeout. Identical entries are left
+byte-for-byte unchanged, and existing file permissions are retained.
+
 
 ### Write your first skill
 

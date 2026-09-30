@@ -100,7 +100,7 @@ func chooseInvocation(in io.Reader, out io.Writer, detected string) (string, err
 	return answer, nil
 }
 
-func setupInvocation(root string, yes bool, selected string) error {
+func setupInvocation(root string, yes bool, selected string, input io.Reader) error {
 	explicit := selected != ""
 	cfg, err := config.Load(root)
 	if err != nil {
@@ -112,7 +112,7 @@ func setupInvocation(root string, yes bool, selected string) error {
 	if selected == "" {
 		selected = detectInvocation(root)
 		if !yes && terminalInput() {
-			selected, err = chooseInvocation(os.Stdin, os.Stderr, selected)
+			selected, err = chooseInvocation(input, os.Stderr, selected)
 			if err != nil {
 				return err
 			}
