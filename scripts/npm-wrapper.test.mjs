@@ -106,3 +106,9 @@ test("postinstall supports explicit skip and offline deferral", () => temporary(
     else assert.equal(result.stderr, "");
   }
 }));
+
+test("postinstall rejects unsupported platform before acquisition", () => {
+  const result = spawnSync(process.execPath, ["-e", "Object.defineProperty(process, 'platform', { value: 'freebsd' }); require('./npm/skillex/bin/install.js')"], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unsupported platform.*freebsd/);
+});
