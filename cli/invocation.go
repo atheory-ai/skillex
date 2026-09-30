@@ -21,9 +21,6 @@ func parseInvocation(value string) (*config.InstallConfig, error) {
 		i.Strategy, i.PackageManager = "local-dev-dependency", value
 	case "source":
 		i.Strategy, i.Binary = "source", ".skillex/bin/skillex"
-		if filepath.Ext(os.Args[0]) == ".exe" {
-			i.Binary += ".exe"
-		}
 	default:
 		return nil, fmt.Errorf("unknown invocation %q (global, npm, pnpm, yarn-classic, yarn-berry, source)", value)
 	}

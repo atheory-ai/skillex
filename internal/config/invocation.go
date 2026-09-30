@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -53,7 +54,11 @@ func (i *InstallConfig) Command() (string, []string) {
 		return "skillex", nil
 	}
 	if i.Strategy == "source" {
-		return "./" + filepath.ToSlash(filepath.Clean(i.Binary)), nil
+		binary := filepath.ToSlash(filepath.Clean(i.Binary))
+		if runtime.GOOS == "windows" && binary == ".skillex/bin/skillex" {
+			binary += ".exe"
+		}
+		return "./" + binary, nil
 	}
 	switch i.PackageManager {
 	case "npm":

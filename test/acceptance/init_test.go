@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -229,6 +230,10 @@ func TestInit_InvocationStrategies(t *testing.T) {
 		{"yarn-berry", "yarn", "yarn run skillex"},
 		{"source", "./.skillex/bin/skillex", "./.skillex/bin/skillex"},
 	} {
+		if tc.strategy == "source" && runtime.GOOS == "windows" {
+			tc.command += ".exe"
+			tc.prefix += ".exe"
+		}
 		for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
 			t.Run(tc.strategy+"/"+harness.name, func(t *testing.T) {
 				dir := t.TempDir()
