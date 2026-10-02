@@ -499,6 +499,7 @@ Supported activation and scope fields in this initial pack implementation:
 | `activate-when.files-present` | Glob patterns matched against repository files. |
 | `activate-when.files-matching` | Glob patterns matched against repository files. |
 | `activate-when.dependency-declared` | Dependency conditions matched against the boundary that resolved a package-shipped pack. |
+| `activate-when.all` | Nonempty list of activation conditions; every condition must match. Nested `all` is supported. |
 | `activate-when.detector` | Friendly detector name registered by Skillex core or a loaded pack. |
 | `detectors` | Optional detector definitions registered by the pack while it is loaded. |
 | `files` | Optional glob patterns for `scope: matching-files`; when omitted, the activation matches are used. |
@@ -508,6 +509,22 @@ Supported activation and scope fields in this initial pack implementation:
 | `scope: directory` | Activate for files immediately inside the matched file's directory. |
 | `scope: matching-files` | Activate for the exact files matched by the activation or `files` patterns. |
 | `scope: nearest-ancestor` | Activate for the nearest containing directory and below. |
+
+Use `all` when guidance applies only if multiple facts hold:
+
+```yaml
+activate-when:
+  all:
+    - detector: go
+    - files-present: [Dockerfile]
+```
+
+Every child must match. A child can itself contain `all`, up to 32 nesting
+levels. `all` cannot be mixed with leaf fields in the same condition. Existing
+flat conditions keep their alternative-match behavior. File matches from the
+successful children supply scope paths; use `files` with `matching-files` when
+the guidance should target a separate set of files. The same conditions apply
+to pack MCP server suggestions.
 
 Pack skills are indexed individually with `source_type: pack`. Existing projects
 with no pack manifests behave exactly as before.
