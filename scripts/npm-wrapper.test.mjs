@@ -86,6 +86,10 @@ test("npm packaging and publication cannot gate canonical GitHub release", async
   assert.match(workflow, /publish_release:\n\s+runs-on: ubuntu-latest\n\s+needs: verify_release/);
   assert.match(workflow, /publish_npm:\n\s+runs-on: ubuntu-latest\n\s+needs: \[verify_release, publish_release\]/);
   assert.doesNotMatch(workflow, /Publish platform|skillex-darwin-arm64-.*\.tgz/);
+  assert.match(workflow, /npm publish "\.\/dist\/atheory-ai-skillex-\$\{VERSION\}\.tgz"/);
+  assert.match(workflow, /workflow_dispatch:[\s\S]*Existing published version to recover on npm/);
+  assert.match(workflow, /ref: v\$\{\{ steps\.npm_version\.outputs\.version \}\}/);
+  assert.match(workflow, /gh api "repos\/\$GITHUB_REPOSITORY\/releases\/tags\/v\$version"/);
 });
 
 test("Windows canonical ZIP extraction selects skillex.exe", { skip: process.platform !== "darwin" }, () => temporary(async (dir) => {
