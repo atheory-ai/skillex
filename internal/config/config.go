@@ -31,9 +31,21 @@ const (
 
 // Config represents the root skillex configuration.
 type Config struct {
-	Version int        `yaml:"Version" json:"Version"`
-	Rules   []Rule     `yaml:"Rules" json:"Rules"`
-	MCP     *MCPConfig `yaml:"MCP,omitempty" json:"MCP,omitempty"`
+	Version    int                    `yaml:"Version" json:"Version"`
+	Rules      []Rule                 `yaml:"Rules" json:"Rules"`
+	MCP        *MCPConfig             `yaml:"MCP,omitempty" json:"MCP,omitempty"`
+	Registries []PackRegistry         `yaml:"registries,omitempty" json:"registries,omitempty"`
+	Policy     map[string]interface{} `yaml:"policy,omitempty" json:"policy,omitempty"`
+}
+
+// PackRegistry selects a transport for the bundled manifest signing identity.
+// Custom trust and federation are not enabled by project-controlled metadata.
+type PackRegistry struct {
+	Name        string                 `yaml:"name" json:"name"`
+	URL         string                 `yaml:"url" json:"url"`
+	TrustedRoot string                 `yaml:"trustedRoot,omitempty" json:"trustedRoot,omitempty"`
+	Allow       map[string]interface{} `yaml:"allow,omitempty" json:"allow,omitempty"`
+	Deny        map[string]interface{} `yaml:"deny,omitempty" json:"deny,omitempty"`
 }
 
 // Rule defines a scope-to-skills mapping, with optional dependency boundary.
@@ -132,6 +144,23 @@ func Load(root string) (*Config, error) {
 // Validate enforces the configuration-version and explicit MCP opt-in
 // boundary without changing the behavior of existing version 4 projects.
 func (c *Config) Validate() error {
+	if len(c.Policy) > 0 {
+		return fmt.Errorf("registry policy filtering is not yet supported")
+	}
+	if len(c.Registries) > 1 {
+		return fmt.Errorf("verified packs currently support one registry")
+	}
+	for _, registry := range c.Registries {
+		if registry.Name == "" || !strings.HasPrefix(registry.URL, "https://") {
+			return fmt.Errorf("registry requires a name and HTTPS manifest URL")
+		}
+		if registry.TrustedRoot != "" && registry.TrustedRoot != "bundled" {
+			return fmt.Errorf("only the bundled pack signing identity is supported")
+		}
+		if len(registry.Allow) > 0 || len(registry.Deny) > 0 {
+			return fmt.Errorf("registry policy filtering is not yet supported")
+		}
+	}
 	switch c.Version {
 	case SkillsOnlyConfigVersion:
 		if c.MCP != nil {

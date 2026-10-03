@@ -120,6 +120,11 @@ func ParseTestFile(path string) (*TestFile, []Issue, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return ParseTestContent(path, data)
+}
+
+// ParseTestContent parses already verified content without reopening its source.
+func ParseTestContent(path string, data []byte) (*TestFile, []Issue, error) {
 
 	rel := filepath.Base(path)
 	var issues []Issue

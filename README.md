@@ -828,10 +828,60 @@ skillex doctor --json             # Machine-readable report
 
 Checks: configuration validity, registry health, test coverage, topic/tag distribution, skills missing `name`/`description` (search discoverability), AGENTS.md presence, vendor skill provenance.
 
+### `skillex pack`
+
+```sh
+skillex pack get atheory-ai.javascript.tool.example --preview
+skillex pack get atheory-ai.javascript.tool.example --yes
+skillex pack list --json
+```
+
+Registry installation verifies the manifest's Sigstore signature against the
+engine-bundled public root and exact GitHub manifest-workflow identity, then
+checks the signed tarball SHA256 and size. `--preview` returns the full proposed
+text contents, detectors, skills, MCP suggestions, and activation scopes for review
+before consent. Installation rejects archive links and unsafe paths and accepts only Markdown,
+YAML, JSON, and text files. Installed packs use the existing activation rules and
+are indexed during installation. Pack content remains project guidance to review;
+signing establishes its source and integrity.
+
+Optional transport configuration (one registry in this MVP):
+
+```json
+"registries": [{
+  "name": "upstream",
+  "url": "https://raw.githubusercontent.com/atheory-ai/skillex-packs/main/registry/manifest.json",
+  "trustedRoot": "bundled"
+}]
+```
+
+The default is the upstream URL. Mirrors must serve the same authentic signed
+bytes. Project configuration cannot replace the bundled signer or root. Custom
+roots, multiple registries, and policy filters are rejected until federation is
+implemented. Resolution currently selects the latest stable version; compatibility
+ranges, supersession, search/info/update/remove, and MCP install proposals remain
+follow-up work.
+
+Files live in `.skillex/packs/<name>@<version>/` alongside
+`manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains
+the signed manifest and bundle. Offline refresh and list reverify that evidence
+and compare every installed file with the pinned archive; they refuse tampered
+or revoked versions before rebuilding the index. Revocations are read from the
+authenticated manifest's embedded `revocations` array. Installation fetches a
+fresh manifest; offline refresh only knows revocations in its saved snapshot and
+cannot detect a later withdrawal. Normal skill discovery and refresh remain
+offline. Trust-root rotation requires an engine release.
+
+The currently published example `0.1.0` archive uses an obsolete engine manifest
+schema and is refused after integrity verification. A producer `0.1.1` release
+and newly signed registry manifest are required before the example commands can
+complete; [the companion registry PR](https://github.com/atheory-ai/skillex-packs/pull/19)
+prepares that release without publishing it.
+
 ### `skillex get`
 
 ```bash
-skillex get <url>                         # Fetch and vendor a remote skill
+skillex get <url>                         # Fetch and vendor an unverified remote skill
 skillex get <url> --topic react,hooks     # Assign topics on import
 skillex get <url> --skip-review           # Skip safety review
 ```
@@ -1046,7 +1096,7 @@ The CLI validates structure. The agent validates behavior.
 
 ## Building from source
 
-**Requirements:** Go 1.22+
+**Requirements:** Go 1.25.13+; the development toolchain is Go 1.26.6.
 
 ```bash
 git clone https://github.com/atheory-ai/skillex
