@@ -316,7 +316,7 @@ func TestInit_MergesExistingHarnessConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, want := range []string{"12345678901234567890", `"TOKEN": "keep"`, `"command": "pnpm"`, `"other"`} {
+			for _, want := range []string{"12345678901234567890", `"TOKEN": "keep"`, `"command": "node"`, `"other"`} {
 				if !strings.Contains(string(data), want) {
 					t.Fatal(string(data))
 				}
@@ -355,7 +355,7 @@ func TestInit_PreservesExistingSkillexUnlessOverridden(t *testing.T) {
 		t.Fatal(res.Stderr)
 	}
 	data, _ = os.ReadFile(path)
-	for _, want := range []string{`"command": "pnpm"`, `"TOKEN": "keep"`, `"timeout": 60`} {
+	for _, want := range []string{`"command": "node"`, `"TOKEN": "keep"`, `"timeout": 60`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatal(string(data))
 		}
