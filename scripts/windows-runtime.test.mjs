@@ -32,7 +32,7 @@ test("Windows ZIP wrapper executes and generated npm/pnpm/source commands run", 
     const env = { ...process.env, SKILLEX_CACHE_DIR: cacheRoot, SKILLEX_OFFLINE: "1" };
     const wrapper = path.resolve("npm/skillex/bin/skillex.js");
     const run = (command, args, cwd = dir) => spawnSync(command, args, { cwd, env, encoding: "utf8" });
-    const result = run(process.execPath, [wrapper, "--version"]);
+    const result = run(process.execPath, [wrapper, "version"]);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, new RegExp(version.replaceAll(".", "\\.")));
     const bad = run(process.execPath, [wrapper, "--not-a-skillex-flag"]);
@@ -58,19 +58,19 @@ test("Windows ZIP wrapper executes and generated npm/pnpm/source commands run", 
         await mkdir(path.dirname(pkg), { recursive: true });
         await cp(path.resolve("npm/skillex"), pkg, { recursive: true });
       }
-      // Use the exact generated executable and wrapper prefix; --version is a
+      // Use the exact generated executable and wrapper prefix; the version command is a
       // deterministic invocation that exits rather than starting an MCP server.
-      const invoked = run(command, [...args.slice(0, -1), "--version"], project);
+      const invoked = run(command, [...args.slice(0, -1), "version"], project);
       assert.equal(invoked.status, 0, invoked.stderr);
       assert.match(invoked.stdout, new RegExp(version.replaceAll(".", "\\.")));
       if (strategy !== "source") {
         await rm(path.join(project, "node_modules"), { recursive: true });
-        const missing = run(command, [...args.slice(0, -1), "--version"], project);
+        const missing = run(command, [...args.slice(0, -1), "version"], project);
         assert.notEqual(missing.status, 0, "missing local package must fail");
       }
     }
     await writeFile(path.join(cache, selected.archive), "tampered");
-    const tampered = run(process.execPath, [wrapper, "--version"]);
+    const tampered = run(process.execPath, [wrapper, "version"]);
     assert.notEqual(tampered.status, 0);
     assert.match(tampered.stderr, /checksum mismatch/);
   } finally {
