@@ -1,8 +1,10 @@
 package acceptance
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -216,5 +218,191 @@ func TestInit_Idempotent(t *testing.T) {
 	}
 	if string(firstAgents) != string(secondAgents) {
 		t.Errorf("AGENTS.md changed after idempotent init:\nfirst: %s\nsecond: %s", firstAgents, secondAgents)
+	}
+}
+
+func TestInit_InvocationStrategies(t *testing.T) {
+	for _, tc := range []struct{ strategy, command, prefix string }{
+		{"global", "skillex", "skillex"},
+		{"npm", "node", "node ./node_modules/@atheory-ai/skillex/bin/skillex.js"},
+		{"pnpm", "node", "node ./node_modules/@atheory-ai/skillex/bin/skillex.js"},
+		{"yarn-classic", "yarn", "yarn run skillex"},
+		{"yarn-berry", "yarn", "yarn run skillex"},
+		{"source", "./.skillex/bin/skillex", "./.skillex/bin/skillex"},
+	} {
+		if tc.strategy == "source" && runtime.GOOS == "windows" {
+			tc.command += ".exe"
+			tc.prefix += ".exe"
+		}
+		for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
+			t.Run(tc.strategy+"/"+harness.name, func(t *testing.T) {
+				dir := t.TempDir()
+				res := helpers.Run(t, dir, "init", "--yes", "--invocation", tc.strategy, "--harness", harness.name)
+				if res.ExitCode != 0 {
+					t.Fatal(res.Stderr)
+				}
+				data, err := os.ReadFile(filepath.Join(dir, harness.path))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var cfg struct {
+					Servers map[string]struct {
+						Command string   `json:"command"`
+						Args    []string `json:"args"`
+					} `json:"mcpServers"`
+				}
+				if err := json.Unmarshal(data, &cfg); err != nil {
+					t.Fatal(err)
+				}
+				server := cfg.Servers["skillex"]
+				if server.Command != tc.command || strings.Join(append([]string{server.Command}, server.Args...), " ") != tc.prefix+" mcp" {
+					t.Fatalf("wrong server: %#v", server)
+				}
+				agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(agents), tc.prefix+" query --search") {
+					t.Fatalf("wrong AGENTS: %s", agents)
+				}
+				res = helpers.Run(t, dir, "init", "--yes")
+				if res.ExitCode != 0 {
+					t.Fatal(res.Stderr)
+				}
+				after, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+				if string(after) != string(agents) {
+					t.Fatal("invocation was rediscovered")
+				}
+			})
+		}
+	}
+}
+
+func TestInit_DetectsLocalAndCachesSelection(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"@atheory-ai/skillex":"1.0.0"},"packageManager":"pnpm@10.0"}`), 0o644)
+	res := helpers.Run(t, dir, "init", "--yes")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "skillex.json"))
+	if !strings.Contains(string(before), `"PackageManager": "pnpm"`) {
+		t.Fatal(string(before))
+	}
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{}`), 0o644)
+	res = helpers.Run(t, dir, "init", "--yes")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "skillex.json"))
+	if string(before) != string(after) {
+		t.Fatal("cached selection changed")
+	}
+}
+
+func TestInit_MergesExistingHarnessConfig(t *testing.T) {
+	for _, harness := range []struct{ name, path string }{{"cursor", ".cursor/mcp.json"}, {"claude-code", ".mcp.json"}, {"windsurf", ".windsurf/mcp.json"}} {
+		t.Run(harness.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, harness.path)
+			os.MkdirAll(filepath.Dir(path), 0o755)
+			original := `{"settings":{"largeNumber":12345678901234567890},"mcpServers":{"other":{"command":"other","env":{"TOKEN":"keep"}}}}`
+			os.WriteFile(path, []byte(original), 0o600)
+			res := helpers.Run(t, dir, "init", "--yes", "--harness", harness.name, "--invocation", "pnpm")
+			if res.ExitCode != 0 {
+				t.Fatal(res.Stderr)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"12345678901234567890", `"TOKEN": "keep"`, `"command": "node"`, `"other"`} {
+				if !strings.Contains(string(data), want) {
+					t.Fatal(string(data))
+				}
+			}
+			info, _ := os.Stat(path)
+			if info.Mode().Perm() != 0o600 {
+				t.Fatal("permissions changed")
+			}
+			res = helpers.Run(t, dir, "init", "--yes", "--harness", harness.name)
+			if res.ExitCode != 0 {
+				t.Fatal(res.Stderr)
+			}
+			after, _ := os.ReadFile(path)
+			if string(after) != string(data) {
+				t.Fatal("identical config rewritten")
+			}
+		})
+	}
+}
+
+func TestInit_PreservesExistingSkillexUnlessOverridden(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+	original := `{"mcpServers":{"skillex":{"command":"custom","args":["serve"],"env":{"TOKEN":"keep"},"timeout":60}}}`
+	os.WriteFile(path, []byte(original), 0o600)
+	res := helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code", "--invocation", "pnpm")
+	if res.ExitCode == 0 || !strings.Contains(res.Stderr, "--overwrite-mcp") {
+		t.Fatal(res.Stderr)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != original {
+		t.Fatal("conflicting server changed")
+	}
+	res = helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code", "--overwrite-mcp")
+	if res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	data, _ = os.ReadFile(path)
+	for _, want := range []string{`"command": "node"`, `"TOKEN": "keep"`, `"timeout": 60`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatal(string(data))
+		}
+	}
+}
+
+func TestInit_RefusesInvalidHarnessConfigs(t *testing.T) {
+	for _, original := range []string{`broken`, `null`, `[]`, `{"mcpServers":null}`, `{"mcpServers":[]}`, `{"mcpServers":{"skillex":null}}`} {
+		t.Run(original, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".mcp.json")
+			os.WriteFile(path, []byte(original), 0o644)
+			res := helpers.Run(t, dir, "init", "--yes", "--harness", "claude-code")
+			if res.ExitCode == 0 {
+				t.Fatal("invalid configuration accepted")
+			}
+			data, _ := os.ReadFile(path)
+			if string(data) != original {
+				t.Fatal("invalid file mutated")
+			}
+		})
+	}
+}
+
+func TestInit_NoninteractiveMCPIsExplicit(t *testing.T) {
+	for _, args := range [][]string{{"init", "--yes"}, {"init", "--no-mcp"}, {"init"}} {
+		dir := t.TempDir()
+		os.Mkdir(filepath.Join(dir, ".claude"), 0o755)
+		res := helpers.Run(t, dir, args...)
+		if res.ExitCode != 0 {
+			t.Fatal(res.Stderr)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".mcp.json")); !os.IsNotExist(err) {
+			t.Fatal("noninteractive init configured MCP implicitly")
+		}
+		if strings.Contains(res.Stderr, "Configure harness-managed") {
+			t.Fatal("noninteractive prompt")
+		}
+	}
+	for _, args := range [][]string{{"init", "--yes", "--harness", "unknown"}, {"init", "--yes", "--harness", "cursor", "--no-mcp"}, {"init", "--yes", "--overwrite-mcp"}} {
+		dir := t.TempDir()
+		res := helpers.Run(t, dir, args...)
+		if res.ExitCode == 0 {
+			t.Fatal("invalid flags accepted")
+		}
+		if _, err := os.Stat(filepath.Join(dir, "skillex.json")); !os.IsNotExist(err) {
+			t.Fatal("invalid flags wrote project config")
+		}
 	}
 }

@@ -191,13 +191,60 @@ This creates:
 - `AGENTS.md` — auto-generated agent instructions (MCP + CLI)
 - `.skillex/index.db` — the registry (rebuilt on each refresh)
 
-To also configure MCP for your agent harness:
+Setup detects a pinned `@atheory-ai/skillex` dev dependency and package manager
+once, and records `Install` in `skillex.json` or `skillex.yaml`. Interactive setup
+confirms the choice; `--yes` uses the detected local dependency or a global binary.
+Generated agent and MCP commands use that recorded choice on subsequent runs.
+Run commands from the project root after installing the project's dependencies.
+
+```sh
+# npm and pnpm projects
+node ./node_modules/@atheory-ai/skillex/bin/skillex.js init --yes
+yarn run skillex init --yes
+skillex init --yes --invocation global
+./.skillex/bin/skillex init --yes --invocation source
+```
+
+Override detection with `--invocation npm`, `pnpm`, `yarn-classic`, `yarn-berry`,
+`global`, or `source`. npm and pnpm projects retain their package manager in
+configuration and invoke the installed wrapper directly with
+`node ./node_modules/@atheory-ai/skillex/bin/skillex.js`. This bypasses package
+manager and Corepack launchers, avoiding package fetching, manager version
+downloads, and global fallback. A missing local package fails immediately;
+Node.js and the project's dependencies must already be installed.
+Both Yarn Classic and Berry use `run`. No generated
+command uses `npx -y` or `dlx` to fetch packages. Source mode uses the checkout's
+`.skillex/bin/skillex` (built with `make dev-binary`); Go-installed binaries use
+global mode. Existing configurations without `Install` retain global behavior
+unless setup detects a local dependency or an explicit override is provided.
+
+```yaml
+Install:
+  Strategy: local-dev-dependency
+  PackageManager: pnpm
+```
+
+Interactive `skillex init` offers harness-managed stdio MCP configuration for
+Cursor, Claude Code, or Windsurf. It suggests a harness when one is clearly
+present and lets you choose `none`. `--yes` and noninteractive runs configure MCP
+only with an explicit `--harness`; use `--no-mcp` to skip the interactive offer.
+Setup writes configuration without starting a server or background process.
+
+To configure MCP explicitly for your agent harness:
 
 ```bash
 skillex init --harness cursor       # writes .cursor/mcp.json
 skillex init --harness claude-code  # writes .mcp.json (project root)
 skillex init --harness windsurf     # writes .windsurf/mcp.json
 ```
+
+Existing JSON configurations are merged, preserving other servers and settings.
+Malformed configurations are rejected without changing the file. If a `skillex`
+entry already uses a different command, setup preserves it and reports a conflict;
+use `--harness <name> --overwrite-mcp` to update its command and arguments while
+retaining other fields such as `env` and timeout. Identical entries are left
+byte-for-byte unchanged, and existing file permissions are retained.
+
 
 ### Write your first skill
 

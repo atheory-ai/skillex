@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,10 +15,13 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var (
-		yes     bool
-		pkg     bool
-		harness string
-		useYAML bool
+		yes          bool
+		pkg          bool
+		harness      string
+		invocation   string
+		useYAML      bool
+		noMCP        bool
+		overwriteMCP bool
 	)
 
 	cmd := &cobra.Command{
@@ -36,29 +40,51 @@ For packages (--package):
 
 Flags:
   --harness  Configure MCP for a specific harness (cursor, claude-code, windsurf)
+  --no-mcp   Skip the interactive MCP configuration offer
+  --overwrite-mcp  Update an existing Skillex server command (requires --harness)
   --package  Initialize this directory as a skill-exporting package
   --yaml     Generate skillex.yaml instead of the default skillex.json
   --yes      Accept all defaults without prompting`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
+			if invocation != "" {
+				if _, err := parseInvocation(invocation); err != nil {
+					return err
+				}
+			}
 
+			if noMCP && harness != "" {
+				return fmt.Errorf("--no-mcp cannot be combined with --harness")
+			}
+			if overwriteMCP && harness == "" {
+				return fmt.Errorf("--overwrite-mcp requires --harness")
+			}
+			if harness != "" {
+				if _, err := harnessConfigPath(root, harness); err != nil {
+					return err
+				}
+			}
 			if pkg {
 				return initPackage(root, yes)
 			}
-			return initRepo(root, yes, harness, useYAML)
+			return initRepo(root, yes, harness, useYAML, invocation, noMCP, overwriteMCP)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Accept all defaults without prompting")
 	cmd.Flags().BoolVar(&pkg, "package", false, "Initialize as a skill-exporting package")
 	cmd.Flags().StringVar(&harness, "harness", "", "Configure MCP for harness: cursor, claude-code, windsurf")
+	cmd.Flags().StringVar(&invocation, "invocation", "", "Invocation: global, npm, pnpm, yarn-classic, yarn-berry, source")
+	cmd.Flags().BoolVar(&noMCP, "no-mcp", false, "Skip the interactive MCP configuration offer")
+	cmd.Flags().BoolVar(&overwriteMCP, "overwrite-mcp", false, "Update command and args of an existing Skillex MCP entry (requires --harness)")
 	cmd.Flags().BoolVar(&useYAML, "yaml", false, "Generate skillex.yaml instead of the default skillex.json")
 
 	return cmd
 }
 
 // initRepo sets up a repository root for skillex.
-func initRepo(root string, yes bool, harness string, useYAML bool) error {
+func initRepo(root string, yes bool, harness string, useYAML bool, invocation string, noMCP, overwriteMCP bool) error {
+	input := bufio.NewReader(os.Stdin)
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, styleHeader.Render("  skillex init  "))
 	}
@@ -70,11 +96,32 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 		configFormat = config.FormatYAML
 	}
 
+	if invocation == "" {
+		if _, err := config.Load(root); err != nil {
+			invocation = detectInvocation(root)
+			if !yes && terminalInput() {
+				invocation, err = chooseInvocation(input, os.Stderr, invocation)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if harness == "" && !noMCP && !yes && terminalInput() {
+		var err error
+		harness, err = chooseHarness(input, os.Stderr, detectHarness(root))
+		if err != nil {
+			return err
+		}
+	}
+
 	steps := []struct {
 		desc string
 		fn   func() error
 	}{
 		{fmt.Sprintf("Creating %s", configPath), func() error { return createSkilexConfig(root, yes, configFormat) }},
+		{"Selecting project invocation", func() error { return setupInvocation(root, yes, invocation, input) }},
 		{"Creating skills/ directory", func() error { return createSkillsDir(root) }},
 		{"Creating .skillex/ directory", func() error { return os.MkdirAll(filepath.Join(root, ".skillex"), 0o755) }},
 		{"Writing AGENTS.md", func() error { return createAgentsMD(root) }},
@@ -86,7 +133,7 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 			fn   func() error
 		}{
 			fmt.Sprintf("Configuring MCP for %s", harness),
-			func() error { return configureMCP(root, harness) },
+			func() error { return configureMCP(root, harness, overwriteMCP) },
 		})
 	}
 
@@ -125,7 +172,7 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 		return err
 	}
 
-	section := agents.GenerateSection()
+	section := agents.GenerateSectionWithCommand(cfg.Install.CLI())
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	if err := agents.UpdateFile(agentsPath, section); err != nil {
 		return err
@@ -139,8 +186,8 @@ func initRepo(root string, yes bool, harness string, useYAML bool) error {
 			styleSuccess.Render("✓"), result.SkillsAdded)
 		fmt.Fprintln(os.Stderr, "\nNext steps:")
 		fmt.Fprintln(os.Stderr, "  • Edit skills/repo.md to add your first repo-level skill")
-		fmt.Fprintln(os.Stderr, "  • Run 'skillex refresh' after making changes")
-		fmt.Fprintln(os.Stderr, "  • Run 'skillex doctor' to check for issues")
+		fmt.Fprintf(os.Stderr, "  • Run '%s refresh' after making changes\n", cfg.Install.CLI())
+		fmt.Fprintf(os.Stderr, "  • Run '%s doctor' to check for issues\n", cfg.Install.CLI())
 	}
 
 	return nil
@@ -226,6 +273,11 @@ func createSkilexConfig(root string, yes bool, format config.Format) error {
 	}
 
 	cfg := config.DefaultConfig()
+	install, err := parseInvocation(detectInvocation(root))
+	if err != nil {
+		return err
+	}
+	cfg.Install = install
 	data, err := config.Marshal(cfg, format)
 	if err != nil {
 		return err
@@ -277,42 +329,6 @@ func createAgentsMD(root string) error {
 		return os.WriteFile(path, []byte(agents.DefaultContent()), 0o644) //nolint:gosec // G306: AGENTS.md is user-edited project doc
 	}
 	return nil
-}
-
-func configureMCP(root, harness string) error {
-	mcpConfig := `{
-  "mcpServers": {
-    "skillex": {
-      "command": "skillex",
-      "args": ["mcp"]
-    }
-  }
-}
-`
-	var configPath string
-	switch harness {
-	case "cursor":
-		configPath = filepath.Join(root, ".cursor", "mcp.json")
-	case "claude-code":
-		configPath = filepath.Join(root, ".mcp.json")
-	case "windsurf":
-		configPath = filepath.Join(root, ".windsurf", "mcp.json")
-	default:
-		return fmt.Errorf("unknown harness %q (supported: cursor, claude-code, windsurf)", harness)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(configPath); err == nil {
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "  %s %s already exists, skipping\n", styleDim.Render("→"), configPath)
-		}
-		return nil
-	}
-
-	return os.WriteFile(configPath, []byte(mcpConfig), 0o644) //nolint:gosec // G306: MCP harness config the user owns
 }
 
 func addSkilexToPackageJSON(path string) error {

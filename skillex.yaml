@@ -72,3 +72,7 @@ Rules:
       Skills:
         - skills/packs-boundary.md
       DependencyBoundary: ""
+
+Install:
+    Strategy: source
+    Binary: .skillex/bin/skillex

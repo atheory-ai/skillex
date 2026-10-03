@@ -31,6 +31,7 @@ const (
 
 // Config represents the root skillex configuration.
 type Config struct {
+	Install    *InstallConfig         `yaml:"Install,omitempty" json:"Install,omitempty"`
 	Version    int                    `yaml:"Version" json:"Version"`
 	Rules      []Rule                 `yaml:"Rules" json:"Rules"`
 	MCP        *MCPConfig             `yaml:"MCP,omitempty" json:"MCP,omitempty"`
@@ -144,6 +145,9 @@ func Load(root string) (*Config, error) {
 // Validate enforces the configuration-version and explicit MCP opt-in
 // boundary without changing the behavior of existing version 4 projects.
 func (c *Config) Validate() error {
+	if err := c.Install.Validate(); err != nil {
+		return err
+	}
 	if len(c.Policy) > 0 {
 		return fmt.Errorf("registry policy filtering is not yet supported")
 	}

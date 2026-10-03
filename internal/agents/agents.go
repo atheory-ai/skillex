@@ -13,7 +13,10 @@ const (
 )
 
 // GenerateSection creates the stable Skillex bootstrap section for AGENTS.md.
-func GenerateSection() string {
+func GenerateSection() string { return GenerateSectionWithCommand("skillex") }
+
+// GenerateSectionWithCommand renders persisted project invocation instructions.
+func GenerateSectionWithCommand(command string) string {
 	var sb strings.Builder
 
 	sb.WriteString(markerStart + "\n")
@@ -31,10 +34,10 @@ func GenerateSection() string {
 	sb.WriteString("### CLI (fallback)\n\n")
 	sb.WriteString("If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:\n\n")
 	sb.WriteString("```\n")
-	sb.WriteString("  skillex query --search \"<concepts>\"\n")
-	sb.WriteString("  skillex query --path <filepath> --limit 8\n")
-	sb.WriteString("  skillex query --topic <topic> --tags <tags>\n")
-	sb.WriteString("  skillex read --ref <ref-from-query> --section <optional-section-id>\n")
+	sb.WriteString("  " + command + " query --search \"<concepts>\"\n")
+	sb.WriteString("  " + command + " query --path <filepath> --limit 8\n")
+	sb.WriteString("  " + command + " query --topic <topic> --tags <tags>\n")
+	sb.WriteString("  " + command + " read --ref <ref-from-query> --section <optional-section-id>\n")
 	sb.WriteString("```\n\n")
 
 	sb.WriteString(markerEnd + "\n")
