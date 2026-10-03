@@ -41,6 +41,32 @@ jobs:
       - name: Test release scripts
         run: make test-release-scripts
 
+  windows_runtime:
+    name: Windows Runtime
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v6.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6.0.0
+        with:
+          node-version: 24
+      - name: Build Windows binary and synchronize wrapper version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          New-Item -ItemType Directory -Force .skillex/bin | Out-Null
+          go build -ldflags "-X github.com/atheory-ai/skillex/cli.Version=$version" -o .skillex/bin/skillex.exe ./cmd/skillex
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/set-npm-version.mjs $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise Windows wrapper and generated local commands
+        run: node --test scripts/windows-runtime.test.mjs
+
   format:
     name: Format
     runs-on: ubuntu-latest

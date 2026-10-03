@@ -6,6 +6,30 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-02
+
+- **Verified packs:** add `pack get` with consent preview, signed registry
+  manifest verification, SHA-pinned bounded extraction, and `pack list`.
+  Saved authenticated evidence supports offline refresh and tamper detection.
+  This initial release supports one registry and its latest stable pack version;
+  compatibility resolution, update/remove, and federation remain future work.
+- **Pack activation:** support nested `activate-when.all` conditions for skills
+  and MCP suggestions without changing existing flat activation rules.
+- **Project invocation:** persist global, local npm/pnpm/Yarn, or checkout source
+  commands. npm and pnpm invoke the installed Node wrapper directly, bypassing
+  package-manager bootstrapping and global fallback.
+- **MCP setup:** offer interactive Cursor, Claude Code, and Windsurf configuration;
+  merge existing settings atomically and require an explicit overwrite for
+  conflicting Skillex commands.
+- **npm distribution:** replace five copied-binary platform packages with one
+  version-pinned wrapper that verifies and extracts canonical GitHub archives.
+  Publish npm and Homebrew independently after the GitHub Release. Node.js 18+
+  and system tar are required; uncached execution requires network access unless
+  the documented archive/checksum cache is seeded for offline use.
+- **Contributor guidance:** complete SQLite migration guidance and test the
+  repository's bounded CLI/MCP discovery and dogfood loop.
+- **Build requirements:** minimum Go 1.25.13; the selected toolchain is Go 1.26.6.
+
 ## [0.9.1] - 2026-09-29
 
 - **Agent bootstrap:** stop embedding scopes, topics, tags, and package
