@@ -30,3 +30,16 @@ The workflow verifies the tag, builds canonical archives, signs them, generates 
 - If verification fails before publishing, fix the workflow or product defect, increment the patch version, merge it, and tag the new version.
 - If npm and the GitHub release have already succeeded, that version is released. Do not create another version or attempt to republish npm solely to repair a downstream Homebrew failure.
 - Repair Homebrew with the `Recover Homebrew Publication` workflow against the existing published version. It downloads `checksums.txt`, renders the formula, and idempotently updates the tap without rebuilding release assets.
+
+## Recover npm publication
+
+If GitHub Release publication succeeded but npm publication failed, fix the
+publishing defect on `main` and dispatch the `Release` workflow with the existing
+stable version (without `v`). The recovery path requires a published GitHub
+Release with checksums, checks out its immutable tag, builds only the wrapper,
+and publishes npm through the same `npm-release` environment. It skips binary
+verification/build/signing, GitHub Release publication, and Homebrew.
+
+Use an explicit `./` or absolute tarball path for `npm publish`; a bare
+`dist/name.tgz` can be parsed as GitHub shorthand. Do not move tags, replace
+binary assets, or increment the version solely for an unpublished npm wrapper.
