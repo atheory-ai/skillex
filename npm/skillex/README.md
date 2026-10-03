@@ -34,8 +34,25 @@ pnpm add -D @atheory-ai/skillex
 yarn add -D @atheory-ai/skillex
 ```
 
-The wrapper package installs the correct native binary for your platform through
-npm `optionalDependencies`.
+GitHub Releases are the canonical signed binaries. This package contains only a
+wrapper, with no native payload or platform dependencies. Postinstall downloads
+and SHA-256-verifies the archive from `v<package-version>`; runtime retries if
+installation was offline or scripts were disabled, and verifies the cached archive
+before extracting and executing a fresh binary.
+
+Requires Node.js 18+ and `tar` (ZIP-capable `tar` is included in Windows 10+).
+Supports macOS arm64/x64, Linux arm64/x64, and Windows x64. Downloads require HTTPS
+access to GitHub and its asset CDN. Checksum verification does not validate cosign
+signatures.
+
+Set `SKILLEX_CACHE_DIR` to override the default `$XDG_CACHE_HOME/skillex` or
+`~/.cache/skillex` archive cache. `SKILLEX_SKIP_DOWNLOAD=1` skips postinstall only;
+first use still acquires the release. `SKILLEX_OFFLINE=1` forbids downloads and
+requires a valid cache. Warm the cache online, or seed
+`<cache>/<package-version>/<platform>-<arch>/` with the matching canonical archive
+and `checksums.txt`. Missing or corrupt offline archives fail clearly. Registry
+access alone is insufficient for a first run. Cached releases survive removal of
+`node_modules`; remove a version directory to evict it.
 
 ## Experimental downstream MCP broker
 

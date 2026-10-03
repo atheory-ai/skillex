@@ -134,7 +134,31 @@ pnpm add -D @atheory-ai/skillex
 yarn add -D @atheory-ai/skillex
 ```
 
-The package automatically installs the correct binary for your platform (macOS arm64/x64, Linux arm64/x64, Windows x64) via npm's `optionalDependencies` mechanism — only the binary for your OS is downloaded.
+GitHub Release archives are the canonical signed binaries. The npm package is a
+thin wrapper: postinstall downloads the matching archive and `checksums.txt` from
+`v<package-version>`, verifies SHA-256, and caches the archive. First use retries
+acquisition if lifecycle scripts were disabled or the install was offline. Every
+execution verifies the cached archive and extracts a fresh binary before running
+it. npm contains no native binaries or platform packages.
+
+Supported targets are macOS arm64/x64, Linux arm64/x64, and Windows x64. Node.js
+18+ and `tar` are required; Windows 10+ ships ZIP-capable `tar`. Downloads use
+HTTPS to GitHub and its release asset CDN. SHA-256 checks integrity against the
+release checksum asset; the npm wrapper does not validate cosign signatures.
+
+- `SKILLEX_CACHE_DIR` overrides the archive cache, normally
+  `$XDG_CACHE_HOME/skillex` or `~/.cache/skillex`.
+- `SKILLEX_SKIP_DOWNLOAD=1` skips postinstall acquisition; runtime still acquires
+  the pinned release when needed.
+- `SKILLEX_OFFLINE=1` forbids downloads and requires a verified cached archive.
+  Warm the cache online first, or copy the matching release archive and
+  `checksums.txt` into `<cache>/<package-version>/<platform>-<arch>/` (for example
+  `~/.cache/skillex/0.9.1/linux-x64/`). Corrupt or missing offline caches fail
+  clearly. Online execution replaces invalid cached archives.
+
+The cache is independent of `node_modules`, so reinstalling packages can reuse it.
+Air-gapped builds must seed it explicitly; npm registry access alone is insufficient
+for a first run. Delete a version directory to evict its cache.
 
 ### Go install
 
@@ -1033,7 +1057,7 @@ make install    # $GOPATH/bin/skillex
 make test       # go test ./...
 make lint       # go vet ./...
 make dist       # cross-compile for all platforms → dist/
-make release-assets # package GitHub release archives + checksums
+make release-snapshot # package GitHub release archives + checksums
 ```
 
 **Cross-compiled targets:**
@@ -1059,7 +1083,7 @@ To prepare a release:
 1. Update `VERSION` in a pull request.
 2. Merge the PR to `main`.
 3. From a clean local checkout of `main`, run `make release-tag`.
-4. GitHub Actions verifies the tag, publishes GitHub release assets, and publishes to npm after release approval.
+4. GitHub Actions verifies the tag and publishes the canonical signed GitHub Release. Independent downstream jobs publish Homebrew and build/publish the npm wrapper after release approval. npm packaging or publishing failures cannot suppress the GitHub Release.
 
 `make release-tag` reads `VERSION`, creates the matching `v*` tag, and pushes it. It refuses to run unless you are on `main`, your worktree is clean, `HEAD` matches `origin/main`, and the tag does not already exist.
 
@@ -1072,7 +1096,7 @@ make npm-pack
 To build GitHub release assets locally for inspection:
 
 ```bash
-make release-assets
+make release-snapshot
 ```
 
 `make npm-publish` still exists as a manual fallback, but the intended release path is the GitHub Actions release workflow.

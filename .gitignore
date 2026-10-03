@@ -32,15 +32,6 @@ yarn-error.log*
 !.yarn/sdks
 !.yarn/versions
 
-# ── npm platform binaries ─────────────────────────────────────────────────────
-# These are staged from dist/ at release time (make npm-stage).
-# The .gitkeep files that track the empty bin/ dirs are committed; the binaries are not.
-
-npm/darwin-arm64/bin/skillex
-npm/darwin-x64/bin/skillex
-npm/linux-x64/bin/skillex
-npm/linux-arm64/bin/skillex
-npm/win32-x64/bin/skillex.exe
 
 # ── Skillex registry ──────────────────────────────────────────────────────────
 # The registry is a build artifact rebuilt by 'skillex refresh'.

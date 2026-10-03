@@ -16,9 +16,9 @@ tags: [versioning, github-actions, publishing]
 
 ## Understand the publication order
 
-The workflow verifies the tag, builds archives, signs them, generates an SBOM, attests provenance, uploads release assets, packages npm tarballs, publishes npm after environment approval, publishes the GitHub release, then publishes Homebrew.
+The workflow verifies the tag, builds canonical archives, signs them, generates an SBOM, attests provenance, uploads assets, and publishes the GitHub Release. Independent downstream jobs publish Homebrew and build/publish the thin npm wrapper after environment approval.
 
-- Preserve that ordering: npm packaging recreates `dist/`, so archive assets must be captured before npm packaging.
+- Keep npm packaging and publication downstream of GitHub Release publication. An npm build or registry failure must not block canonical archives. npm contains only the version-pinned wrapper; never stage or publish copied platform binaries.
 - Render the Homebrew formula from the checksums of the exact archives already uploaded to the GitHub release. Never rebuild archives in the Homebrew publication job.
 - Use the separate tap token only to check out and push `atheory-ai/homebrew-tap`; the default workflow token cannot write across repositories.
 - Keep the minimal GitHub Actions permissions required by each release step, including provenance attestation.
