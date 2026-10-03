@@ -10,6 +10,7 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/linker"
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/scanner"
 	"github.com/atheory-ai/skillex/internal/trust"
 	"github.com/atheory-ai/skillex/internal/validator"
@@ -32,6 +33,12 @@ type RefreshResult struct {
 
 // Refresh rebuilds the registry from the given configuration.
 func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
+	// Installed registry packs remain authenticated on offline refresh. Refuse
+	// tampering before clearing the existing index; fresh revocations are fetched
+	// by explicit pack commands rather than adding network to normal discovery.
+	if _, err := packregistry.List(opts.Root); err != nil {
+		return nil, fmt.Errorf("validating installed registry packs: %w", err)
+	}
 	result := &RefreshResult{}
 	var capabilityRecords []CapabilityRecord
 	if cfg.MCPEnabled() {
@@ -128,7 +135,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		}
 		for _, tests := range testMap {
 			for _, tf := range tests {
-				parsed, _, _ := validator.ParseTestFile(tf.AbsPath) //nolint:errcheck // best-effort scenario count; parse errors are surfaced by the validator command
+				parsed, _, _ := parseScannedTest(tf) //nolint:errcheck // best-effort scenario count; parse errors are surfaced by the validator command
 				if parsed != nil {
 					result.TestsAdded += len(parsed.Scenarios)
 				}
@@ -182,7 +189,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		}
 
 		for _, tf := range tests {
-			parsed, _, err := validator.ParseTestFile(tf.AbsPath)
+			parsed, _, err := parseScannedTest(tf)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("parsing test %s: %w", tf.AbsPath, err))
 				continue
@@ -224,6 +231,13 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 
 func trustedCatalogCacheRelPath(name string) string {
 	return filepath.ToSlash(filepath.Join(".skillex", "mcp", "catalogs", name+".json"))
+}
+
+func parseScannedTest(file scanner.SkillFile) (*validator.TestFile, []validator.Issue, error) {
+	if file.VerifiedContent != nil {
+		return validator.ParseTestContent(file.AbsPath, file.VerifiedContent)
+	}
+	return validator.ParseTestFile(file.AbsPath)
 }
 
 // FormatErrors formats a list of errors as a readable string.

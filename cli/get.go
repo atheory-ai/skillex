@@ -25,6 +25,9 @@ func newGetCmd() *cobra.Command {
 		Long: `Fetch a skill or skill pack from a remote URL, review it for safety,
 and vendor it into skillex/vendor/.
 
+This raw URL path is unverified. Prefer 'skillex pack get <name>' for
+registry packs verified against the bundled signer identity and SHA256 pin.
+
 The skill passes through a safety review that checks for:
   - Prompt injection patterns
   - File system manipulation instructions

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/gobwas/glob"
 	"gopkg.in/yaml.v3"
 )
@@ -16,13 +17,14 @@ const Filename = "pack.yaml"
 
 // Manifest describes a Skillex pack.
 type Manifest struct {
-	Name        string         `yaml:"name"`
-	Version     string         `yaml:"version"`
-	Description string         `yaml:"description"`
-	Source      string         `yaml:"source"`
-	Detectors   Detectors      `yaml:"detectors"`
-	Skills      []SkillRef     `yaml:"skills"`
-	MCPServers  []MCPServerRef `yaml:"mcp-servers"`
+	Name        string                 `yaml:"name"`
+	Version     string                 `yaml:"version"`
+	Description string                 `yaml:"description"`
+	Source      string                 `yaml:"source"`
+	Detectors   Detectors              `yaml:"detectors"`
+	Skills      []SkillRef             `yaml:"skills"`
+	MCPServers  []MCPServerRef         `yaml:"mcp-servers"`
+	Registry    map[string]interface{} `yaml:"registry"`
 }
 
 // Detectors maps friendly detector names to match rules.
@@ -72,6 +74,7 @@ type MCPServerCapabilities struct {
 
 // ActivateWhen contains refresh-time activation conditions.
 type ActivateWhen struct {
+	All                []ActivateWhen        `yaml:"all"`
 	FilesPresent       []string              `yaml:"files-present"`
 	FilesMatching      []string              `yaml:"files-matching"`
 	DependencyDeclared []DependencyCondition `yaml:"dependency-declared"`
@@ -102,9 +105,10 @@ type DependencyFact struct {
 
 // Pack is a parsed manifest with its filesystem location.
 type Pack struct {
-	Path     string
-	Dir      string
-	Manifest Manifest
+	Path          string
+	Dir           string
+	Manifest      Manifest
+	VerifiedFiles map[string][]byte
 }
 
 // ActivatedSkill is a manifest skill whose activation rules matched the repo.
@@ -135,7 +139,23 @@ type DetectorRegistry struct {
 
 // Load reads and validates a pack manifest.
 func Load(path string) (*Pack, error) {
-	data, err := os.ReadFile(path)
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	path = filepath.Clean(absolute)
+	var data []byte
+	var verifiedFiles map[string][]byte
+	if strings.Contains(filepath.ToSlash(path), "/.skillex/packs/") {
+		lock, err := packregistry.ValidateDirectory(filepath.Dir(path))
+		if err != nil {
+			return nil, fmt.Errorf("validating installed pack: %w", err)
+		}
+		verifiedFiles = lock.VerifiedFiles
+		data = verifiedFiles[Filename]
+	} else {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +168,10 @@ func Load(path string) (*Pack, error) {
 	}
 
 	pack := &Pack{
-		Path:     path,
-		Dir:      filepath.Dir(path),
-		Manifest: manifest,
+		Path:          path,
+		Dir:           filepath.Dir(path),
+		Manifest:      manifest,
+		VerifiedFiles: verifiedFiles,
 	}
 	if err := pack.Validate(); err != nil {
 		return nil, err
@@ -199,15 +220,16 @@ func (p *Pack) Validate() error {
 			errs = append(errs, prefix+".file is required")
 		} else if !isSafeRelativePath(skill.File) {
 			errs = append(errs, prefix+".file must be a relative path inside the pack")
+		} else if p.VerifiedFiles != nil {
+			if _, ok := p.VerifiedFiles[skill.File]; !ok {
+				errs = append(errs, fmt.Sprintf("%s.file %q not in verified archive", prefix, skill.File))
+			}
 		} else if _, err := os.Stat(filepath.Join(p.Dir, skill.File)); err != nil {
 			errs = append(errs, fmt.Sprintf("%s.file %q not found", prefix, skill.File))
 		}
 
-		if len(skill.ActivateWhen.FilesPresent) == 0 &&
-			len(skill.ActivateWhen.FilesMatching) == 0 &&
-			len(skill.ActivateWhen.DependencyDeclared) == 0 &&
-			strings.TrimSpace(skill.ActivateWhen.Detector) == "" {
-			errs = append(errs, prefix+".activate-when must contain files-present, files-matching, dependency-declared, or detector")
+		if err := validateActivation(skill.ActivateWhen, prefix+".activate-when", 0); err != nil {
+			errs = append(errs, err.Error())
 		}
 
 		switch skill.Scope {
@@ -228,11 +250,8 @@ func (p *Pack) Validate() error {
 		if server.Relationship != "suggested" {
 			errs = append(errs, prefix+".relationship must be suggested")
 		}
-		if len(server.ActivateWhen.FilesPresent) == 0 &&
-			len(server.ActivateWhen.FilesMatching) == 0 &&
-			len(server.ActivateWhen.DependencyDeclared) == 0 &&
-			strings.TrimSpace(server.ActivateWhen.Detector) == "" {
-			errs = append(errs, prefix+".activate-when must contain files-present, files-matching, dependency-declared, or detector")
+		if err := validateActivation(server.ActivateWhen, prefix+".activate-when", 0); err != nil {
+			errs = append(errs, err.Error())
 		}
 		if err := validateScope(server.Scope, prefix); err != nil {
 			errs = append(errs, err.Error())
@@ -246,6 +265,30 @@ func (p *Pack) Validate() error {
 
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid pack %s: %s", p.Path, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// validateActivation rejects ambiguous composition while retaining legacy OR rules.
+func validateActivation(when ActivateWhen, prefix string, depth int) error {
+	if depth > 32 {
+		return fmt.Errorf("%s exceeds maximum activation nesting depth of 32", prefix)
+	}
+	leaf := len(when.FilesPresent) > 0 || len(when.FilesMatching) > 0 ||
+		len(when.DependencyDeclared) > 0 || strings.TrimSpace(when.Detector) != ""
+	if when.All != nil {
+		if len(when.All) == 0 || leaf {
+			return fmt.Errorf("%s.all must contain at least one condition and cannot be combined with leaf fields", prefix)
+		}
+		for i, child := range when.All {
+			if err := validateActivation(child, fmt.Sprintf("%s.all[%d]", prefix, i), depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !leaf {
+		return fmt.Errorf("%s must contain files-present, files-matching, dependency-declared, detector, or all", prefix)
 	}
 	return nil
 }
@@ -500,18 +543,19 @@ func ProjectManifestPaths(root string) []string {
 		paths = append(paths, rootPack)
 	}
 
-	packsDir := filepath.Join(root, "skillex", "packs")
-	entries, err := os.ReadDir(packsDir)
-	if err != nil {
-		return paths
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	for _, packsDir := range []string{filepath.Join(root, "skillex", "packs"), filepath.Join(root, ".skillex", "packs")} {
+		entries, err := os.ReadDir(packsDir)
+		if err != nil {
 			continue
 		}
-		path := filepath.Join(packsDir, entry.Name(), Filename)
-		if fileExists(path) {
-			paths = append(paths, path)
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			path := filepath.Join(packsDir, entry.Name(), Filename)
+			if fileExists(path) {
+				paths = append(paths, path)
+			}
 		}
 	}
 
@@ -525,42 +569,7 @@ func ActivateSkill(root string, skill SkillRef) ([]string, error) {
 
 // ActivateSkillWithContext resolves scopes using file and dependency activation facts.
 func ActivateSkillWithContext(root string, skill SkillRef, ctx ActivationContext) ([]string, error) {
-	matches, err := ActivationMatches(root, skill)
-	if err != nil {
-		return nil, err
-	}
-	dependencyMatched := DependencyMatches(ctx.Dependency, skill.ActivateWhen.DependencyDeclared)
-	detectorMatched, err := DetectorActive(ctx, skill.ActivateWhen.Detector)
-	if err != nil {
-		return nil, err
-	}
-	if len(matches) == 0 && !dependencyMatched && !detectorMatched {
-		return nil, nil
-	}
-
-	if skill.Scope == "matching-files" && len(skill.Files) > 0 {
-		matches = nil
-		for _, pattern := range skill.Files {
-			fileMatches, err := MatchRepoFiles(root, pattern)
-			if err != nil {
-				return nil, err
-			}
-			matches = appendUnique(matches, fileMatches...)
-		}
-	}
-
-	if skill.Scope == "boundary" {
-		return ScopeForContext(ctx, skill.Scope), nil
-	}
-
-	var scopes []string
-	if len(matches) == 0 {
-		return ScopeForContext(ctx, skill.Scope), nil
-	}
-	for _, match := range matches {
-		scopes = appendUnique(scopes, ScopeForMatch(match, skill.Scope)...)
-	}
-	return scopes, nil
+	return activateWithContext(root, skill.ActivateWhen, skill.Scope, skill.Files, ctx)
 }
 
 // ActivateMCPServerWithContext resolves contextual scopes for a pack suggestion.
@@ -569,16 +578,14 @@ func ActivateMCPServerWithContext(root string, server MCPServerRef, ctx Activati
 }
 
 func activateWithContext(root string, when ActivateWhen, scope string, files []string, ctx ActivationContext) ([]string, error) {
-	matches, err := activationMatches(root, when)
+	if err := validateActivation(when, "activate-when", 0); err != nil {
+		return nil, err
+	}
+	matched, matches, err := evaluateActivation(root, when, ctx)
 	if err != nil {
 		return nil, err
 	}
-	dependencyMatched := DependencyMatches(ctx.Dependency, when.DependencyDeclared)
-	detectorMatched, err := DetectorActive(ctx, when.Detector)
-	if err != nil {
-		return nil, err
-	}
-	if len(matches) == 0 && !dependencyMatched && !detectorMatched {
+	if !matched {
 		return nil, nil
 	}
 	if scope == "matching-files" && len(files) > 0 {
@@ -602,6 +609,32 @@ func activateWithContext(root string, when ActivateWhen, scope string, files []s
 		scopes = appendUnique(scopes, ScopeForMatch(match, scope)...)
 	}
 	return scopes, nil
+}
+
+// evaluateActivation keeps file evidence for scope mapping after all gates match.
+func evaluateActivation(root string, when ActivateWhen, ctx ActivationContext) (bool, []string, error) {
+	if when.All != nil {
+		matched := true
+		var files []string
+		for _, child := range when.All {
+			ok, matches, err := evaluateActivation(root, child, ctx)
+			if err != nil {
+				return false, nil, err
+			}
+			matched = matched && ok
+			files = appendUnique(files, matches...)
+		}
+		return matched, files, nil
+	}
+	files, err := activationMatches(root, when)
+	if err != nil {
+		return false, nil, err
+	}
+	detector, err := DetectorActive(ctx, when.Detector)
+	if err != nil {
+		return false, nil, err
+	}
+	return len(files) > 0 || detector || DependencyMatches(ctx.Dependency, when.DependencyDeclared), files, nil
 }
 
 // DetectorActive reports whether the named detector matched in the context.

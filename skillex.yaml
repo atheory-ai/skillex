@@ -54,6 +54,11 @@ Rules:
     - Scope: 'internal/registry/**'
       Skills:
         - skills/retrieval-contract.md
+        - skills/registry-and-migrations.md
+      DependencyBoundary: ""
+    - Scope: 'npm/**'
+      Skills:
+        - skills/release-and-recovery.md
       DependencyBoundary: ""
     - Scope: 'internal/agents/**'
       Skills:
