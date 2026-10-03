@@ -134,7 +134,31 @@ pnpm add -D @atheory-ai/skillex
 yarn add -D @atheory-ai/skillex
 ```
 
-The package automatically installs the correct binary for your platform (macOS arm64/x64, Linux arm64/x64, Windows x64) via npm's `optionalDependencies` mechanism — only the binary for your OS is downloaded.
+GitHub Release archives are the canonical signed binaries. The npm package is a
+thin wrapper: postinstall downloads the matching archive and `checksums.txt` from
+`v<package-version>`, verifies SHA-256, and caches the archive. First use retries
+acquisition if lifecycle scripts were disabled or the install was offline. Every
+execution verifies the cached archive and extracts a fresh binary before running
+it. npm contains no native binaries or platform packages.
+
+Supported targets are macOS arm64/x64, Linux arm64/x64, and Windows x64. Node.js
+18+ and `tar` are required; Windows 10+ ships ZIP-capable `tar`. Downloads use
+HTTPS to GitHub and its release asset CDN. SHA-256 checks integrity against the
+release checksum asset; the npm wrapper does not validate cosign signatures.
+
+- `SKILLEX_CACHE_DIR` overrides the archive cache, normally
+  `$XDG_CACHE_HOME/skillex` or `~/.cache/skillex`.
+- `SKILLEX_SKIP_DOWNLOAD=1` skips postinstall acquisition; runtime still acquires
+  the pinned release when needed.
+- `SKILLEX_OFFLINE=1` forbids downloads and requires a verified cached archive.
+  Warm the cache online first, or copy the matching release archive and
+  `checksums.txt` into `<cache>/<package-version>/<platform>-<arch>/` (for example
+  `~/.cache/skillex/0.9.1/linux-x64/`). Corrupt or missing offline caches fail
+  clearly. Online execution replaces invalid cached archives.
+
+The cache is independent of `node_modules`, so reinstalling packages can reuse it.
+Air-gapped builds must seed it explicitly; npm registry access alone is insufficient
+for a first run. Delete a version directory to evict its cache.
 
 ### Go install
 
@@ -546,6 +570,7 @@ Supported activation and scope fields in this initial pack implementation:
 | `activate-when.files-present` | Glob patterns matched against repository files. |
 | `activate-when.files-matching` | Glob patterns matched against repository files. |
 | `activate-when.dependency-declared` | Dependency conditions matched against the boundary that resolved a package-shipped pack. |
+| `activate-when.all` | Nonempty list of activation conditions; every condition must match. Nested `all` is supported. |
 | `activate-when.detector` | Friendly detector name registered by Skillex core or a loaded pack. |
 | `detectors` | Optional detector definitions registered by the pack while it is loaded. |
 | `files` | Optional glob patterns for `scope: matching-files`; when omitted, the activation matches are used. |
@@ -555,6 +580,22 @@ Supported activation and scope fields in this initial pack implementation:
 | `scope: directory` | Activate for files immediately inside the matched file's directory. |
 | `scope: matching-files` | Activate for the exact files matched by the activation or `files` patterns. |
 | `scope: nearest-ancestor` | Activate for the nearest containing directory and below. |
+
+Use `all` when guidance applies only if multiple facts hold:
+
+```yaml
+activate-when:
+  all:
+    - detector: go
+    - files-present: [Dockerfile]
+```
+
+Every child must match. A child can itself contain `all`, up to 32 nesting
+levels. `all` cannot be mixed with leaf fields in the same condition. Existing
+flat conditions keep their alternative-match behavior. File matches from the
+successful children supply scope paths; use `files` with `matching-files` when
+the guidance should target a separate set of files. The same conditions apply
+to pack MCP server suggestions.
 
 Pack skills are indexed individually with `source_type: pack`. Existing projects
 with no pack manifests behave exactly as before.
@@ -834,10 +875,60 @@ skillex doctor --json             # Machine-readable report
 
 Checks: configuration validity, registry health, test coverage, topic/tag distribution, skills missing `name`/`description` (search discoverability), AGENTS.md presence, vendor skill provenance.
 
+### `skillex pack`
+
+```sh
+skillex pack get atheory-ai.javascript.tool.example --preview
+skillex pack get atheory-ai.javascript.tool.example --yes
+skillex pack list --json
+```
+
+Registry installation verifies the manifest's Sigstore signature against the
+engine-bundled public root and exact GitHub manifest-workflow identity, then
+checks the signed tarball SHA256 and size. `--preview` returns the full proposed
+text contents, detectors, skills, MCP suggestions, and activation scopes for review
+before consent. Installation rejects archive links and unsafe paths and accepts only Markdown,
+YAML, JSON, and text files. Installed packs use the existing activation rules and
+are indexed during installation. Pack content remains project guidance to review;
+signing establishes its source and integrity.
+
+Optional transport configuration (one registry in this MVP):
+
+```json
+"registries": [{
+  "name": "upstream",
+  "url": "https://raw.githubusercontent.com/atheory-ai/skillex-packs/main/registry/manifest.json",
+  "trustedRoot": "bundled"
+}]
+```
+
+The default is the upstream URL. Mirrors must serve the same authentic signed
+bytes. Project configuration cannot replace the bundled signer or root. Custom
+roots, multiple registries, and policy filters are rejected until federation is
+implemented. Resolution currently selects the latest stable version; compatibility
+ranges, supersession, search/info/update/remove, and MCP install proposals remain
+follow-up work.
+
+Files live in `.skillex/packs/<name>@<version>/` alongside
+`manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains
+the signed manifest and bundle. Offline refresh and list reverify that evidence
+and compare every installed file with the pinned archive; they refuse tampered
+or revoked versions before rebuilding the index. Revocations are read from the
+authenticated manifest's embedded `revocations` array. Installation fetches a
+fresh manifest; offline refresh only knows revocations in its saved snapshot and
+cannot detect a later withdrawal. Normal skill discovery and refresh remain
+offline. Trust-root rotation requires an engine release.
+
+The currently published example `0.1.0` archive uses an obsolete engine manifest
+schema and is refused after integrity verification. A producer `0.1.1` release
+and newly signed registry manifest are required before the example commands can
+complete; [the companion registry PR](https://github.com/atheory-ai/skillex-packs/pull/19)
+prepares that release without publishing it.
+
 ### `skillex get`
 
 ```bash
-skillex get <url>                         # Fetch and vendor a remote skill
+skillex get <url>                         # Fetch and vendor an unverified remote skill
 skillex get <url> --topic react,hooks     # Assign topics on import
 skillex get <url> --skip-review           # Skip safety review
 ```
@@ -1052,7 +1143,7 @@ The CLI validates structure. The agent validates behavior.
 
 ## Building from source
 
-**Requirements:** Go 1.22+
+**Requirements:** Go 1.25.13+; the development toolchain is Go 1.26.6.
 
 ```bash
 git clone https://github.com/atheory-ai/skillex
@@ -1063,7 +1154,7 @@ make install    # $GOPATH/bin/skillex
 make test       # go test ./...
 make lint       # go vet ./...
 make dist       # cross-compile for all platforms → dist/
-make release-assets # package GitHub release archives + checksums
+make release-snapshot # package GitHub release archives + checksums
 ```
 
 **Cross-compiled targets:**
@@ -1089,7 +1180,7 @@ To prepare a release:
 1. Update `VERSION` in a pull request.
 2. Merge the PR to `main`.
 3. From a clean local checkout of `main`, run `make release-tag`.
-4. GitHub Actions verifies the tag, publishes GitHub release assets, and publishes to npm after release approval.
+4. GitHub Actions verifies the tag and publishes the canonical signed GitHub Release. Independent downstream jobs publish Homebrew and build/publish the npm wrapper after release approval. npm packaging or publishing failures cannot suppress the GitHub Release.
 
 `make release-tag` reads `VERSION`, creates the matching `v*` tag, and pushes it. It refuses to run unless you are on `main`, your worktree is clean, `HEAD` matches `origin/main`, and the tag does not already exist.
 
@@ -1102,7 +1193,7 @@ make npm-pack
 To build GitHub release assets locally for inspection:
 
 ```bash
-make release-assets
+make release-snapshot
 ```
 
 `make npm-publish` still exists as a manual fallback, but the intended release path is the GitHub Actions release workflow.

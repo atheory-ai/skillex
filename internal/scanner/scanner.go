@@ -8,11 +8,13 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/frontmatter"
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/packs"
 )
 
 // SkillFile represents a discovered skill file and its parsed metadata.
 type SkillFile struct {
+	VerifiedContent []byte
 	// AbsPath is the absolute filesystem path.
 	AbsPath string
 	// RelPath is the path relative to the repo root.
@@ -356,6 +358,28 @@ func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibilit
 }
 
 func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel string, explicitScopes []string) ([]SkillFile, error) {
+	// Rules and local dependency replacements can point into the installed cache
+	// too. Classify the normalized path and consume its authenticated snapshot,
+	// so those routes cannot reopen mutable installed guidance after verification.
+	absolute, err := filepath.Abs(absPath)
+	if err != nil {
+		return nil, err
+	}
+	if packDir, file, ok := packregistry.InstalledFilePath(absolute); ok {
+		lock, err := packregistry.ValidateDirectory(packDir)
+		if err != nil {
+			return nil, err
+		}
+		data, ok := lock.VerifiedFiles[file]
+		if !ok {
+			return nil, nil
+		}
+		files, err := s.readSkillDataWithScopes(data, absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel, explicitScopes)
+		for i := range files {
+			files[i].VerifiedContent = data
+		}
+		return files, err
+	}
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -363,6 +387,10 @@ func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion,
 		}
 		return nil, err
 	}
+	return s.readSkillDataWithScopes(data, absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel, explicitScopes)
+}
+
+func (s *Scanner) readSkillDataWithScopes(data []byte, absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel string, explicitScopes []string) ([]SkillFile, error) {
 
 	fm, body, err := frontmatter.Parse(data)
 	if err != nil {
@@ -394,6 +422,25 @@ func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion,
 	return []SkillFile{sf}, nil
 }
 
+func (s *Scanner) readPackSkillWithScopes(pack *packs.Pack, absPath, relPath string, explicitScopes []string) ([]SkillFile, error) {
+	if pack.VerifiedFiles == nil {
+		return s.readSkillFileWithScopes(absPath, relPath, "", "", "repo", "pack", "", "", explicitScopes)
+	}
+	name, err := filepath.Rel(pack.Dir, absPath)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := pack.VerifiedFiles[filepath.ToSlash(name)]
+	if !ok {
+		return nil, nil
+	}
+	files, err := s.readSkillDataWithScopes(data, absPath, relPath, "", "", "repo", "pack", "", "", explicitScopes)
+	for i := range files {
+		files[i].VerifiedContent = data
+	}
+	return files, err
+}
+
 func (s *Scanner) scanProjectPacks() ([]SkillFile, []error) {
 	var skills []SkillFile
 
@@ -401,15 +448,10 @@ func (s *Scanner) scanProjectPacks() ([]SkillFile, []error) {
 	for _, activation := range activated {
 		absPath := filepath.Join(activation.Pack.Dir, activation.Skill.File)
 		relPath, _ := filepath.Rel(s.root, absPath)
-		sfs, err := s.readSkillFileWithScopes(
+		sfs, err := s.readPackSkillWithScopes(
+			activation.Pack,
 			absPath,
 			filepath.ToSlash(relPath),
-			"",
-			"",
-			"repo",
-			"pack",
-			"",
-			"",
 			activation.Scopes,
 		)
 		if err != nil {
@@ -420,15 +462,10 @@ func (s *Scanner) scanProjectPacks() ([]SkillFile, []error) {
 
 		testAbsPath := strings.TrimSuffix(absPath, ".md") + ".test.md"
 		testRelPath, _ := filepath.Rel(s.root, testAbsPath)
-		testSfs, err := s.readSkillFileWithScopes(
+		testSfs, err := s.readPackSkillWithScopes(
+			activation.Pack,
 			testAbsPath,
 			filepath.ToSlash(testRelPath),
-			"",
-			"",
-			"repo",
-			"pack",
-			"",
-			"",
 			nil,
 		)
 		if err != nil {

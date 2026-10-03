@@ -472,3 +472,80 @@ func writePackTestFile(t *testing.T, path string, content string) {
 		t.Fatalf("WriteFile(%s): %v", path, err)
 	}
 }
+
+func TestActivationAllRequiresEveryGateAndPreservesFileScopes(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "services", "api", "Dockerfile"), "FROM scratch\n")
+	when := ActivateWhen{All: []ActivateWhen{
+		{FilesPresent: []string{"services/api/Dockerfile"}},
+		{All: []ActivateWhen{{Detector: "go"}, {DependencyDeclared: []DependencyCondition{{Source: "go-module", Name: "example.com/api"}}}}},
+	}}
+	ctx := ActivationContext{DetectorKnown: map[string]bool{"go": true}, DetectorActive: map[string]bool{"go": true}, Dependency: DependencyFact{Source: "go-module", Name: "example.com/api"}, BoundaryRel: "services/api"}
+	for _, server := range []bool{false, true} {
+		activate := func(ctx ActivationContext) ([]string, error) {
+			if server {
+				return ActivateMCPServerWithContext(root, MCPServerRef{ActivateWhen: when, Scope: "subtree"}, ctx)
+			}
+			return ActivateSkillWithContext(root, SkillRef{ActivateWhen: when, Scope: "subtree"}, ctx)
+		}
+		scopes, err := activate(ctx)
+		if err != nil || !sameStrings(scopes, []string{"services/api/**"}) {
+			t.Fatalf("server=%v: scopes=%v err=%v", server, scopes, err)
+		}
+		absentDetector := ctx
+		absentDetector.DetectorActive = map[string]bool{"go": false}
+		scopes, err = activate(absentDetector)
+		if err != nil || len(scopes) != 0 {
+			t.Fatalf("false detector: scopes=%v err=%v", scopes, err)
+		}
+		absentDependency := ctx
+		absentDependency.Dependency = DependencyFact{}
+		scopes, err = activate(absentDependency)
+		if err != nil || len(scopes) != 0 {
+			t.Fatalf("missing dependency: scopes=%v err=%v", scopes, err)
+		}
+	}
+	if err := os.Remove(filepath.Join(root, "services", "api", "Dockerfile")); err != nil {
+		t.Fatal(err)
+	}
+	scopes, err := ActivateSkillWithContext(root, SkillRef{ActivateWhen: when}, ctx)
+	if err != nil || len(scopes) != 0 {
+		t.Fatalf("missing file: scopes=%v err=%v", scopes, err)
+	}
+}
+
+func TestActivationCompositionValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		when ActivateWhen
+		want string
+	}{
+		{"empty all", ActivateWhen{All: []ActivateWhen{}}, "at least one"},
+		{"mixed", ActivateWhen{All: []ActivateWhen{{Detector: "go"}}, Detector: "go"}, "cannot be combined"},
+		{"empty child", ActivateWhen{All: []ActivateWhen{{}}}, "all[0]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ActivateSkill(t.TempDir(), SkillRef{ActivateWhen: tc.when})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error=%v, want %s", err, tc.want)
+			}
+		})
+	}
+	when := ActivateWhen{Detector: "go"}
+	for i := 0; i < 34; i++ {
+		when = ActivateWhen{All: []ActivateWhen{when}}
+	}
+	if err := validateActivation(when, "activate-when", 0); err == nil || !strings.Contains(err.Error(), "nesting depth") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestActivationLegacyAlternativesRemainAdditive(t *testing.T) {
+	root := t.TempDir()
+	writePackTestFile(t, filepath.Join(root, "Dockerfile"), "FROM scratch\n")
+	scopes, err := ActivateSkillWithContext(root, SkillRef{ActivateWhen: ActivateWhen{FilesPresent: []string{"Dockerfile"}, Detector: "go"}, Scope: "repo"}, ActivationContext{DetectorKnown: map[string]bool{"go": true}})
+	if err != nil || !sameStrings(scopes, []string{"**"}) {
+		t.Fatalf("scopes=%v err=%v", scopes, err)
+	}
+}

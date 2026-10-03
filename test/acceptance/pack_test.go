@@ -188,3 +188,61 @@ func TestPack_GoFixtureActivatesProjectAndModulePacks(t *testing.T) {
 		t.Fatalf("PackageName = %q, want example.com/with-skillex", moduleSkills[0].PackageName)
 	}
 }
+
+func TestPack_AllActivationRefreshAndMCPParity(t *testing.T) {
+	dir := helpers.CopyFixture(t, "monorepo-pnpm")
+	packDir := filepath.Join(dir, "skillex")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `name: composed
+skills:
+  - file: composed.md
+    activate-when:
+      all:
+        - files-present: [Dockerfile]
+        - files-present: [go.mod]
+    scope: repo
+`
+	if err := os.WriteFile(filepath.Join(packDir, "pack.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "composed.md"), []byte("---\nname: Composed deployment\ndescription: Guidance for composed activation.\ntopics: [composed]\n---\n# Composed Deployment\nUse the combined workflow.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refresh := func() {
+		t.Helper()
+		res := helpers.Run(t, dir, "refresh")
+		if res.ExitCode != 0 {
+			t.Fatalf("refresh: %s", res.Stderr)
+		}
+	}
+	refresh()
+	resp, _ := helpers.RunQueryJSON(t, dir, "query", "--topic", "composed")
+	if resp.Type != "no_match" {
+		t.Fatalf("one gate response=%s", resp.Type)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/app\n\ngo 1.23\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refresh()
+	skills := queryResults(t, dir, "--topic", "composed", "--path", "src/main.go")
+	helpers.AssertSkillPresent(t, skills, "composed.md")
+	client := helpers.StartMCPServer(t, dir)
+	defer client.Close()
+	result, err := client.CallToolText("skillex_query", map[string]interface{}{"topic": "composed", "path": "src/main.go"})
+	if err != nil || !strings.Contains(result, "composed.md") {
+		t.Fatalf("MCP missing composed skill: result=%s err=%v", result, err)
+	}
+	if err := os.Remove(filepath.Join(dir, "go.mod")); err != nil {
+		t.Fatal(err)
+	}
+	refresh()
+	resp, _ = helpers.RunQueryJSON(t, dir, "query", "--topic", "composed")
+	if resp.Type != "no_match" {
+		t.Fatalf("removed gate response=%s", resp.Type)
+	}
+}
