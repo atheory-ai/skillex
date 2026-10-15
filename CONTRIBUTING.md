@@ -13,7 +13,7 @@ Thanks for contributing to Skillex.
 
 Requirements:
 
-- Go 1.25.13+ (patched Sigstore verifier and filesystem containment); `go.mod` selects Go 1.26.6
+- Go 1.26.0+ (patched Sigstore verifier and filesystem containment); `go.mod` selects Go 1.26.9
 - Node.js 22+
 - `npm`
 - `pnpm`

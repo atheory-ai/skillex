@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- **Project skills:** refresh indexes in-repo `SKILL.md` files written by Cursor, Claude, Copilot, Codex, and Gemini, and applies their `paths` filters.
+- **Dependencies:** bump `golang.org/x/net` to v0.60.0 and the Go toolchain to 1.26.9 to clear the HTTP/2 vulnerability scan. Minimum Go is now 1.26.0.
+
 ## [0.10.0] - 2026-10-02
 
 - **Verified packs:** add `pack get` with consent preview, signed registry
