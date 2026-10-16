@@ -7,6 +7,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +174,7 @@ func (w *Watcher) disarmLocked() {
 }
 
 func (w *Watcher) loop(fs *fsnotify.Watcher) {
+	defer w.recover()
 	for {
 		select {
 		case event, ok := <-fs.Events:
@@ -194,7 +196,7 @@ func (w *Watcher) handle(fs *fsnotify.Watcher, event fsnotify.Event) {
 		return
 	}
 	w.touch()
-	if !w.underRoot(event.Name) {
+	if event.Name == "" || !w.underRoot(event.Name) {
 		return
 	}
 	info, err := os.Lstat(event.Name)
@@ -222,6 +224,9 @@ func (w *Watcher) handle(fs *fsnotify.Watcher, event fsnotify.Event) {
 }
 
 func (w *Watcher) watchTree(fs *fsnotify.Watcher, dir string, schedule bool) {
+	if dir == "" || !w.underRoot(dir) {
+		return
+	}
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -287,19 +292,35 @@ func (w *Watcher) scheduleForget(dir string) {
 func (w *Watcher) scheduleKey(key string, fn func()) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if timer := w.pending[key]; timer != nil {
-		timer.Reset(w.debounce)
+	if timer := w.pending[key]; timer != nil && timer.Stop() {
+		// The current callback will not run. Reuse its jobs.Add.
+		w.pending[key] = w.startJob(key, fn)
 		return
 	}
 	w.jobs.Add(1)
-	w.pending[key] = time.AfterFunc(w.debounce, func() {
+	w.pending[key] = w.startJob(key, fn)
+}
+
+func (w *Watcher) startJob(key string, fn func()) *time.Timer {
+	var timer *time.Timer
+	timer = time.AfterFunc(w.debounce, func() {
 		defer w.jobs.Done()
+		defer w.recover()
 		w.mu.Lock()
-		delete(w.pending, key)
+		if w.pending[key] == timer {
+			delete(w.pending, key)
+		}
 		w.mu.Unlock()
 		w.touch()
 		fn()
 	})
+	return timer
+}
+
+func (w *Watcher) recover() {
+	if rec := recover(); rec != nil {
+		w.report(fmt.Errorf("%v", rec))
+	}
 }
 
 func (w *Watcher) syncOne(rel string) {

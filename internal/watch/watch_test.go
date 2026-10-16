@@ -80,6 +80,24 @@ func TestWatcherUpdatesSkillsUnderKnownRoots(t *testing.T) {
 	waitSkill(t, reg, "apps/web/.claude/skills/deploy-web/SKILL.md", "Deploy the web app again.")
 }
 
+func TestWatcherRapidEditsDoNotPanic(t *testing.T) {
+	root := t.TempDir()
+	landIt := filepath.Join(root, ".cursor", "skills", "land-it", "SKILL.md")
+	writeSkill(t, landIt, "land-it", "Ship the branch.")
+
+	reg := openRegistry(t, root)
+	w := New(Config{Root: root, Registry: reg, Debounce: 5 * time.Millisecond})
+	if err := w.Arm(); err != nil {
+		t.Fatalf("Arm: %v", err)
+	}
+	for i := 0; i < 40; i++ {
+		writeSkill(t, landIt, "land-it", "Ship "+string(rune('A'+(i%26)))+".")
+		time.Sleep(2 * time.Millisecond)
+	}
+	time.Sleep(40 * time.Millisecond)
+	w.Close()
+}
+
 func TestWatcherRearmsAfterIdle(t *testing.T) {
 	root := t.TempDir()
 	landIt := filepath.Join(root, ".cursor", "skills", "land-it", "SKILL.md")

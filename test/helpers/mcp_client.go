@@ -2,10 +2,13 @@ package helpers
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -22,8 +25,26 @@ type MCPClient struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	reader *bufio.Reader
+	stderr *lockedBuffer
 	nextID atomic.Int64
 	t      *testing.T
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
 }
 
 type jsonRPCRequest struct {
@@ -59,6 +80,10 @@ func StartMCPServer(t *testing.T, dir string) *MCPClient {
 	if err != nil {
 		t.Fatalf("creating stdout pipe: %v", err)
 	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("creating stderr pipe: %v", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting MCP server: %v", err)
@@ -68,8 +93,12 @@ func StartMCPServer(t *testing.T, dir string) *MCPClient {
 		cmd:    cmd,
 		stdin:  stdinPipe,
 		reader: bufio.NewReader(stdoutPipe),
+		stderr: &lockedBuffer{},
 		t:      t,
 	}
+	go func() {
+		_, _ = io.Copy(client.stderr, stderrPipe)
+	}()
 
 	t.Cleanup(func() { client.Close() })
 
@@ -106,14 +135,14 @@ func (c *MCPClient) call(method string, params any) json.RawMessage {
 		c.t.Fatalf("marshaling MCP request: %v", err)
 	}
 	if _, err := fmt.Fprintf(c.stdin, "%s\n", data); err != nil {
-		c.t.Fatalf("writing MCP request: %v", err)
+		c.failf("writing MCP request: %v", err)
 	}
 
 	// Read response (skip notifications)
 	for {
 		line, err := c.reader.ReadBytes('\n')
 		if err != nil {
-			c.t.Fatalf("reading MCP response: %v", err)
+			c.failf("reading MCP response: %v", err)
 		}
 		var resp jsonRPCResponse
 		if err := json.Unmarshal(line, &resp); err != nil {
@@ -126,7 +155,7 @@ func (c *MCPClient) call(method string, params any) json.RawMessage {
 			continue // skip responses for other requests
 		}
 		if resp.Error != nil {
-			c.t.Fatalf("MCP error for %s: %s", method, resp.Error.Message)
+			c.failf("MCP error for %s: %s", method, resp.Error.Message)
 		}
 		return resp.Result
 	}
@@ -209,6 +238,18 @@ func (c *MCPClient) CallToolText(name string, params map[string]interface{}) (st
 		return "", nil
 	}
 	return result.Content[0].Text, nil
+}
+
+func (c *MCPClient) failf(format string, args ...any) {
+	c.t.Helper()
+	if msg := strings.TrimSpace(c.stderr.String()); msg != "" {
+		if len(msg) > 4000 {
+			msg = msg[len(msg)-4000:]
+		}
+		format += "\nserver stderr:\n%s"
+		args = append(args, msg)
+	}
+	c.t.Fatalf(format, args...)
 }
 
 // Close shuts down the MCP server process.
