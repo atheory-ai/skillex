@@ -21,24 +21,30 @@ import (
 
 // Serve starts the MCP server using stdio transport.
 func Serve(reg *registry.Registry, version string) error {
-	return serve(reg, query.New(reg), nil, version)
+	return serve(reg, query.New(reg), nil, version, nil)
 }
 
 // ServeConfigured starts Skillex with additive capability discovery and broker
-// tools when the project explicitly opted in.
-func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version string) error {
+// tools when the project explicitly opted in. before runs at the start of each
+// tool call and resource read, so a long-lived server can refresh skill watches.
+func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version string, before func()) error {
 	if cfg == nil || !cfg.MCPEnabled() {
-		return Serve(reg, version)
+		return serve(reg, query.New(reg), nil, version, before)
 	}
 	runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 	if err != nil {
 		return err
 	}
 	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
-	return serve(reg, engine, runtime, version)
+	return serve(reg, engine, runtime, version, before)
 }
 
-func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, version string) error {
+func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, version string, before func()) error {
+	callBefore := func() {
+		if before != nil {
+			before()
+		}
+	}
 	s := server.NewMCPServer(
 		"skillex",
 		version,
@@ -88,6 +94,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 	)
 
 	s.AddTool(queryTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		callBefore()
 		return handleQuery(engine, req)
 	})
 	readTool := mcplib.NewTool("skillex_read",
@@ -97,6 +104,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		mcplib.WithNumber("max_bytes", mcplib.Description("Maximum content bytes to return (default 24576, max 65536)")),
 	)
 	s.AddTool(readTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		callBefore()
 		return handleRead(reg, req)
 	})
 	if runtime != nil {
@@ -106,6 +114,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			mcplib.WithNumber("max_bytes", mcplib.Description("Maximum encoded description bytes (default 24576, max 65536)")),
 		)
 		s.AddTool(describeTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			callBefore()
 			return handleCapabilityDescribe(ctx, runtime, req)
 		})
 		callTool := mcplib.NewTool("skillex_mcp_call",
@@ -116,6 +125,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			mcplib.WithString("request_state", mcplib.Description("Opaque requestState returned by an input_required result; echo byte-for-byte")),
 		)
 		s.AddTool(callTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			callBefore()
 			return handleCapabilityCall(ctx, runtime, req)
 		})
 	}
@@ -136,6 +146,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			mcplib.WithMIMEType("text/markdown"),
 		)
 		s.AddResource(resource, func(ctx context.Context, req mcplib.ReadResourceRequest) ([]mcplib.ResourceContents, error) {
+			callBefore()
 			return []mcplib.ResourceContents{
 				mcplib.TextResourceContents{
 					URI:      uri,

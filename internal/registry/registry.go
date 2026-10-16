@@ -235,6 +235,47 @@ func (r *Registry) InsertSkill(s Skill) (int64, error) {
 	return id, nil
 }
 
+// DeleteSkillByPath removes one skill and its search, scope, topic, tag, and test rows.
+// A missing path is not an error.
+func (r *Registry) DeleteSkillByPath(path string) error {
+	id, err := r.getSkillIDByPath(path)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := r.db.Exec(`DELETE FROM skill_search WHERE skill_id = ?`, id); err != nil {
+		return err
+	}
+	_, err = r.db.Exec(`DELETE FROM skills WHERE id = ?`, id)
+	return err
+}
+
+// DeleteTestsForSkill removes test scenarios for one skill so they can be replaced.
+func (r *Registry) DeleteTestsForSkill(skillID int64) error {
+	_, err := r.db.Exec(`DELETE FROM skill_tests WHERE skill_id = ?`, skillID)
+	return err
+}
+
+// PathsBySource returns indexed skill paths for one source type.
+func (r *Registry) PathsBySource(sourceType string) ([]string, error) {
+	rows, err := r.db.Query(`SELECT path FROM skills WHERE source_type = ? ORDER BY path`, sourceType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, rows.Err()
+}
+
 // InsertTestScenario inserts a test scenario linked to a skill.
 func (r *Registry) InsertTestScenario(t TestScenario) error {
 	_, err := r.db.Exec(
