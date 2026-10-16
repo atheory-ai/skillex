@@ -271,6 +271,8 @@ feature/<ticket>-<short-description>
 skillex refresh
 ```
 
+This builds the index from `skills/`, configuration, packs, and installed dependencies. Run it again after those change. A running `skillex mcp` server updates project skill directories already in the index, such as `.cursor/skills` and `.claude/skills`, without another refresh.
+
 ### Query skills
 
 ```bash
@@ -731,6 +733,8 @@ Skillex runs as a Model Context Protocol server, providing native integration fo
 skillex mcp
 ```
 
+The server watches project skill directories already in the index. It updates the index when a `SKILL.md` there changes, and it starts the watches again on the next request after a quiet period. A new skill directory is included after `skillex refresh`.
+
 ### MCP configuration
 
 Add to your harness's MCP config (e.g. `.cursor/mcp.json`):
@@ -837,8 +841,9 @@ skillex refresh --check           # Fail if registry is stale (CI)
 skillex refresh --dry-run         # Preview without writing
 ```
 
-Refresh after changing skills, Skillex configuration, or installed dependencies. It is
-not a per-task setup step.
+Refresh after changing `skills/`, Skillex configuration, packs, or installed dependencies. It is the full rebuild, and the check CI uses. It is not a per-task setup step.
+
+A running `skillex mcp` server keeps project skill directories that are already indexed current: `.agents/skills`, `.claude/skills`, `.codex/skills`, `.cursor/skills`, `.gemini/skills`, and `.github/skills`. Edits and new skills under those directories update the index for the next MCP request. A skill directory that was not indexed yet still needs refresh. `skillex query` reads the index once and does not watch files.
 
 ### `skillex query`
 
@@ -948,7 +953,7 @@ Imports a local file through the same review and conversion pipeline as `skillex
 ### `skillex mcp`
 
 ```bash
-skillex mcp                       # Start MCP server on stdio
+skillex mcp                       # Start MCP server on stdio; watches indexed project skill directories
 ```
 
 ### `skillex version`

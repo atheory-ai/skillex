@@ -109,6 +109,31 @@ globs: "*.md"
 	}
 }
 
+func TestDiscoverAgentSkillsReportsRoots(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".cursor", "skills", "land-it", "SKILL.md"), agentSkillMarkdown("land-it", "Ship."))
+	writeFile(t, filepath.Join(root, "apps", "web", ".claude", "skills", "deploy-web", "SKILL.md"), agentSkillMarkdown("deploy-web", "Deploy."))
+	if err := os.MkdirAll(filepath.Join(root, ".github", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	skills, roots, errs := DiscoverAgentSkills(root)
+	if len(errs) > 0 {
+		t.Fatalf("DiscoverAgentSkills errors = %v", errs)
+	}
+	if _, ok := indexSkills(skills)[".cursor/skills/land-it/SKILL.md"]; !ok {
+		t.Fatal("missing land-it")
+	}
+	want := []string{
+		filepath.Join(root, ".cursor", "skills"),
+		filepath.Join(root, ".github", "skills"),
+		filepath.Join(root, "apps", "web", ".claude", "skills"),
+	}
+	if strings.Join(roots, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("roots = %v, want %v", roots, want)
+	}
+}
+
 func TestScanProjectAgentSkillsReflectsLaterWrites(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, ".cursor", "skills", "land-it", "SKILL.md"), agentSkillMarkdown("land-it", "Ship the branch."))

@@ -29,7 +29,12 @@ By default, refresh includes devDependencies. Use --mode prod to include
 only production dependencies and public skills.
 
 Use --check in CI to fail if the registry is stale.
-Use --dry-run to preview what would change without writing.`,
+Use --dry-run to preview what would change without writing.
+
+Refresh after changing skills/, Skillex configuration, packs, or installed
+dependencies. A running skillex mcp process updates SKILL.md files under
+project skill directories already in the index. A new skill directory needs
+refresh. skillex query does not watch the filesystem.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
 
