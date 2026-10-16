@@ -3,6 +3,7 @@ package acceptance
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/atheory-ai/skillex/test/helpers"
@@ -134,4 +135,81 @@ func TestScanner_NpmWorkspaces(t *testing.T) {
 		t.Fatal("expected skills for packages/app-a/**, got none")
 	}
 	helpers.AssertSkillPresent(t, skills, "repo.md")
+}
+
+func TestScanner_ProjectAgentSkillsRefresh(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "skillex.yaml"), []byte("Version: 4\nRules: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectFile(t, dir, ".cursor/skills/land-it/SKILL.md", agentSkillMarkdown("land-it", "Ship the branch."))
+	writeProjectFile(t, dir, ".cursor/skills/land-it/references/guide.md", "# guide\n")
+	writeProjectFile(t, dir, "apps/web/.claude/skills/deploy-web/SKILL.md", agentSkillMarkdown("deploy-web", "Deploy the web app."))
+	writeProjectFile(t, dir, ".github/skills/review-pr/SKILL.md", agentSkillMarkdown("review-pr", "Review a pull request."))
+	writeProjectFile(t, dir, ".cursor/skills/react-patterns/SKILL.md", "---\nname: react-patterns\ndescription: React conventions.\npaths: \"**/*.tsx\"\n---\n\n# React\n")
+
+	if res := helpers.Run(t, dir, "refresh"); res.ExitCode != 0 {
+		t.Fatalf("refresh failed: %s", res.Stderr)
+	}
+
+	rootSkills := queryResults(t, dir, "--path", "main.go", "--format", "summary")
+	helpers.AssertSkillPresent(t, rootSkills, ".cursor/skills/land-it/SKILL.md")
+	helpers.AssertSkillPresent(t, rootSkills, ".github/skills/review-pr/SKILL.md")
+	helpers.AssertSkillAbsent(t, rootSkills, "deploy-web/SKILL.md")
+	helpers.AssertSkillAbsent(t, rootSkills, "references/guide.md")
+	helpers.AssertSkillAbsent(t, rootSkills, "react-patterns/SKILL.md")
+	assertAgentSkill(t, rootSkills, "land-it/SKILL.md", "land-it", "**")
+
+	tsxSkills := queryResults(t, dir, "--path", "page.tsx", "--format", "summary")
+	helpers.AssertSkillPresent(t, tsxSkills, "react-patterns/SKILL.md")
+	nestedTSX := queryResults(t, dir, "--path", "src/page.tsx", "--format", "summary")
+	helpers.AssertSkillPresent(t, nestedTSX, "react-patterns/SKILL.md")
+
+	webSkills := queryResults(t, dir, "--path", "apps/web/page.tsx", "--format", "summary")
+	helpers.AssertSkillPresent(t, webSkills, "deploy-web/SKILL.md")
+	helpers.AssertSkillPresent(t, webSkills, "land-it/SKILL.md")
+	assertAgentSkill(t, webSkills, "deploy-web/SKILL.md", "deploy-web", "apps/web/**")
+
+	writeProjectFile(t, dir, ".agents/skills/new-review/SKILL.md", agentSkillMarkdown("new-review", "Review the new diff."))
+	if err := os.Remove(filepath.Join(dir, ".cursor", "skills", "land-it", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if res := helpers.Run(t, dir, "refresh"); res.ExitCode != 0 {
+		t.Fatalf("second refresh failed: %s", res.Stderr)
+	}
+	again := queryResults(t, dir, "--path", "main.go", "--format", "summary")
+	helpers.AssertSkillAbsent(t, again, "land-it/SKILL.md")
+	helpers.AssertSkillPresent(t, again, ".agents/skills/new-review/SKILL.md")
+}
+
+func writeProjectFile(t *testing.T, root, rel, body string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func agentSkillMarkdown(name, description string) string {
+	return "---\nname: " + name + "\ndescription: " + description + "\n---\n\n# " + name + "\n"
+}
+
+func assertAgentSkill(t *testing.T, skills []helpers.SkillSummary, suffix, name, scope string) {
+	t.Helper()
+	for _, skill := range skills {
+		if !strings.HasSuffix(skill.Path, suffix) {
+			continue
+		}
+		if skill.SourceType != "agent" || skill.Name != name {
+			t.Fatalf("%s = %+v", suffix, skill)
+		}
+		if len(skill.Scopes) != 1 || skill.Scopes[0] != scope {
+			t.Fatalf("%s scopes = %v", suffix, skill.Scopes)
+		}
+		return
+	}
+	t.Fatalf("skill %s not found", suffix)
 }

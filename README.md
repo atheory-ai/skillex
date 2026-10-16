@@ -1143,7 +1143,7 @@ The CLI validates structure. The agent validates behavior.
 
 ## Building from source
 
-**Requirements:** Go 1.25.13+; the development toolchain is Go 1.26.6.
+**Requirements:** Go 1.26.0+; the development toolchain is Go 1.26.9.
 
 ```bash
 git clone https://github.com/atheory-ai/skillex

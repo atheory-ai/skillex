@@ -2,6 +2,7 @@ package frontmatter
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -9,12 +10,59 @@ import (
 
 // Frontmatter holds the YAML frontmatter metadata from a skill file.
 type Frontmatter struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Topics      []string `yaml:"topics"`
-	Tags        []string `yaml:"tags"`
-	Source      string   `yaml:"source"`
-	Reviewed    string   `yaml:"reviewed"`
+	Name        string     `yaml:"name"`
+	Description string     `yaml:"description"`
+	Topics      []string   `yaml:"topics"`
+	Tags        []string   `yaml:"tags"`
+	Source      string     `yaml:"source"`
+	Reviewed    string     `yaml:"reviewed"`
+	Paths       StringList `yaml:"paths"`
+	Globs       StringList `yaml:"globs"`
+}
+
+// StringList unmarshals either a YAML sequence or a comma-separated string.
+// Agent skill files use both shapes for the paths field.
+type StringList []string
+
+// UnmarshalYAML accepts a sequence or a scalar split on commas.
+func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.SequenceNode:
+		var items []string
+		if err := value.Decode(&items); err != nil {
+			return err
+		}
+		*s = items
+		return nil
+	case yaml.ScalarNode:
+		if strings.TrimSpace(value.Value) == "" {
+			*s = nil
+			return nil
+		}
+		parts := strings.Split(value.Value, ",")
+		items := make([]string, 0, len(parts))
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				items = append(items, part)
+			}
+		}
+		*s = items
+		return nil
+	default:
+		return errors.New("expected a string or list")
+	}
+}
+
+// PathGlobs returns the skill's path filters. paths wins over the legacy globs field.
+func (f Frontmatter) PathGlobs() []string {
+	if len(f.Paths) > 0 {
+		return append([]string(nil), f.Paths...)
+	}
+	if len(f.Globs) > 0 {
+		return append([]string(nil), f.Globs...)
+	}
+	return nil
 }
 
 // Parse separates YAML frontmatter from Markdown body.

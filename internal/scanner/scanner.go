@@ -25,7 +25,7 @@ type SkillFile struct {
 	PackageVersion string
 	// Visibility is "public", "private", or "repo".
 	Visibility string
-	// SourceType is "repo" or "dependency".
+	// SourceType is "repo", "dependency", "pack", or "agent".
 	SourceType string
 	// Frontmatter holds the parsed metadata.
 	Frontmatter frontmatter.Frontmatter
@@ -137,6 +137,10 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	packSkills, errs := s.scanProjectPacks()
 	result.RepoSkills = append(result.RepoSkills, packSkills...)
 	result.Errors = append(result.Errors, errs...)
+	agentSkills, agentErrs := s.scanProjectAgentSkills()
+	result.RepoSkills = append(result.RepoSkills, agentSkills...)
+	result.Errors = append(result.Errors, agentErrs...)
+
 	activatedMCP, mcpErrs := packs.ActivateProjectMCPServers(s.root)
 	result.Errors = append(result.Errors, mcpErrs...)
 	for _, activation := range activatedMCP {
