@@ -109,7 +109,7 @@ but is not the recommended agent workflow.
 ## Example workflow
 
 1. Add repo skills in `skills/` and configure scopes in `skillex.json`
-2. Run `skillex refresh` after changing skills, configuration, or installed dependencies
+2. Run `skillex refresh` after changing `skills/`, configuration, packs, or installed dependencies. A running MCP server updates project skill directories already in the index, such as `.cursor/skills`, without another refresh
 3. Let your agent query, narrow, and read only the skills relevant to its current task
 
 ## Packs

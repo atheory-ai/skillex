@@ -1,10 +1,12 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -25,13 +27,43 @@ var projectAgentSkillParents = []string{
 // A later refresh scans these directories again, so skills added or removed
 // since the last index are picked up without a config change.
 func (s *Scanner) scanProjectAgentSkills() ([]SkillFile, []error) {
-	var skills []SkillFile
-	var errs []error
-	s.walkAgentSkillDir(s.root, map[string]struct{}{}, map[string]struct{}{}, &skills, &errs)
+	skills, _, errs := s.discoverAgentSkills()
 	return skills, errs
 }
 
-func (s *Scanner) walkAgentSkillDir(dir string, seenDirs, seenFiles map[string]struct{}, skills *[]SkillFile, errs *[]error) {
+// DiscoverAgentSkills returns project SKILL.md files and the skill roots that
+// contain them. Roots are the directories a watcher should register.
+func DiscoverAgentSkills(root string) ([]SkillFile, []string, []error) {
+	s := &Scanner{root: root}
+	return s.discoverAgentSkills()
+}
+
+// ReadAgentSkill reads one SKILL.md and its sibling SKILL.test.md.
+func ReadAgentSkill(root, absPath string) ([]SkillFile, error) {
+	s := &Scanner{root: root}
+	var skills []SkillFile
+	var errs []error
+	s.indexAgentSkill(absPath, map[string]struct{}{}, &skills, &errs)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return skills, nil
+}
+
+func (s *Scanner) discoverAgentSkills() ([]SkillFile, []string, []error) {
+	var skills []SkillFile
+	var errs []error
+	roots := map[string]struct{}{}
+	s.walkAgentSkillDir(s.root, map[string]struct{}{}, map[string]struct{}{}, &skills, &errs, roots)
+	list := make([]string, 0, len(roots))
+	for root := range roots {
+		list = append(list, root)
+	}
+	sort.Strings(list)
+	return skills, list, errs
+}
+
+func (s *Scanner) walkAgentSkillDir(dir string, seenDirs, seenFiles map[string]struct{}, skills *[]SkillFile, errs *[]error, roots map[string]struct{}) {
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		*errs = append(*errs, fmt.Errorf("agent skills: %s: %w", dir, err))
@@ -49,6 +81,9 @@ func (s *Scanner) walkAgentSkillDir(dir string, seenDirs, seenFiles map[string]s
 		return
 	}
 	seenDirs[resolved] = struct{}{}
+	if roots != nil && isAgentSkillRoot(s.root, dir) {
+		roots[dir] = struct{}{}
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -69,11 +104,11 @@ func (s *Scanner) walkAgentSkillDir(dir string, seenDirs, seenFiles map[string]s
 				continue
 			}
 			if target.IsDir() {
-				s.walkAgentSkillDir(entryPath, seenDirs, seenFiles, skills, errs)
+				s.walkAgentSkillDir(entryPath, seenDirs, seenFiles, skills, errs, roots)
 				continue
 			}
 		} else if entry.IsDir() {
-			s.walkAgentSkillDir(entryPath, seenDirs, seenFiles, skills, errs)
+			s.walkAgentSkillDir(entryPath, seenDirs, seenFiles, skills, errs, roots)
 			continue
 		}
 		if entry.Name() == "SKILL.md" {
@@ -161,6 +196,15 @@ func skipAgentWalkDir(name string) bool {
 	default:
 		return false
 	}
+}
+
+func isAgentSkillRoot(repoRoot, dir string) bool {
+	rel, err := filepath.Rel(repoRoot, dir)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	return path.Base(rel) == "skills" && isAgentSkillParent(path.Base(path.Dir(rel)))
 }
 
 func isAgentSkillParent(name string) bool {

@@ -14,7 +14,8 @@ Prompt: I added a repository skill. How do I validate it and update agent instru
 Success criteria:
   - Requires a co-located .test.md file
   - Uses skillex test validate --check
-  - Uses refresh to reindex skills and verifies agent instruction files remain unchanged
+  - Uses refresh to reindex skills/ changes and verifies agent instruction files remain unchanged
+  - Does not treat an MCP project-skill watch as a substitute for refreshing skills/, configuration, or dependencies
   - Uses init to regenerate and inspect the managed AGENTS.md guidance when its generator changes
 
 ## Validation: capability query optimization

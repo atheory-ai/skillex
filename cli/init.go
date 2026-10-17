@@ -186,7 +186,8 @@ func initRepo(root string, yes bool, harness string, useYAML bool, invocation st
 			styleSuccess.Render("✓"), result.SkillsAdded)
 		fmt.Fprintln(os.Stderr, "\nNext steps:")
 		fmt.Fprintln(os.Stderr, "  • Edit skills/repo.md to add your first repo-level skill")
-		fmt.Fprintf(os.Stderr, "  • Run '%s refresh' after making changes\n", cfg.Install.CLI())
+		fmt.Fprintf(os.Stderr, "  • Run '%s refresh' after changing skills/, configuration, or dependencies\n", cfg.Install.CLI())
+		fmt.Fprintln(os.Stderr, "  • A running MCP server keeps already indexed project skill directories current")
 		fmt.Fprintf(os.Stderr, "  • Run '%s doctor' to check for issues\n", cfg.Install.CLI())
 	}
 

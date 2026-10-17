@@ -26,6 +26,6 @@ tags: [verification, acceptance]
 
 - Give each substantive skill a co-located `.test.md` containing realistic prompts and falsifiable success criteria.
 - Run `go run ./cmd/skillex test validate --check` after adding or editing skill tests.
-- Run `make refresh` after skill edits and verify it does not modify agent instruction files.
+- Run `make refresh` after edits to `skills/`, configuration, packs, or dependencies, and verify it does not modify agent instruction files. An MCP project-skill watch does not replace this check.
 - After changing generated agent instructions, rebuild and run `./.skillex/bin/skillex init --yes`, then inspect the managed `AGENTS.md` section.
 - Use `docs/manual-testing.md` for exploratory and release-candidate journeys that automated tests cannot cover.

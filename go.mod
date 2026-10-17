@@ -7,6 +7,7 @@ toolchain go1.26.9
 require (
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gobwas/glob v0.2.3
 	github.com/google/certificate-transparency-go v1.3.3
 	github.com/mark3labs/mcp-go v0.17.0

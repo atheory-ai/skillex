@@ -19,7 +19,7 @@ tags: [getting-started, workflow]
 - Prefer the connected Skillex MCP server. Otherwise run `./.skillex/bin/skillex` (`.exe` on Windows); bootstrap and rebuild it with `make dev-binary` after changing Go source. Do not substitute a globally installed release for this checkout.
 - Start with bounded discovery (`query`), then read a selected result or section. Do not bulk-read skill content.
 - Run `make verify-unit` for a fast Go gate. Run `go test ./...` or `make test-acceptance` when a change affects acceptance behavior.
-- Run `make refresh` after changing skills. After changing generated agent instructions, rebuild and run `./.skillex/bin/skillex init --yes`; refresh must not modify `AGENTS.md`. Do not hand-edit the generated Skillex block.
+- Run `make refresh` after changing `skills/`, configuration, packs, or dependencies. Refresh must not modify `AGENTS.md`. A running MCP server updates project skill directories already in the index; that does not replace refresh for this repository's `skills/` files or for CI. After changing generated agent instructions, rebuild and run `./.skillex/bin/skillex init --yes`. Do not hand-edit the generated Skillex block.
 
 ## Make changes complete
 

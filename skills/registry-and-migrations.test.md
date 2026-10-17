@@ -24,6 +24,8 @@ Success criteria:
 Prompt: I changed a skill and its scope but query still returns the old content. Should I manually update index.db or regenerate AGENTS.md?
 Success criteria:
   - Treats source skills and configuration as authoritative
-  - Rebuilds the checkout binary after Go changes and refreshes the registry from source
+  - Uses the running MCP server's project-skill watch when the edit is under an already indexed project skill directory
+  - Refreshes the registry for skills/, configuration, dependencies, packs, a new skill directory, or a CLI query
+  - Rebuilds the checkout binary after Go changes
   - Validates co-located skill test structure
   - Distinguishes refresh ownership from init ownership of generated instructions

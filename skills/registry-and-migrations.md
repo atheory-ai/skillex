@@ -26,4 +26,5 @@ tags: [sqlite, compatibility, testing]
 
 - `Open` applies structural upgrades. Existing migration steps may backfill search data, but configured capability metadata is loaded by explicit refresh; opening a database must not introspect downstream MCP servers.
 - Refresh scans and links source skills, clears the index, and reinserts skills, tests, and capability metadata. Source skills and configuration are authoritative; `.skillex/index.db` is generated state.
-- After changing skills, rebuild the checkout binary with `make dev-binary` when needed, then `make refresh` and `./.skillex/bin/skillex test validate --check`. Refresh does not own generated agent instructions; use `init --yes` for those.
+- After changing skills in `skills/`, rebuild the checkout binary with `make dev-binary` when Go code changed, then `make refresh` and `./.skillex/bin/skillex test validate --check`. Refresh does not own generated agent instructions; use `init --yes` for those.
+- A running MCP server incrementally updates project skill directories already in the index. That path does not scan configuration, packs, or dependencies, and it does not replace `refresh` or `refresh --check`.

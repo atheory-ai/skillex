@@ -184,7 +184,11 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
    - Does it run the validation scenarios?
    - Is the report useful?
 
-6. Disconnect the MCP server. Ask the same questions.
+6. With the MCP server still connected, edit a `SKILL.md` under an already indexed project skill directory such as `.cursor/skills`. Ask the agent to query that skill again.
+   - Does the new text appear without another `skillex refresh`?
+   - Add a skill under a tool directory that was not indexed yet, such as a first `apps/web/.claude/skills`. Does it stay hidden until `skillex refresh`, then appear on the next request?
+
+7. Disconnect the MCP server. Ask the same questions.
    - Does the agent fall back to CLI commands via AGENTS.md guidance?
    - Is the experience degraded but functional?
 
@@ -214,6 +218,9 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 3. Ask follow-up questions requiring different query parameters.
    - Does the agent vary its queries (different topics, tags, paths)?
    - Does it use discovery summaries to decide what to load, then `skillex read --ref` for one skill or section?
+
+4. Edit a skill under an already indexed `.cursor/skills` directory and query again without refresh.
+   - The CLI result should stay stale until `skillex refresh`.
 
 **What to look for:**
 - Whether the AGENTS.md instructions are sufficient for the agent to self-direct.
