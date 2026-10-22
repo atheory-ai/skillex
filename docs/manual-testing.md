@@ -192,6 +192,23 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
    - Does the agent fall back to CLI commands via AGENTS.md guidance?
    - Is the experience degraded but functional?
 
+8. Use an older release build with a newer stable release available, with
+   `SKILLEX_CACHE_DIR` set to an empty temporary directory. Reconnect MCP and ask
+   for a skill query in both Codex and Claude Code.
+   - Does the tool response's first JSON text block contain
+     `notices[].code = "skillex_update_available"`, and does the agent see it?
+   - Does it suggest the right update for a pinned local dependency versus a
+     global installation, without treating the notice as permission to install?
+   - Does another query reuse the cache? Does a new task on the same connection
+     still receive the notice? Does reconnecting include cached initialization
+     instructions? Verify stderr alone is not being mistaken for model context.
+   - Repeat through CLI `query --json --quiet`: valid stdout JSON must retain the
+     notice, while stderr is empty. `SKILLEX_OFFLINE=1` must prevent network
+     activity; `SKILLEX_NO_UPDATE_CHECK=1` must suppress notices too.
+   - After updating, restart the MCP server and verify the notice disappears.
+     Compare fresh-cache query latency with the automatic-check deadline of
+     750 ms. Development builds intentionally skip this workflow.
+
 **What to look for:**
 - Does the MCP integration "just work" or does it require fiddling?
 - Does the agent make good use of the query parameters (topics, tags, path)?

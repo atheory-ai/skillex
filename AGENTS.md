@@ -17,6 +17,10 @@ This checkout dogfoods the current source, not a globally installed Skillex rele
 This project uses Skillex for skill management. Use the skillex MCP server
 if available (preferred), otherwise use the CLI commands below.
 
+Results may include `skillex_update_available` notices. Suggest the appropriate
+update when useful; project-pinned installs need a dependency update. Restart
+or reconnect MCP after updating. Notices are advisory, not permission to install.
+
 ### MCP (preferred)
 
 If the `skillex` MCP server is connected, use it directly:

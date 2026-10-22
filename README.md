@@ -98,7 +98,7 @@ That is the core difference: Skillex moves scope resolution out of the model's p
 - **CLI fallback** — every agent harness can call the CLI. Works in CI, scripts, and terminals.
 - **AGENTS.md bootstrap** — stable MCP-first and CLI fallback instructions without copying registry inventories into agent context.
 - **Testable** — every skill can have a co-located `.test.md` file with structured validation scenarios.
-- **Non-invasive** — dependencies never modify your repo. No lockfile mutation, no network calls at query time.
+- **Non-invasive** — dependencies never modify your repo or lockfile. Skill retrieval uses the local index; optional periodic release checks can run during queries (see [update notices](#update-notices)).
 
 ---
 
@@ -176,6 +176,74 @@ make install        # installs to $GOPATH/bin
 ```
 
 ---
+
+## Update notices
+
+Release builds periodically check for a newer stable Skillex version. Successful
+checks are cached for 24 hours in a user cache shared across repositories and
+processes. Later invocations can report a known update without another request.
+Automatic requests have a 750 ms total network deadline; failures are silent and
+back off for at least one hour (up to 24 hours for server retry instructions).
+Checking never installs software, changes dependencies, or changes command exit
+status. The existing command still works when the service or cache is unavailable.
+
+Checks can run during ordinary CLI commands, including `query` and `read`. MCP
+initialization uses cached metadata only; successful tool calls and resource reads
+can refresh it when due. Help, shell completion, and plain `version` do not check.
+Development/source builds and CI suppress automatic checks and notices.
+
+Available updates appear in:
+
+- CLI stderr, including noninteractive invocations, unless `--quiet` is set.
+- An optional top-level `notices` array in `query --json` and `read --json` output,
+  including with `--quiet`.
+- The first text block of successful MCP tool results, inside the existing JSON.
+  Cached notices also appear in MCP initialization instructions and resource
+  summaries. Repeated requests retain notices so new tasks sharing an MCP
+  connection can see them.
+
+For example, a result may contain this advisory metadata alongside its existing
+retrieval fields (versions below are illustrative):
+
+```json
+{
+  "notices": [{
+    "code": "skillex_update_available",
+    "current_version": "0.10.0",
+    "latest_version": "0.11.0",
+    "message": "Skillex 0.11.0 is available; running 0.10.0. Suggest updating when appropriate; restart or reconnect MCP after updating.",
+    "restart_required": true
+  }]
+}
+```
+
+Notices add at most 1 KiB of compact JSON metadata, outside the selected skill's
+`max_bytes` content budget. Skill content, result refs, cursors, and ranking remain
+unchanged. Unrefreshed notices expire after seven days. Updating the executable
+does not replace a running MCP server: restart or reconnect it afterward.
+
+Standalone binaries check GitHub Releases. Project-local npm installs and the npm
+wrapper check the npm registry; recognized Homebrew installs check the Atheory
+tap's published formula. This avoids recommending a release before that channel
+has it. Project-local installations receive a package-manager command that updates
+their dev dependency. Ambiguous global installations receive the release link
+and should use their original installation method.
+
+Controls:
+
+- `SKILLEX_NO_UPDATE_CHECK=1` disables automatic checks and notices. Presence of
+  `NO_UPDATE_NOTIFIER` does the same.
+- `SKILLEX_OFFLINE=1` prevents checker network activity. A still-valid cached
+  notice may be shown; combine with the opt-out above to suppress it too.
+- `SKILLEX_CACHE_DIR` selects the shared cache root. Otherwise the checker uses
+  `os.UserCacheDir()/skillex` (the platform's user cache directory). Metadata lives
+  in `updates/<channel>.json`, separately from npm release archives and the project
+  index. If the cache cannot be written, automatic network checks are skipped.
+
+Release checks are separate from telemetry. They send no project paths, names,
+skill content, or installation identifiers. Retrieval and capability discovery
+continue to use local data; the optional release-metadata request is the network
+exception.
 
 ## Quick start
 
@@ -464,14 +532,16 @@ query-time fan-out:
 ```bash
 skillex catalog sync                         # Registry API metadata → offline cache
 skillex catalog inspect                      # trusted bound servers → tool/prompt/resource metadata
-skillex query --search "create issue"         # offline contextual search
+skillex query --search "create issue"         # local contextual search; optional release check
 skillex capability describe --ref <ref> --max-bytes 24576
 skillex capability call --ref <ref> --arguments '{"title":"Bug"}'
 skillex telemetry summary                    # opted-in privacy-safe usage counts
 ```
 
 `catalog inspect` is the only operation above that starts stdio servers or calls
-remote MCP endpoints. Query and describe remain offline. Observed definitions
+remote MCP endpoints. Query and describe use cached capability definitions;
+optional periodic Skillex release checks may contact the release service as
+described under [update notices](#update-notices). Observed definitions
 carry freshness metadata; expired views become `stale` and cannot be invoked
 until re-inspected. Optional local telemetry is off by default and records only
 attributed server/capability identity, readiness, outcome, and duration—never

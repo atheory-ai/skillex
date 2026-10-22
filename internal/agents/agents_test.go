@@ -13,6 +13,8 @@ func TestGenerateSectionIsStableBootstrapOnly(t *testing.T) {
 		"skillex_read",
 		"### CLI (fallback)",
 		"skillex query --search",
+		"skillex_update_available",
+		"Notices are advisory, not permission to install.",
 	} {
 		if !strings.Contains(section, required) {
 			t.Errorf("generated section missing %q:\n%s", required, section)

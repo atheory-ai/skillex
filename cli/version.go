@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/atheory-ai/skillex/internal/updatecheck"
 )
 
 // Version is set at build time via -ldflags.
@@ -14,10 +16,11 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Show the skillex version",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			version := updatecheck.Version(Version)
 			if flagJSON {
-				fmt.Printf(`{"version":%q}`+"\n", Version)
+				fmt.Printf(`{"version":%q}`+"\n", version)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "skillex %s\n", Version)
+				fmt.Fprintf(cmd.OutOrStdout(), "skillex %s\n", version)
 			}
 			return nil
 		},
