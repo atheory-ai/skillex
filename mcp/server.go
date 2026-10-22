@@ -17,29 +17,35 @@ import (
 	"github.com/atheory-ai/skillex/internal/mcperror"
 	"github.com/atheory-ai/skillex/internal/query"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/updatecheck"
 )
 
 // Serve starts the MCP server using stdio transport.
 func Serve(reg *registry.Registry, version string) error {
-	return serve(reg, query.New(reg), nil, version, nil)
+	return serve(reg, query.New(reg), nil, version, nil, updatecheck.NewEnvironment(version, updatecheck.Installation{}))
 }
 
 // ServeConfigured starts Skillex with additive capability discovery and broker
 // tools when the project explicitly opted in. before runs at the start of each
 // tool call and resource read, so a long-lived server can refresh skill watches.
 func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version string, before func()) error {
+	var install updatecheck.Installation
+	if cfg != nil && cfg.Install != nil {
+		install.Strategy, install.PackageManager = cfg.Install.Strategy, cfg.Install.PackageManager
+	}
+	updates := updatecheck.NewEnvironment(version, install)
 	if cfg == nil || !cfg.MCPEnabled() {
-		return serve(reg, query.New(reg), nil, version, before)
+		return serve(reg, query.New(reg), nil, version, before, updates)
 	}
 	runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 	if err != nil {
 		return err
 	}
 	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
-	return serve(reg, engine, runtime, version, before)
+	return serve(reg, engine, runtime, version, before, updates)
 }
 
-func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, version string, before func()) error {
+func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, version string, before func(), updates *updatecheck.Checker) error {
 	callBefore := func() {
 		if before != nil {
 			before()
@@ -47,9 +53,10 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 	}
 	s := server.NewMCPServer(
 		"skillex",
-		version,
+		updatecheck.Version(version),
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(true, true),
+		server.WithInstructions(updateInstructions(updates.CachedNotices())),
 	)
 
 	// Register query tool
@@ -60,7 +67,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 				"Use 'search' for intent-based discovery when you don't know the skill taxonomy — "+
 				"pass space or comma-separated concepts and all matching skills are returned in one call. "+
 				"Use topic/tags for structured filtering when you know the organization. "+
-				"Returns skill content or metadata for agent consumption.",
+				"Returns bounded discovery summaries and may include advisory Skillex update notices.",
 		),
 		mcplib.WithString("path",
 			mcplib.Description("File path or glob pattern to scope the query"),
@@ -93,30 +100,30 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		mcplib.WithString("mcp_availability", mcplib.Description("Capability readiness filter")),
 	)
 
-	s.AddTool(queryTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	s.AddTool(queryTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 		callBefore()
 		return handleQuery(engine, req)
-	})
+	}))
 	readTool := mcplib.NewTool("skillex_read",
 		mcplib.WithDescription("Read one selected Skillex skill or Markdown section within a byte budget. Always discover and narrow with skillex_query first."),
 		mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Skill ref returned by skillex_query")),
 		mcplib.WithString("section", mcplib.Description("Optional section id returned by skillex_query")),
 		mcplib.WithNumber("max_bytes", mcplib.Description("Maximum content bytes to return (default 24576, max 65536)")),
 	)
-	s.AddTool(readTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	s.AddTool(readTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 		callBefore()
 		return handleRead(reg, req)
-	})
+	}))
 	if runtime != nil {
 		describeTool := mcplib.NewTool("skillex_mcp_describe",
-			mcplib.WithDescription("Describe one selected downstream MCP capability from a ref returned by skillex_query. This is offline and does not connect to the downstream server."),
+			mcplib.WithDescription("Describe one selected downstream MCP capability from a ref returned by skillex_query. Uses cached capability definitions and does not connect to the downstream server. May include an advisory Skillex update notice."),
 			mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Capability ref returned by skillex_query")),
 			mcplib.WithNumber("max_bytes", mcplib.Description("Maximum encoded description bytes (default 24576, max 65536)")),
 		)
-		s.AddTool(describeTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		s.AddTool(describeTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			callBefore()
 			return handleCapabilityDescribe(ctx, runtime, req)
-		})
+		}))
 		callTool := mcplib.NewTool("skillex_mcp_call",
 			mcplib.WithDescription("Invoke one explicitly selected downstream MCP tool, prompt, or resource template. Skillex revalidates context, schema, readiness, and policy before opening the selected server."),
 			mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Capability ref returned by skillex_query")),
@@ -124,10 +131,10 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			mcplib.WithObject("input_responses", mcplib.Description("MRTR responses keyed by the downstream input request identifiers")),
 			mcplib.WithString("request_state", mcplib.Description("Opaque requestState returned by an input_required result; echo byte-for-byte")),
 		)
-		s.AddTool(callTool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		s.AddTool(callTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			callBefore()
 			return handleCapabilityCall(ctx, runtime, req)
-		})
+		}))
 	}
 
 	// Register resources for each skill
@@ -147,11 +154,15 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		)
 		s.AddResource(resource, func(ctx context.Context, req mcplib.ReadResourceRequest) ([]mcplib.ResourceContents, error) {
 			callBefore()
+			text := resourceSummary(sk)
+			if notice := updateInstructions(updates.Notices(ctx)); notice != "" {
+				text += "\n\n" + notice
+			}
 			return []mcplib.ResourceContents{
 				mcplib.TextResourceContents{
 					URI:      uri,
 					MIMEType: "text/markdown",
-					Text:     resourceSummary(sk),
+					Text:     text,
 				},
 			}, nil
 		})

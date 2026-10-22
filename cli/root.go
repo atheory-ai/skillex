@@ -29,6 +29,20 @@ for AI agent workflows in Node.js projects.
 Skills are Markdown files with YAML frontmatter that teach agents how to use
 packages, follow repo conventions, and work safely in a codebase.`,
 		SilenceUsage: true,
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			// Query/read decorate their result after successful validation. MCP
+			// checks on requests so initialization never waits on the network.
+			for current := cmd; current != nil; current = current.Parent() {
+				if current.Name() == "completion" {
+					return
+				}
+			}
+			switch cmd.Name() {
+			case "query", "read", "mcp", "version", "help", "completion", "__complete", "__completeNoDesc":
+				return
+			}
+			commandUpdateNotices(cmd.Context())
+		},
 	}
 
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output structured JSON to stdout")

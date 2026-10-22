@@ -22,12 +22,14 @@ type MCPResource struct {
 
 // MCPClient communicates with a skillex mcp process over stdio.
 type MCPClient struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	reader *bufio.Reader
-	stderr *lockedBuffer
-	nextID atomic.Int64
-	t      *testing.T
+	// Initialization is retained for assertions about model-facing server instructions.
+	Initialization json.RawMessage
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	reader         *bufio.Reader
+	stderr         *lockedBuffer
+	nextID         atomic.Int64
+	t              *testing.T
 }
 
 type lockedBuffer struct {
@@ -111,7 +113,7 @@ func StartMCPServer(t *testing.T, dir string) *MCPClient {
 func (c *MCPClient) initialize() {
 	c.t.Helper()
 	// Send initialize request
-	c.call("initialize", map[string]any{
+	c.Initialization = c.call("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test-client", "version": "0.0.1"},

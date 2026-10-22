@@ -6,7 +6,10 @@ const { prepareBinary } = require("./acquire");
 
 (async () => {
   const { binary, cleanup } = await prepareBinary();
-  const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", windowsHide: false });
+  const child = spawn(binary, process.argv.slice(2), {
+    stdio: "inherit", windowsHide: false,
+    env: { ...process.env, SKILLEX_INSTALL_METHOD: "npm" },
+  });
   const forward = (signal) => () => child.kill(signal);
   const interrupt = forward("SIGINT");
   const terminate = forward("SIGTERM");

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,8 +29,9 @@ func newReadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			notices := commandUpdateNotices(cmd.Context())
 			if flagJSON {
-				return json.NewEncoder(os.Stdout).Encode(resp)
+				return writeJSONWithNotices(os.Stdout, resp, notices, false)
 			}
 			fmt.Print(resp.Content)
 			if resp.Truncated {

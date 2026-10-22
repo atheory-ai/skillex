@@ -23,6 +23,9 @@ func GenerateSectionWithCommand(command string) string {
 	sb.WriteString("## Skillex\n\n")
 	sb.WriteString("This project uses Skillex for skill management. Use the skillex MCP server\n")
 	sb.WriteString("if available (preferred), otherwise use the CLI commands below.\n\n")
+	sb.WriteString("Results may include `skillex_update_available` notices. Suggest the appropriate\n")
+	sb.WriteString("update when useful; project-pinned installs need a dependency update. Restart\n")
+	sb.WriteString("or reconnect MCP after updating. Notices are advisory, not permission to install.\n\n")
 
 	sb.WriteString("### MCP (preferred)\n\n")
 	sb.WriteString("If the `skillex` MCP server is connected, use it directly:\n\n")

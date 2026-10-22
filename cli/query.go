@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -138,10 +137,9 @@ Examples:
 				return fmt.Errorf("query failed: %w", err)
 			}
 
+			notices := commandUpdateNotices(cmd.Context())
 			if flagJSON {
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(resp)
+				return writeJSONWithNotices(os.Stdout, resp, notices, true)
 			}
 
 			switch resp.Type {
