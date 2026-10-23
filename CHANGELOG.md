@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-22
+
+- **Security:** build with Go 1.27.3 to include the `crypto/x509` certificate distrust fix for CVE-2026-111943 (GO-2026-6809). Existing installations must update to a newly built binary.
+- **Dependencies:** update `google.golang.org/grpc` to v1.83.2 for GO-2026-6443.
+- **Build:** update CI lint tooling for Go 1.27 and document intentional error handling in the MCP stdio shutdown path.
+
 ## [0.11.0] - 2026-10-16
 
 - **Project skills:** refresh indexes in-repo `SKILL.md` files written by Cursor, Claude, Copilot, Codex, and Gemini, and applies their `paths` filters.
