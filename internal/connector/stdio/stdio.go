@@ -491,7 +491,7 @@ func (c *client) Close() error {
 					c.closeErr = fmt.Errorf("forcing downstream MCP server shutdown: %w", err)
 				}
 			}
-			<-c.wait
+			<-c.wait //nolint:errcheck // Forced shutdown is reported below; the process exit error is expected.
 			if c.closeErr == nil {
 				c.closeErr = errors.New("downstream MCP server required forced shutdown")
 			}
