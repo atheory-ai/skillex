@@ -141,6 +141,10 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	result.RepoSkills = append(result.RepoSkills, agentSkills...)
 	result.Errors = append(result.Errors, agentErrs...)
 
+	if err := s.scanTaskSkills(result); err != nil {
+		return nil, err
+	}
+
 	activatedMCP, mcpErrs := packs.ActivateProjectMCPServers(s.root)
 	result.Errors = append(result.Errors, mcpErrs...)
 	for _, activation := range activatedMCP {
@@ -156,6 +160,70 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	}
 
 	return result, nil
+}
+
+// scanTaskSkills indexes task-only skills while preserving the scopes and
+// provenance of skills already discovered by rules, packs, or agent directories.
+func (s *Scanner) scanTaskSkills(result *ScanResult) error {
+	if len(s.cfg.Tasks) == 0 {
+		return nil
+	}
+	indexed := make(map[string]bool, len(result.RepoSkills)+len(result.DepSkills))
+	for _, skills := range [][]SkillFile{result.RepoSkills, result.DepSkills} {
+		for _, skill := range skills {
+			if !skill.IsTest {
+				indexed[skill.RelPath] = true
+			}
+		}
+	}
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	for _, task := range s.cfg.Tasks {
+		if indexed[task.Skill] {
+			continue
+		}
+		skills, err := s.readTaskSkill(root, task.Skill)
+		if err != nil {
+			return fmt.Errorf("task %q skill %q: %w", task.Name, task.Skill, err)
+		}
+		if len(skills) == 0 {
+			return fmt.Errorf("task %q skill %q was not found", task.Name, task.Skill)
+		}
+		result.RepoSkills = append(result.RepoSkills, skills...)
+		indexed[task.Skill] = true
+
+		testPath := strings.TrimSuffix(task.Skill, ".md") + ".test.md"
+		tests, err := s.readTaskSkill(root, testPath)
+		if err != nil && !os.IsNotExist(err) {
+			result.Errors = append(result.Errors, fmt.Errorf("repo test %s: %w", testPath, err))
+		}
+		result.RepoSkills = append(result.RepoSkills, tests...)
+	}
+	return nil
+}
+
+func (s *Scanner) readTaskSkill(root *os.Root, path string) ([]SkillFile, error) {
+	abs := filepath.Join(s.root, filepath.FromSlash(path))
+	// Preserve the authenticated read path for installed pack content.
+	if _, _, ok := packregistry.InstalledFilePath(abs); ok {
+		return s.readSkillFile(abs, path, "", "", "repo", "repo", "", "")
+	}
+	info, err := root.Stat(filepath.FromSlash(path))
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("expected a regular Markdown file")
+	}
+	data, err := root.ReadFile(filepath.FromSlash(path))
+	if err != nil {
+		return nil, err
+	}
+	return s.readSkillDataWithScopes(data, abs, path, "", "", "repo", "repo", "", "", nil)
 }
 
 // scanDependencyBoundary resolves dependencies at a configured boundary and scans exported skills.

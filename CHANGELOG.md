@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- Configure which skills agents should apply before named tasks such as committing or opening a pull request. Session setup discovers task cues and skill refs through the CLI or MCP.
+
 ## [0.11.1] - 2026-10-22
 
 - **Security:** build with Go 1.27.3 to include the `crypto/x509` certificate distrust fix for CVE-2026-111943 (GO-2026-6809). Existing installations must update to a newly built binary.

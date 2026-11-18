@@ -11,6 +11,7 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/capability"
+	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/gobwas/glob"
 )
@@ -46,6 +47,7 @@ type Response struct {
 	Results                 []Result         `json:"results,omitempty"`
 	Capabilities            []broker.Summary `json:"capabilities,omitempty"`
 	Vocabulary              *Vocabulary      `json:"vocabulary,omitempty"`
+	Tasks                   []TaskSummary    `json:"tasks,omitempty"`
 	Query                   *Echo            `json:"query,omitempty"`
 	MatchCount              int              `json:"match_count,omitempty"`
 	ReturnedCount           int              `json:"returned_count,omitempty"`
@@ -54,6 +56,13 @@ type Response struct {
 	TooBroad                bool             `json:"too_broad,omitempty"`
 	NextCursor              string           `json:"next_cursor,omitempty"`
 	NarrowWith              *NarrowWith      `json:"narrow_with,omitempty"`
+}
+
+// TaskSummary announces a configured task without loading its skill body.
+type TaskSummary struct {
+	Name string `json:"name"`
+	When string `json:"when"`
+	Ref  string `json:"ref"`
 }
 
 // Echo captures the filters that were searched, included in no_match responses.
@@ -191,6 +200,7 @@ type Engine struct {
 	capabilities      CapabilityDiscoverer
 	capabilityContext string
 	capabilityView    string
+	tasks             []config.TaskBinding
 }
 
 // CapabilityDiscoverer is the bounded, offline broker discovery surface used
@@ -208,6 +218,12 @@ func New(reg *registry.Registry) *Engine {
 // summaries alongside existing skill results.
 func NewWithCapabilities(reg *registry.Registry, discoverer CapabilityDiscoverer, contextDigest, view string) *Engine {
 	return &Engine{reg: reg, capabilities: discoverer, capabilityContext: contextDigest, capabilityView: view}
+}
+
+// WithTasks adds project-configured bindings to the unfiltered setup query.
+func (e *Engine) WithTasks(tasks []config.TaskBinding) *Engine {
+	e.tasks = tasks
+	return e
 }
 
 // Execute runs a query and returns a typed Response.
@@ -595,6 +611,18 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 	response := &Response{
 		Type:       ResponseTypeVocabulary,
 		Vocabulary: buildVocabulary(skills),
+	}
+	if len(e.tasks) > 0 {
+		indexed := make(map[string]bool, len(skills))
+		for _, skill := range skills {
+			indexed[skill.Path] = true
+		}
+		for _, task := range e.tasks {
+			if !indexed[task.Skill] {
+				return nil, fmt.Errorf("task %q skill %q is not indexed; run 'skillex refresh'", task.Name, task.Skill)
+			}
+			response.Tasks = append(response.Tasks, TaskSummary{Name: task.Name, When: task.When, Ref: skillRef(task.Skill)})
+		}
 	}
 	if e.capabilities != nil {
 		count, err := e.reg.CapabilityCount()

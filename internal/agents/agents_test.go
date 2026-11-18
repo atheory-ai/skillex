@@ -11,6 +11,8 @@ func TestGenerateSectionIsStableBootstrapOnly(t *testing.T) {
 	for _, required := range []string{
 		"skillex_query",
 		"skillex_read",
+		"with no filters to discover configured tasks",
+		"Before each matching task",
 		"### CLI (fallback)",
 		"skillex query --search",
 		"skillex_update_available",

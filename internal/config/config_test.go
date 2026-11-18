@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestValidateTaskBindings(t *testing.T) {
+	valid := TaskBinding{Name: "open-pr", When: "You are about to open a pull request.", Skill: "skills/open-pr.md"}
+	for _, tc := range []struct {
+		name  string
+		tasks []TaskBinding
+		field string
+	}{
+		{"valid", []TaskBinding{valid}, ""},
+		{"duplicate", []TaskBinding{valid, {Name: "OPEN-PR", When: valid.When, Skill: valid.Skill}}, "Name"},
+		{"empty name", []TaskBinding{{When: valid.When, Skill: valid.Skill}}, "Name"},
+		{"empty cue", []TaskBinding{{Name: valid.Name, Skill: valid.Skill}}, "When"},
+		{"multiline cue", []TaskBinding{{Name: valid.Name, When: "Before work\nstarts", Skill: valid.Skill}}, "When"},
+		{"external path", []TaskBinding{{Name: valid.Name, When: valid.When, Skill: "../outside.md"}}, "Skill"},
+		{"Windows path", []TaskBinding{{Name: valid.Name, When: valid.When, Skill: "C:/outside.md"}}, "Skill"},
+		{"test path", []TaskBinding{{Name: valid.Name, When: valid.When, Skill: "skills/open-pr.test.md"}}, "Skill"},
+		{"too many tasks", make([]TaskBinding, 33), "at most 32"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := (&Config{Version: SkillsOnlyConfigVersion, Tasks: tc.tasks}).Validate()
+			if tc.field == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("expected error mentioning %q, got %v", tc.field, err)
+			}
+		})
+	}
+}
+
 func TestLoad_JSONConfig(t *testing.T) {
 	dir := t.TempDir()
 	data := `{

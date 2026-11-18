@@ -10,6 +10,7 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/atheory-ai/skillex/internal/agents"
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/brokerruntime"
 	"github.com/atheory-ai/skillex/internal/capability"
@@ -34,14 +35,17 @@ func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version s
 		install.Strategy, install.PackageManager = cfg.Install.Strategy, cfg.Install.PackageManager
 	}
 	updates := updatecheck.NewEnvironment(version, install)
-	if cfg == nil || !cfg.MCPEnabled() {
+	if cfg == nil {
 		return serve(reg, query.New(reg), nil, version, before, updates)
+	}
+	if !cfg.MCPEnabled() {
+		return serve(reg, query.New(reg).WithTasks(cfg.Tasks), nil, version, before, updates)
 	}
 	runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 	if err != nil {
 		return err
 	}
-	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
+	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View).WithTasks(cfg.Tasks)
 	return serve(reg, engine, runtime, version, before, updates)
 }
 
@@ -51,12 +55,16 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 			before()
 		}
 	}
+	instructions := agents.MCPTaskSetup
+	if notice := updateInstructions(updates.CachedNotices()); notice != "" {
+		instructions += "\n\n" + notice
+	}
 	s := server.NewMCPServer(
 		"skillex",
 		updatecheck.Version(version),
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(true, true),
-		server.WithInstructions(updateInstructions(updates.CachedNotices())),
+		server.WithInstructions(instructions),
 	)
 
 	// Register query tool
@@ -64,6 +72,8 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		"skillex_query",
 		mcplib.WithDescription(
 			"Query skillex skills by path, topic, tags, package, or keyword search. "+
+				"At session setup, call with no filters to discover configured tasks. "+
+				"Before doing a matching task, read its skill by ref if needed and follow it each time the task applies. "+
 				"Use 'search' for intent-based discovery when you don't know the skill taxonomy — "+
 				"pass space or comma-separated concepts and all matching skills are returned in one call. "+
 				"Use topic/tags for structured filtering when you know the organization. "+

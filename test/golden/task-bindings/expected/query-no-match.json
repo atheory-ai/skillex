@@ -1,0 +1,5 @@
+{
+  "type": "no_match",
+  "vocabulary": {"total_skills": 2},
+  "query": {"topics": ["missing"]}
+}

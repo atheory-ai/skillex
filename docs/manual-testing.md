@@ -244,6 +244,23 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 - Whether the CLI output format is easy for the agent to parse.
 - Common mistakes the agent makes when constructing queries.
 
+### Task Bindings Across Turns
+
+1. In a scratch checkout, bind two Markdown skills to the `commit` and
+   `open-pr` tasks. Give them distinct instructions, such as reviewing the
+   staged diff and including verification evidence in the PR body. Run
+   `skillex init --yes` to index the skills and generate setup instructions.
+2. Start an MCP session. Ask for an explanation with no commit or PR. Confirm
+   the agent receives names, cues, and refs from an unfiltered Skillex query.
+   Neither task skill should be read for this request.
+3. In the same session, ask for a commit and then say, “Prepare a pull request
+   for that commit and show me the draft before opening it.” Observe whether
+   the agent uses Skillex to load the corresponding skill before each task.
+4. Ask for a follow-up edit and another commit. Check whether the agent reviews
+   the new staged diff, even if it can reuse the skill text already in context.
+5. Repeat with MCP disconnected. Verify that the generated instructions lead
+   the agent through `skillex query` and `skillex read --ref`.
+
 ### Journey 5A: Dynamic MCP Capability Broker
 
 **Persona:** Developer whose harness registers only Skillex but needs several

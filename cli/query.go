@@ -45,7 +45,7 @@ Discovery responses are always bounded summaries. Use skillex read --ref to load
 	selected skill or section.
 
 When no filters are provided, a vocabulary response is returned listing the available
-topics, tags, and packages you can filter by.
+topics, tags, and packages you can filter by, plus any configured tasks and their skill refs.
 
 When filters are provided but no skills match, a no_match response is returned with
 the same vocabulary as a hint to help reformulate the query.
@@ -85,6 +85,7 @@ Examples:
 				}
 				eng = query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
 			}
+			eng.WithTasks(cfg.Tasks)
 
 			var topics []string
 			if topicFlag != "" {
@@ -163,6 +164,12 @@ Examples:
 			case query.ResponseTypeVocabulary:
 				if !flagQuiet {
 					printVocabulary(resp.Vocabulary, "")
+					if len(resp.Tasks) > 0 {
+						fmt.Println("Tasks:")
+						for _, task := range resp.Tasks {
+							fmt.Printf("  %s: %s\n    ref: %s\n", task.Name, task.When, task.Ref)
+						}
+					}
 				}
 
 			case query.ResponseTypeNoMatch:

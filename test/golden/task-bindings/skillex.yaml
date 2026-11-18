@@ -1,0 +1,11 @@
+Version: 5
+Rules:
+  - Scope: "src/**"
+    Skills: [skills/commit.md]
+Tasks:
+  - Name: commit
+    When: You are about to create a Git commit.
+    Skill: skills/commit.md
+  - Name: open-pr
+    When: You are preparing to open a pull request.
+    Skill: skills/open-pr.md

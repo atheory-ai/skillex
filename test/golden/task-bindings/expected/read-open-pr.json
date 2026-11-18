@@ -1,0 +1,6 @@
+{
+  "ref": "skill:c2tpbGxzL29wZW4tcHIubWQ",
+  "path": "skills/open-pr.md",
+  "content": "# Open a pull request\n\nSummarize what changed and report the checks that actually ran. Identify anything still unverified.\n",
+  "content_bytes": 123
+}
