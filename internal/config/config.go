@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/atheory-ai/skillex/internal/steering"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,9 +38,22 @@ type Config struct {
 	Version    int                    `yaml:"Version" json:"Version"`
 	Rules      []Rule                 `yaml:"Rules" json:"Rules"`
 	Tasks      []TaskBinding          `yaml:"Tasks,omitempty" json:"Tasks,omitempty"`
+	Core       *CoreConfig            `yaml:"Core,omitempty" json:"Core,omitempty"`
 	MCP        *MCPConfig             `yaml:"MCP,omitempty" json:"MCP,omitempty"`
 	Registries []PackRegistry         `yaml:"registries,omitempty" json:"registries,omitempty"`
 	Policy     map[string]interface{} `yaml:"policy,omitempty" json:"policy,omitempty"`
+}
+
+// CoreConfig selects optional, built-in standing guidance for agents.
+type CoreConfig struct {
+	Presets []string `yaml:"Presets,omitempty" json:"Presets,omitempty"`
+}
+
+func (c *Config) CoreGuidance() (*steering.Guidance, error) {
+	if c == nil || c.Core == nil {
+		return nil, nil
+	}
+	return steering.Resolve(c.Core.Presets)
 }
 
 // TaskBinding tells an agent when to load a project skill.
@@ -161,6 +175,9 @@ func (c *Config) Validate() error {
 	if err := validateTasks(c.Tasks); err != nil {
 		return err
 	}
+	if _, err := c.CoreGuidance(); err != nil {
+		return fmt.Errorf("Core.Presets: %w", err)
+	}
 	if len(c.Policy) > 0 {
 		return fmt.Errorf("registry policy filtering is not yet supported")
 	}
@@ -263,6 +280,12 @@ func validateTasks(tasks []TaskBinding) error {
 		seen[name] = struct{}{}
 		if len(task.When) > 240 || strings.TrimSpace(task.When) == "" || strings.ContainsFunc(task.When, unicode.IsControl) {
 			return fmt.Errorf("%s.When must be a single line of 1–240 bytes", prefix)
+		}
+		if strings.HasPrefix(task.Skill, steering.SkillPrefix) {
+			if _, ok := steering.FindSkill(task.Skill); !ok {
+				return fmt.Errorf("%s.Skill names an unknown bundled skill %q", prefix, task.Skill)
+			}
+			continue
 		}
 		if len(task.Skill) > 512 || !fs.ValidPath(task.Skill) || !filepath.IsLocal(filepath.FromSlash(task.Skill)) ||
 			strings.ContainsAny(task.Skill, `\:`) || strings.ContainsFunc(task.Skill, unicode.IsControl) ||

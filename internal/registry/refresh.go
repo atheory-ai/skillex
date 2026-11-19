@@ -12,6 +12,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/linker"
 	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/scanner"
+	"github.com/atheory-ai/skillex/internal/steering"
 	"github.com/atheory-ai/skillex/internal/trust"
 	"github.com/atheory-ai/skillex/internal/validator"
 )
@@ -148,6 +149,14 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 	// 3. Clear and rebuild
 	if err := reg.Clear(); err != nil {
 		return nil, fmt.Errorf("clearing registry: %w", err)
+	}
+	for _, skill := range steering.Skills() {
+		if _, err := reg.InsertSkill(Skill{
+			Path: skill.Ref(), Name: skill.Name, Description: skill.When, Content: skill.Content,
+			Topics: []string{skill.Topic}, Visibility: "public", SourceType: steering.Source,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	// 4. Insert skills

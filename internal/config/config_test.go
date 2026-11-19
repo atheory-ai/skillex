@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestCorePresetValidation(t *testing.T) {
+	for _, tc := range []struct {
+		presets []string
+		wantErr string
+	}{
+		{nil, ""},
+		{[]string{"minimal-comments"}, ""},
+		{[]string{"verify-behavior", "recheck-assumptions"}, ""},
+		{[]string{"unknown"}, "unknown core preset"},
+		{[]string{"minimal-comments", "minimal-comments"}, "duplicate core preset"},
+	} {
+		cfg := Config{Version: SkillsOnlyConfigVersion, Core: &CoreConfig{Presets: tc.presets}}
+		err := cfg.Validate()
+		if tc.wantErr == "" && err != nil {
+			t.Fatalf("validating %v: %v", tc.presets, err)
+		}
+		if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+			t.Fatalf("validating %v: expected %q, got %v", tc.presets, tc.wantErr, err)
+		}
+	}
+}
+
 func TestValidateTaskBindings(t *testing.T) {
 	valid := TaskBinding{Name: "open-pr", When: "You are about to open a pull request.", Skill: "skills/open-pr.md"}
 	for _, tc := range []struct {
@@ -15,6 +37,8 @@ func TestValidateTaskBindings(t *testing.T) {
 		field string
 	}{
 		{"valid", []TaskBinding{valid}, ""},
+		{"bundled", []TaskBinding{{Name: valid.Name, When: valid.When, Skill: "skillex:verify-behavior"}}, ""},
+		{"unknown bundled", []TaskBinding{{Name: valid.Name, When: valid.When, Skill: "skillex:unknown"}}, "unknown bundled skill"},
 		{"duplicate", []TaskBinding{valid, {Name: "OPEN-PR", When: valid.When, Skill: valid.Skill}}, "Name"},
 		{"empty name", []TaskBinding{{When: valid.When, Skill: valid.Skill}}, "Name"},
 		{"empty cue", []TaskBinding{{Name: valid.Name, Skill: valid.Skill}}, "When"},

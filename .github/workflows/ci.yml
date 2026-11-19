@@ -64,6 +64,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/set-npm-version.mjs $version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check task binding paths for dependency skills
+        run: go test ./internal/scanner -run ^TestScannerUsesResolverExports$
       - name: Exercise Windows wrapper and generated local commands
         run: node --test scripts/windows-runtime.test.mjs
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
-	"github.com/atheory-ai/skillex/internal/validator"
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -142,9 +141,11 @@ func runDoctor(root string) error {
 
 	// 3. Validate test coverage
 	if cfg != nil {
-		dirs := collectSkillDirs(root, cfg, "")
-		issues, err := validator.ValidateAll(dirs)
-		if err == nil {
+		issues, err := validateProjectSkills(root, cfg, collectSkillDirs(root, cfg, ""))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("test coverage: %v", err))
+			printCheck(false, "test coverage", err.Error())
+		} else {
 			errIssues := 0
 			warnIssues := 0
 			for _, iss := range issues {
@@ -152,6 +153,7 @@ func runDoctor(root string) error {
 				case "error":
 					errIssues++
 					errs = append(errs, fmt.Sprintf("test: %s: %s", iss.File, iss.Message))
+					printCheck(false, iss.File, iss.Message)
 				case "warning":
 					warnIssues++
 					warns = append(warns, fmt.Sprintf("test: %s: %s", iss.File, iss.Message))

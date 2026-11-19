@@ -405,6 +405,64 @@ skillex init --yaml
 | `Skills` | Repo-local skill files to attach to this scope. |
 | `DependencyBoundary` | Path to a `package.json`. The scanner reads its dependencies and links any that export skills. |
 
+### Optional core steering
+
+> **Experimental and opt-in.** Preset wording and activation cues may change
+> as we evaluate how agents use them.
+
+Skillex ships its agent usage guidance in the MCP server's initialization
+instructions. You can opt into additional standing guidance in `skillex.yaml`
+or the equivalent `Core.Presets` array in `skillex.json`.
+
+```yaml
+Core:
+  Presets: [minimal-comments, verify-behavior, recheck-assumptions]
+```
+
+| Preset | When it applies |
+| --- | --- |
+| `minimal-comments` | When writing or reviewing code comments |
+| `verify-behavior` | Before declaring a change complete |
+| `recheck-assumptions` | When two fixes based on the same assumption fail the same check |
+
+Each preset is a separate opt-in flag. List only the presets you want. Omit
+`Core` or use `Presets: []` to leave all three off. Run `skillex refresh` to
+index the bundled skills after updating Skillex. Reconnect MCP after editing
+the preset selection.
+
+At MCP initialization, core steering contributes the enabled cues and their skill refs. An
+unfiltered `skillex_query` also lists those pointers in `core_skills`. When
+core is enabled, query and read responses carry a compact `core` marker with a
+`ref` and `revision`. The agent can read that ref to recover the enabled cues
+if it lacks the current revision. The agent loads a detailed skill the first
+time its cue applies and can reuse that skill on later turns. The MCP host decides how to surface initialization instructions to
+the model.
+
+For CLI-only setups, run `skillex query --json` and read the returned ref with
+`skillex read --ref <ref>`. Core and the setup lookup stay available throughout
+the conversation. Subsequent lookup responses carry the marker so the agent
+can recover the guidance when context has been compacted. Use `--json` on
+filtered CLI queries to receive a ref for the subsequent read. If the config
+is invalid, an indexed skill read writes the diagnostic to stderr and still
+returns its content.
+
+### Bundled skills
+
+The bundled catalog is part of the experimental core steering rollout.
+
+Use `skillex query --source skillex` or
+`skillex_query({ "source": "skillex" })` to browse the bundled catalog.
+Add `--search` or `--topic` to narrow it. The catalog includes all built-in
+skills regardless of which presets are enabled. Read a selected ref through
+`skillex_read` or `skillex read --ref <ref>`. Ordinary project searches omit
+bundled skills. After an upgrade, setup with bundled pointers and catalog queries
+report when the index needs `skillex refresh`.
+
+Project tasks can point to a bundled skill directly. For example,
+`Skill: skillex:verify-behavior` on an `open-pr` task gives that task the
+verification guidance even when the conversation-wide preset is disabled.
+Skillex assigns bundled source provenance when it builds the index.
+
 ### Task bindings
 
 Use `Tasks` in `skillex.yaml` or the equivalent array in `skillex.json` to
@@ -423,11 +481,14 @@ Tasks:
 ```
 
 Each task has a unique name, a one-line matching cue, and a project-relative
-Markdown skill path. A task can use an existing skill or index its own on
+Markdown path or bundled skill ref. A task can use an existing skill or index its own on
 refresh, so a separate `Rules` entry is optional. Add a rule if the skill
 should also match a particular working path. The setup list supports up to
 32 tasks. Keep names within 64 characters, cues within 240 bytes, and skill
-paths within 512 bytes.
+paths within 512 bytes. Local task files and their sibling tests must resolve
+inside the project, including skills also discovered by a rule or dependency.
+Both `skillex test validate --check` and `skillex doctor` check a task skill
+and its sibling test even if the task is its only configuration entry.
 
 At session setup, call `skillex_query` without filters, or run `skillex query`.
 Use `skillex query --json` to inspect the same `tasks` array programmatically.
@@ -873,6 +934,7 @@ Parameters:
   topic   string    Comma-separated topic filters
   tags    string    Comma-separated tag filters
   package string    Package name filter
+  source  string    Bundled skill catalog (skillex)
   search  string    Keyword search over skill name and description (space/comma tokens, OR)
   limit   number    Maximum discovery summaries (default 8, max 20)
   cursor  string    Continuation cursor for a broad discovery result
@@ -966,6 +1028,7 @@ skillex query --path <filepath>
 skillex query --topic <topic>
 skillex query --tags <tag1,tag2>
 skillex query --package <name>
+skillex query --source skillex
 skillex query --search "auth" --topic security
 skillex query --path <filepath> --search "<task intent>" --limit 8
 skillex query --mcp-server io.example/issues --mcp-kind tool --mcp-availability ready
@@ -1128,7 +1191,7 @@ Vendored skills land in `skillex/vendor/<source>/` with:
 
 ## AGENTS.md
 
-`skillex init` creates or updates a stable bootstrap section in `AGENTS.md`. It tells agents to discover configured tasks at session setup and retrieve matching skills through MCP or the CLI fallback. When a project uses a supported Claude or Gemini instruction file, its generated bridge imports `AGENTS.md`. `skillex refresh` rebuilds the registry while leaving agent instruction files intact.
+`skillex init` creates or updates a stable bootstrap section in `AGENTS.md`. It points agents to Skillex setup when conversation context is missing and explains the CLI fallback. The MCP server supplies the detailed retrieval guidance. When a project uses a supported Claude or Gemini instruction file, its generated bridge imports `AGENTS.md`. `skillex refresh` rebuilds the registry while leaving agent instruction files intact.
 
 ```markdown
 <!-- skillex:start -->
@@ -1139,8 +1202,8 @@ if available (preferred), otherwise use the CLI commands below.
 
 ### MCP (preferred)
 ...
-- Call `skillex_query` with no filters at setup to discover configured tasks.
-- Before each matching task, load its skill with `skillex_read` if needed.
+- Call `skillex_query` with no filters if Skillex setup context is missing.
+- Follow the setup guidance from Skillex and use `skillex_read` for returned refs.
 
 ### CLI (fallback)
 ...

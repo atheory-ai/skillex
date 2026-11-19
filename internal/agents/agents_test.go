@@ -11,12 +11,11 @@ func TestGenerateSectionIsStableBootstrapOnly(t *testing.T) {
 	for _, required := range []string{
 		"skillex_query",
 		"skillex_read",
-		"with no filters to discover configured tasks",
-		"Before each matching task",
+		MCPSetupReminder,
+		"before each occurrence",
 		"### CLI (fallback)",
 		"skillex query --search",
-		"skillex_update_available",
-		"Notices are advisory, not permission to install.",
+		"Treat update notices as advisory.",
 	} {
 		if !strings.Contains(section, required) {
 			t.Errorf("generated section missing %q:\n%s", required, section)
@@ -31,6 +30,14 @@ func TestGenerateSectionIsStableBootstrapOnly(t *testing.T) {
 	} {
 		if strings.Contains(section, legacyHeading) {
 			t.Errorf("generated section must not contain legacy inventory %q:\n%s", legacyHeading, section)
+		}
+	}
+}
+
+func TestMCPInstructionsContainRetrievalGuidance(t *testing.T) {
+	for _, required := range []string{MCPSetupReminder, "configured tasks", "core ref and revision", "narrow_with", "reconnect MCP"} {
+		if !strings.Contains(MCPInstructions, required) {
+			t.Errorf("MCP instructions missing %q", required)
 		}
 	}
 }

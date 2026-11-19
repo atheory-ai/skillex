@@ -1,0 +1,68 @@
+{
+  "type": "results",
+  "results": [
+    {
+      "ref": "skillex:minimal-comments",
+      "path": "skillex:minimal-comments",
+      "name": "Minimal comments",
+      "description": "Avoid comments that restate code. Preserve required documentation and explanations of constraints.",
+      "visibility": "public",
+      "source_type": "skillex",
+      "topics": [
+        "code-style"
+      ],
+      "content_bytes": 492,
+      "sections": [
+        {
+          "id": "minimal-comments",
+          "title": "Minimal comments",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "ref": "skillex:recheck-assumptions",
+      "path": "skillex:recheck-assumptions",
+      "name": "Recheck assumptions",
+      "description": "If two fixes based on the same assumption fail the same check, test the assumption before trying again.",
+      "visibility": "public",
+      "source_type": "skillex",
+      "topics": [
+        "debugging"
+      ],
+      "content_bytes": 517,
+      "sections": [
+        {
+          "id": "recheck-assumptions",
+          "title": "Recheck assumptions",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "ref": "skillex:verify-behavior",
+      "path": "skillex:verify-behavior",
+      "name": "Verify behavior",
+      "description": "Before declaring a change done, verify its behavior through the normal entry point.",
+      "visibility": "public",
+      "source_type": "skillex",
+      "topics": [
+        "verification"
+      ],
+      "content_bytes": 518,
+      "sections": [
+        {
+          "id": "verify-behavior",
+          "title": "Verify behavior",
+          "level": 1
+        }
+      ]
+    }
+  ],
+  "core": {
+    "ref": "core:steering",
+    "revision": "629cce0d540f7421"
+  },
+  "match_count": 3,
+  "returned_count": 3
+}

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/steering"
 	"github.com/gobwas/glob"
 )
 
@@ -43,19 +46,21 @@ const (
 
 // Response is the unified return type for all query executions.
 type Response struct {
-	Type                    ResponseType     `json:"type"`
-	Results                 []Result         `json:"results,omitempty"`
-	Capabilities            []broker.Summary `json:"capabilities,omitempty"`
-	Vocabulary              *Vocabulary      `json:"vocabulary,omitempty"`
-	Tasks                   []TaskSummary    `json:"tasks,omitempty"`
-	Query                   *Echo            `json:"query,omitempty"`
-	MatchCount              int              `json:"match_count,omitempty"`
-	ReturnedCount           int              `json:"returned_count,omitempty"`
-	CapabilityMatchCount    int              `json:"capability_match_count,omitempty"`
-	CapabilityReturnedCount int              `json:"capability_returned_count,omitempty"`
-	TooBroad                bool             `json:"too_broad,omitempty"`
-	NextCursor              string           `json:"next_cursor,omitempty"`
-	NarrowWith              *NarrowWith      `json:"narrow_with,omitempty"`
+	Type                    ResponseType       `json:"type"`
+	Results                 []Result           `json:"results,omitempty"`
+	Capabilities            []broker.Summary   `json:"capabilities,omitempty"`
+	Vocabulary              *Vocabulary        `json:"vocabulary,omitempty"`
+	Tasks                   []TaskSummary      `json:"tasks,omitempty"`
+	Core                    *steering.Marker   `json:"core,omitempty"`
+	CoreSkills              []steering.Pointer `json:"core_skills,omitempty"`
+	Query                   *Echo              `json:"query,omitempty"`
+	MatchCount              int                `json:"match_count,omitempty"`
+	ReturnedCount           int                `json:"returned_count,omitempty"`
+	CapabilityMatchCount    int                `json:"capability_match_count,omitempty"`
+	CapabilityReturnedCount int                `json:"capability_returned_count,omitempty"`
+	TooBroad                bool               `json:"too_broad,omitempty"`
+	NextCursor              string             `json:"next_cursor,omitempty"`
+	NarrowWith              *NarrowWith        `json:"narrow_with,omitempty"`
 }
 
 // TaskSummary announces a configured task without loading its skill body.
@@ -72,6 +77,7 @@ type Echo struct {
 	Tags         []string `json:"tags,omitempty"`
 	Package      string   `json:"package,omitempty"`
 	Search       string   `json:"search,omitempty"`
+	Source       string   `json:"source,omitempty"`
 	Server       string   `json:"server,omitempty"`
 	Kind         string   `json:"capability_kind,omitempty"`
 	Availability string   `json:"availability,omitempty"`
@@ -154,13 +160,14 @@ type NarrowWith struct {
 
 // ReadResponse is the bounded second stage of progressive skill retrieval.
 type ReadResponse struct {
-	Ref          string   `json:"ref"`
-	Path         string   `json:"path"`
-	Section      *Section `json:"section,omitempty"`
-	Content      string   `json:"content"`
-	ContentBytes int      `json:"content_bytes"`
-	Truncated    bool     `json:"truncated,omitempty"`
-	NextAction   string   `json:"next_action,omitempty"`
+	Ref          string           `json:"ref"`
+	Path         string           `json:"path,omitempty"`
+	Section      *Section         `json:"section,omitempty"`
+	Content      string           `json:"content"`
+	ContentBytes int              `json:"content_bytes"`
+	Truncated    bool             `json:"truncated,omitempty"`
+	NextAction   string           `json:"next_action,omitempty"`
+	Core         *steering.Marker `json:"core,omitempty"`
 }
 
 // Params holds query parameters.
@@ -176,6 +183,7 @@ type Params struct {
 	// Search performs keyword search across skill name and description.
 	// Whitespace/comma-separated tokens are each matched independently (OR).
 	Search         string
+	Source         string
 	Server         string
 	CapabilityKind string
 	Availability   string
@@ -191,7 +199,7 @@ type Params struct {
 
 // hasFilters reports whether any filter dimension is set.
 func (p Params) hasFilters() bool {
-	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != "" || p.Search != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != ""
+	return p.Path != "" || len(p.Topics) > 0 || len(p.Tags) > 0 || p.Package != "" || p.Search != "" || p.Source != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != ""
 }
 
 // Engine executes structured skill queries against the registry.
@@ -201,6 +209,7 @@ type Engine struct {
 	capabilityContext string
 	capabilityView    string
 	tasks             []config.TaskBinding
+	core              *steering.Guidance
 }
 
 // CapabilityDiscoverer is the bounded, offline broker discovery surface used
@@ -226,6 +235,37 @@ func (e *Engine) WithTasks(tasks []config.TaskBinding) *Engine {
 	return e
 }
 
+// WithCore makes optional steering discoverable and readable through Skillex.
+func (e *Engine) WithCore(core *steering.Guidance) *Engine {
+	e.core = core
+	return e
+}
+
+// CheckBundledCatalog verifies that discovery and core setup can return readable
+// refs after the binary is upgraded independently of the project index.
+func (e *Engine) CheckBundledCatalog() error {
+	indexed, err := e.reg.QueryBySource(steering.Source)
+	if err != nil {
+		return err
+	}
+	stale := fmt.Errorf("bundled skill catalog is missing or stale; run 'skillex refresh'")
+	if len(indexed) != len(steering.Skills()) {
+		return stale
+	}
+	for _, row := range indexed {
+		skill, ok := steering.FindSkill(row.Path)
+		if !ok || !matchesBundled(&row, skill) {
+			return stale
+		}
+	}
+	return nil
+}
+
+func matchesBundled(row *registry.Skill, skill steering.Skill) bool {
+	return row != nil && row.SourceType == steering.Source && row.Content == skill.Content &&
+		row.Name == skill.Name && row.Description == skill.When && slices.Equal(row.Topics, []string{skill.Topic})
+}
+
 // Execute runs a query and returns a typed Response.
 //
 // Behaviour:
@@ -235,6 +275,17 @@ func (e *Engine) WithTasks(tasks []config.TaskBinding) *Engine {
 //
 // No code path returns all skill content as a fallback.
 func (e *Engine) Execute(p Params) (*Response, error) {
+	if p.Source != "" {
+		if p.Source != steering.Source {
+			return nil, fmt.Errorf("unsupported skill source %q", p.Source)
+		}
+		if p.Server != "" || p.CapabilityKind != "" || p.Availability != "" {
+			return nil, fmt.Errorf("skill source cannot be combined with MCP capability filters")
+		}
+		if err := e.CheckBundledCatalog(); err != nil {
+			return nil, err
+		}
+	}
 	if p.CapabilityKind != "" && p.CapabilityKind != string(capability.CapabilityTool) && p.CapabilityKind != string(capability.CapabilityPrompt) && p.CapabilityKind != string(capability.CapabilityResourceTemplate) && p.CapabilityKind != string(capability.CapabilityServer) {
 		return nil, fmt.Errorf("unsupported MCP capability kind %q", p.CapabilityKind)
 	}
@@ -260,7 +311,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 		capabilityPage broker.DiscoveryPage
 		err            error
 	)
-	if e.capabilities != nil && (p.Search != "" || p.Path != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != "") {
+	if p.Source == "" && e.capabilities != nil && (p.Search != "" || p.Path != "" || p.Server != "" || p.CapabilityKind != "" || p.Availability != "") {
 		capabilityPage, err = e.capabilities.QueryPage(context.Background(), broker.Query{
 			Path: p.Path, Search: p.Search, ContextDigest: e.capabilityContext,
 			View: e.capabilityView, Server: p.Server, Kind: capability.CapabilityKind(p.CapabilityKind), Availability: capability.AvailabilityStatus(p.Availability),
@@ -309,13 +360,19 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 			}
 		}
 	} else if !hasClassicFilters {
-		// Path is the only filter.
-		skills, err = e.reg.QueryByPath(p.Path)
+		if p.Source != "" && p.Path == "" {
+			skills, err = e.reg.QueryBySource(p.Source)
+		} else {
+			skills, err = e.reg.QueryByPath(p.Path)
+		}
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	skills = slices.DeleteFunc(skills, func(skill registry.Skill) bool {
+		return (skill.SourceType == steering.Source) != (p.Source == steering.Source)
+	})
 	if len(skills) == 0 && capabilityPage.MatchCount == 0 {
 		return e.noMatchResponse(p)
 	}
@@ -372,6 +429,7 @@ func (e *Engine) Execute(p Params) (*Response, error) {
 
 	resp := &Response{
 		Type: ResponseTypeResults, Results: results, Capabilities: capabilities,
+		Core:       e.core.Marker(),
 		MatchCount: matchCount, ReturnedCount: len(results),
 		CapabilityMatchCount: capabilityMatchCount, CapabilityReturnedCount: len(capabilities),
 	}
@@ -469,47 +527,73 @@ func compactText(s string, maxLen int) string {
 }
 
 func skillRef(path string) string {
+	if strings.HasPrefix(path, steering.SkillPrefix) {
+		return path
+	}
 	return "skill:" + base64.RawURLEncoding.EncodeToString([]byte(path))
 }
 
 // PathFromRef resolves a stable skill reference without exposing database ids.
 func PathFromRef(ref string) (string, bool) {
+	if strings.HasPrefix(ref, steering.SkillPrefix) {
+		_, ok := steering.FindSkill(ref)
+		return ref, ok
+	}
 	if !strings.HasPrefix(ref, "skill:") {
 		return "", false
 	}
 	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(ref, "skill:"))
-	return string(b), err == nil && len(b) > 0
+	return string(b), err == nil && len(b) > 0 && !strings.HasPrefix(string(b), steering.SkillPrefix)
 }
 
 // Read returns one selected skill, optionally one selected section. Content is
 // never returned above maxBytes; callers can select a section to narrow it.
 func (e *Engine) Read(ref, sectionID string, maxBytes int) (*ReadResponse, error) {
+	resp := &ReadResponse{Ref: ref, Core: e.core.Marker()}
+	if ref == steering.Ref {
+		if e.core == nil {
+			return nil, fmt.Errorf("core steering is disabled")
+		}
+		if err := e.CheckBundledCatalog(); err != nil {
+			return nil, err
+		}
+		return boundedRead(resp, e.core.Text, sectionID, maxBytes)
+	}
 	path, ok := PathFromRef(ref)
 	if !ok {
 		return nil, fmt.Errorf("invalid skill ref")
 	}
 	s, err := e.reg.GetSkillByPath(path)
+	// Windows indexes before slash normalization issued native-path refs.
+	if err == nil && s == nil && filepath.ToSlash(path) != path {
+		s, err = e.reg.GetSkillByPath(filepath.ToSlash(path))
+	}
 	if err != nil {
 		return nil, err
+	}
+	if builtin, ok := steering.FindSkill(ref); ok && !matchesBundled(s, builtin) {
+		return nil, fmt.Errorf("bundled skill %q is missing or stale; run 'skillex refresh'", ref)
 	}
 	if s == nil {
 		return nil, fmt.Errorf("skill not found")
 	}
-	content := s.Content
-	var selected *Section
+	resp.Path = s.Path
+	return boundedRead(resp, s.Content, sectionID, maxBytes)
+}
+
+func boundedRead(resp *ReadResponse, content, sectionID string, maxBytes int) (*ReadResponse, error) {
 	if sectionID != "" {
 		section, found := SelectSection(content, sectionID)
 		if !found {
 			return nil, fmt.Errorf("section %q not found", sectionID)
 		}
-		content = section
-		for _, h := range Sections(s.Content) {
+		for _, h := range Sections(content) {
 			if h.ID == sectionID {
-				hCopy := h
-				selected = &hCopy
+				resp.Section = &h
 				break
 			}
 		}
+		content = section
 	}
 	if maxBytes <= 0 {
 		maxBytes = 24 * 1024
@@ -517,8 +601,8 @@ func (e *Engine) Read(ref, sectionID string, maxBytes int) (*ReadResponse, error
 	if maxBytes > 64*1024 {
 		maxBytes = 64 * 1024
 	}
-	fullBytes := len([]byte(content))
-	resp := &ReadResponse{Ref: ref, Path: s.Path, Section: selected, ContentBytes: fullBytes}
+	fullBytes := len(content)
+	resp.ContentBytes = fullBytes
 	if fullBytes > maxBytes {
 		// UTF-8-safe enough for Markdown display: backing up to a rune boundary.
 		cut := maxBytes
@@ -611,6 +695,15 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 	response := &Response{
 		Type:       ResponseTypeVocabulary,
 		Vocabulary: buildVocabulary(skills),
+		Core:       e.core.Marker(),
+	}
+	if e.core != nil || slices.ContainsFunc(e.tasks, func(task config.TaskBinding) bool { return strings.HasPrefix(task.Skill, steering.SkillPrefix) }) {
+		if err := e.CheckBundledCatalog(); err != nil {
+			return nil, err
+		}
+	}
+	if e.core != nil {
+		response.CoreSkills = e.core.Pointers
 	}
 	if len(e.tasks) > 0 {
 		indexed := make(map[string]bool, len(skills))
@@ -618,7 +711,7 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 			indexed[skill.Path] = true
 		}
 		for _, task := range e.tasks {
-			if !indexed[task.Skill] {
+			if !indexed[task.Skill] && !strings.HasPrefix(task.Skill, steering.SkillPrefix) {
 				return nil, fmt.Errorf("task %q skill %q is not indexed; run 'skillex refresh'", task.Name, task.Skill)
 			}
 			response.Tasks = append(response.Tasks, TaskSummary{Name: task.Name, When: task.When, Ref: skillRef(task.Skill)})
@@ -646,7 +739,13 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 // reasonable hint when there is no scope to narrow against.
 func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 	var vocab []registry.Skill
-	if p.Path != "" {
+	if p.Source != "" {
+		var err error
+		vocab, err = e.reg.QueryBySource(p.Source)
+		if err != nil {
+			return nil, err
+		}
+	} else if p.Path != "" {
 		scoped, err := e.reg.QueryByPath(p.Path)
 		if err != nil {
 			return nil, err
@@ -655,7 +754,7 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 			vocab = scoped
 		}
 	}
-	if vocab == nil {
+	if vocab == nil && p.Source == "" {
 		all, err := e.reg.AllSkills()
 		if err != nil {
 			return nil, err
@@ -665,19 +764,21 @@ func (e *Engine) noMatchResponse(p Params) (*Response, error) {
 
 	response := &Response{
 		Type: ResponseTypeNoMatch,
+		Core: e.core.Marker(),
 		Query: &Echo{
 			Path:         p.Path,
 			Topics:       p.Topics,
 			Tags:         p.Tags,
 			Package:      p.Package,
 			Search:       p.Search,
+			Source:       p.Source,
 			Server:       p.Server,
 			Kind:         p.CapabilityKind,
 			Availability: p.Availability,
 		},
 		Vocabulary: buildVocabulary(vocab),
 	}
-	if e.capabilities != nil {
+	if p.Source == "" && e.capabilities != nil {
 		count, err := e.reg.CapabilityCount()
 		if err != nil {
 			return nil, err

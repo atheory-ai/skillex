@@ -2,16 +2,18 @@ package validator
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 // Issue represents a validation problem.
 type Issue struct {
-	File    string
-	Message string
-	Level   string // "error" or "warning"
+	File    string `json:"file"`
+	Level   string `json:"level"`
+	Message string `json:"message"`
 }
 
 // TestFile holds a parsed test file.
@@ -30,11 +32,31 @@ type TestScenario struct {
 }
 
 // ValidateAll validates all skill and test files in the given directories.
-func ValidateAll(dirs []string) ([]Issue, error) {
+func ValidateAll(root string, dirs []string, taskFiles map[string][]byte) ([]Issue, error) {
 	var issues []Issue
+	covered := make(map[string]bool, len(taskFiles))
+	for _, name := range slices.Sorted(maps.Keys(taskFiles)) {
+		covered[filepath.Join(root, filepath.FromSlash(name))] = true
+		if !strings.HasSuffix(name, ".test.md") {
+			continue
+		}
+		if taskFiles[name] == nil {
+			skill := strings.TrimSuffix(name, ".test.md") + ".md"
+			issues = append(issues, Issue{File: skill, Level: "warning", Message: "missing test file"})
+			continue
+		}
+		_, parsed, err := ParseTestContent(name, taskFiles[name])
+		if err != nil {
+			return nil, err
+		}
+		for i := range parsed {
+			parsed[i].File = name
+		}
+		issues = append(issues, parsed...)
+	}
 
 	for _, dir := range dirs {
-		dirIssues, err := validateDirectory(dir)
+		dirIssues, err := validateDirectory(dir, covered)
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +67,7 @@ func ValidateAll(dirs []string) ([]Issue, error) {
 }
 
 // validateDirectory validates skills and test files within a directory.
-func validateDirectory(dir string) ([]Issue, error) {
+func validateDirectory(dir string, covered map[string]bool) ([]Issue, error) {
 	var issues []Issue
 
 	skillFiles := map[string]bool{}
@@ -58,7 +80,7 @@ func validateDirectory(dir string) ([]Issue, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(path, ".md") {
+		if covered[path] || !strings.HasSuffix(path, ".md") {
 			return nil
 		}
 

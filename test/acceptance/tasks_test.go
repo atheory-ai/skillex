@@ -70,15 +70,30 @@ func TestGoldenTaskBindings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(agents), "with no filters to discover configured tasks") ||
-				!strings.Contains(string(agents), "with its returned ref") ||
+			if !strings.Contains(string(agents), "with no filters if Skillex setup context is missing") ||
+				!strings.Contains(string(agents), "use `skillex_read` for returned refs") ||
 				strings.Contains(string(agents), "You are about to create a Git commit.") {
 				t.Fatalf("expected setup guidance without embedded task data: %s", agents)
 			}
 
+			if !strings.Contains(string(agents), `query --search "<concepts>" --json`) {
+				t.Fatalf("missing structured lookup in generated CLI instructions")
+			}
+			var matches query.Response
+			if err := json.Unmarshal(cli("query", "--search", "staged", "--json"), &matches); err != nil {
+				t.Fatal(err)
+			}
+			if len(matches.Results) != 1 {
+				t.Fatalf("expected one staged-diff skill: %+v", matches)
+			}
+			if body := cli("read", "--ref", matches.Results[0].Ref); !strings.Contains(string(body), "Review the staged diff") {
+				t.Fatalf("documented CLI lookup failed to return the skill: %s", body)
+			}
+
 			client := helpers.StartMCPServer(t, dir)
 			defer client.Close()
-			if !strings.Contains(string(client.Initialization), "with no filters to discover configured tasks") {
+			if !strings.Contains(string(client.Initialization), "The setup response includes configured tasks") ||
+				!strings.Contains(string(client.Initialization), "with its returned ref") {
 				t.Fatalf("missing MCP startup instructions: %s", client.Initialization)
 			}
 			mcp := func(tool string, args map[string]any) []byte {
@@ -157,6 +172,14 @@ func TestTaskBindings_RejectsSkillOutsideProject(t *testing.T) {
 	if result.ExitCode == 0 || !strings.Contains(result.Stderr, `task "handoff" skill "linked/handoff.md"`) {
 		t.Fatalf("expected outside skill to be rejected: %+v", result)
 	}
+	overlap := strings.Replace(config, `"Version":4`, `"Version":4,"Rules":[{"Scope":"**","Skills":["linked/handoff.md"]}]`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "skillex.json"), []byte(overlap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result = helpers.Run(t, dir, "refresh")
+	if result.ExitCode == 0 || !strings.Contains(result.Stderr, `task "handoff" skill "linked/handoff.md"`) {
+		t.Fatalf("overlapping rule changed task containment: %+v", result)
+	}
 }
 
 func writeTaskFixture(t *testing.T, dir, configFile, config string) {
@@ -169,5 +192,29 @@ func writeTaskFixture(t *testing.T, dir, configFile, config string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, configFile), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTaskOnlyValidation(t *testing.T) {
+	dir := t.TempDir()
+	writeTaskFixture(t, dir, "skillex.json", `{"Version":4,"Tasks":[{"Name":"handoff","When":"At handoff.","Skill":"policies/handoff.md"}]}`)
+	policies := filepath.Join(dir, "policies")
+	if err := os.Rename(filepath.Join(dir, "skills"), policies); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"handoff.test.md": "# Broken header", "unrelated.test.md": "# Broken neighbor"} {
+		if err := os.WriteFile(filepath.Join(policies, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if res := helpers.Run(t, dir, "refresh"); res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	for _, args := range [][]string{{"test", "validate", "--check"}, {"test", "validate", "--check", "--json"}, {"doctor"}} {
+		res := helpers.Run(t, dir, args...)
+		out := res.Stderr + res.Stdout
+		if res.ExitCode == 0 || !strings.Contains(out, "policies/handoff.test.md") || strings.Contains(out, "unrelated.test.md") {
+			t.Fatalf("%v: %+v", args, res)
+		}
 	}
 }

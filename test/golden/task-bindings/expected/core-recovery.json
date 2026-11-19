@@ -1,0 +1,9 @@
+{
+  "ref": "core:steering",
+  "content": "When a cue applies, read its skill if it is missing from context.\n\n- Before declaring a change done, verify its behavior through the normal entry point. (`skillex:verify-behavior`)\n- If two fixes based on the same assumption fail the same check, test the assumption before trying again. (`skillex:recheck-assumptions`)\n",
+  "content_bytes": 319,
+  "core": {
+    "ref": "core:steering",
+    "revision": "629cce0d540f7421"
+  }
+}

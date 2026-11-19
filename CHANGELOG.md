@@ -6,6 +6,7 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- Ship agent usage guidance through MCP initialization. Experimental, opt-in core presets advertise short cues and refs for the bundled `minimal-comments`, `verify-behavior`, and `recheck-assumptions` skills. Query the bundled catalog with `--source skillex` or bind a bundled skill directly to a project task.
 - Configure which skills agents should apply before named tasks such as committing or opening a pull request. Session setup discovers task cues and skill refs through the CLI or MCP.
 
 ## [0.11.1] - 2026-10-22

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/atheory-ai/skillex/internal/config"
+	"github.com/atheory-ai/skillex/internal/scanner"
 	"github.com/atheory-ai/skillex/internal/validator"
 )
 
@@ -48,64 +49,57 @@ Use --check to exit with a non-zero code on any error (for CI).`,
 				return err
 			}
 
-			// Collect directories to validate
 			dirs := collectSkillDirs(root, cfg, scope)
-
-			if len(dirs) == 0 {
+			if len(dirs) == 0 && len(cfg.Tasks) == 0 {
 				if !flagQuiet {
 					fmt.Fprintln(os.Stderr, styleDim.Render("No skill directories found to validate."))
 				}
 				return nil
 			}
-
-			issues, err := validator.ValidateAll(dirs)
+			issues, err := validateProjectSkills(root, cfg, dirs)
 			if err != nil {
 				return fmt.Errorf("validation error: %w", err)
 			}
+			errCount := 0
+			for _, issue := range issues {
+				if issue.Level == "error" {
+					errCount++
+				}
+			}
 
 			if flagJSON {
-				type issueJSON struct {
-					File    string `json:"file"`
-					Level   string `json:"level"`
-					Message string `json:"message"`
-				}
-				var out []issueJSON
-				for _, iss := range issues {
-					out = append(out, issueJSON{File: iss.File, Level: iss.Level, Message: iss.Message})
-				}
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
-				return enc.Encode(out)
-			}
+				if err := enc.Encode(issues); err != nil {
+					return err
+				}
+			} else {
+				warnCount := 0
 
-			errCount := 0
-			warnCount := 0
+				if !flagQuiet {
+					fmt.Fprintln(os.Stderr, styleHeader.Render("  skillex test validate  "))
+				}
 
-			if !flagQuiet {
-				fmt.Fprintln(os.Stderr, styleHeader.Render("  skillex test validate  "))
-			}
-
-			for _, iss := range issues {
-				switch iss.Level {
-				case "error":
-					errCount++
-					if !flagQuiet {
-						fmt.Fprintf(os.Stderr, "  %s %s: %s\n",
-							styleError.Render("✗"), iss.File, iss.Message)
-					}
-				case "warning":
-					warnCount++
-					if !flagQuiet {
-						fmt.Fprintf(os.Stderr, "  %s %s: %s\n",
-							styleWarn.Render("!"), iss.File, iss.Message)
+				for _, iss := range issues {
+					switch iss.Level {
+					case "error":
+						if !flagQuiet {
+							fmt.Fprintf(os.Stderr, "  %s %s: %s\n",
+								styleError.Render("✗"), iss.File, iss.Message)
+						}
+					case "warning":
+						warnCount++
+						if !flagQuiet {
+							fmt.Fprintf(os.Stderr, "  %s %s: %s\n",
+								styleWarn.Render("!"), iss.File, iss.Message)
+						}
 					}
 				}
-			}
 
-			if !flagQuiet {
-				fmt.Fprintf(os.Stderr, "\n%d error(s), %d warning(s)\n", errCount, warnCount)
+				if !flagQuiet {
+					fmt.Fprintf(os.Stderr, "\n%d error(s), %d warning(s)\n", errCount, warnCount)
+				}
 			}
-
 			if check && errCount > 0 {
 				return fmt.Errorf("%d validation error(s) found", errCount)
 			}
@@ -118,6 +112,14 @@ Use --check to exit with a non-zero code on any error (for CI).`,
 	cmd.Flags().StringVar(&scope, "scope", "", "Validate only files relevant to this scope glob")
 
 	return cmd
+}
+
+func validateProjectSkills(root string, cfg *config.Config, dirs []string) ([]validator.Issue, error) {
+	files, err := scanner.ReadTaskFiles(root, cfg.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	return validator.ValidateAll(root, dirs, files)
 }
 
 // collectSkillDirs gathers all directories that contain skill files.

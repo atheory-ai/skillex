@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atheory-ai/skillex/internal/steering"
 	_ "modernc.org/sqlite" // register the pure-Go sqlite driver as "sqlite"
 )
 
@@ -165,6 +166,9 @@ func (r *Registry) Clear() error {
 
 // InsertSkill inserts a skill into the registry.
 func (r *Registry) InsertSkill(s Skill) (int64, error) {
+	if strings.HasPrefix(s.Path, steering.SkillPrefix) != (s.SourceType == steering.Source) {
+		return 0, fmt.Errorf("reserved Skillex skill namespace for %q", s.Path)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := r.db.Exec(
 		`INSERT INTO skills (path, content, name, description, package_name, package_ver, visibility, source_type, indexed_at)
@@ -488,17 +492,26 @@ func (r *Registry) Query(path, pkg string, topics, tags []string) ([]Skill, erro
 	return r.querySkills(query, ids...)
 }
 
-// AllSkills returns all non-test skills.
+// AllSkills returns the ordinary skill inventory, excluding the bundled catalog.
 func (r *Registry) AllSkills() ([]Skill, error) {
 	return r.querySkills(
 		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
-		 FROM skills ORDER BY path`,
+		 FROM skills WHERE source_type <> ? ORDER BY path`, steering.Source,
+	)
+}
+
+// QueryBySource returns the skills belonging to a selected source.
+func (r *Registry) QueryBySource(source string) ([]Skill, error) {
+	return r.querySkills(
+		`SELECT id, path, content, COALESCE(name,''), COALESCE(description,''), COALESCE(package_name,''), COALESCE(package_ver,''), visibility, source_type
+		 FROM skills WHERE source_type = ? ORDER BY path`, source,
 	)
 }
 
 // AllTopics returns a sorted list of all unique topics.
 func (r *Registry) AllTopics() ([]string, error) {
-	rows, err := r.db.Query(`SELECT DISTINCT topic FROM skill_topics ORDER BY topic`)
+	rows, err := r.db.Query(`SELECT DISTINCT t.topic FROM skill_topics t
+		JOIN skills s ON s.id = t.skill_id WHERE s.source_type <> ? ORDER BY t.topic`, steering.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +529,8 @@ func (r *Registry) AllTopics() ([]string, error) {
 
 // AllTags returns a sorted list of all unique tags.
 func (r *Registry) AllTags() ([]string, error) {
-	rows, err := r.db.Query(`SELECT DISTINCT tag FROM skill_tags ORDER BY tag`)
+	rows, err := r.db.Query(`SELECT DISTINCT t.tag FROM skill_tags t
+		JOIN skills s ON s.id = t.skill_id WHERE s.source_type <> ? ORDER BY t.tag`, steering.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -625,10 +639,10 @@ func (r *Registry) GetTestScenarios(skillID int64) ([]TestScenario, error) {
 	return scenarios, rows.Err()
 }
 
-// SkillCount returns the total number of skills in the registry.
+// SkillCount returns the size of the ordinary skill inventory.
 func (r *Registry) SkillCount() (int, error) {
 	var count int
-	err := r.db.QueryRow(`SELECT COUNT(*) FROM skills`).Scan(&count)
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM skills WHERE source_type <> ?`, steering.Source).Scan(&count)
 	return count, err
 }
 

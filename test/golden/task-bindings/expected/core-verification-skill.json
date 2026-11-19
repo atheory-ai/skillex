@@ -1,0 +1,10 @@
+{
+  "ref": "skillex:verify-behavior",
+  "path": "skillex:verify-behavior",
+  "content": "# Verify behavior\n\nChoose a check that exercises the same entry point and inputs a user or caller would use. For a bug fix, capture the original failure on those inputs when practical, then run the check again against the fix. For a new feature, check one representative use and any failure path the change introduces.\n\nReuse an existing test or run the actual command or feature. A build is useful evidence for compilation. If you cannot exercise the behavior, state which check you ran and what is still unverified.\n",
+  "content_bytes": 518,
+  "core": {
+    "ref": "core:steering",
+    "revision": "629cce0d540f7421"
+  }
+}

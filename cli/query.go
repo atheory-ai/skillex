@@ -22,6 +22,7 @@ func newQueryCmd() *cobra.Command {
 		tagsFlag         string
 		packageFlag      string
 		searchFlag       string
+		sourceFlag       string
 		formatFlag       string
 		limitFlag        int
 		cursorFlag       string
@@ -46,6 +47,7 @@ Discovery responses are always bounded summaries. Use skillex read --ref to load
 
 When no filters are provided, a vocabulary response is returned listing the available
 topics, tags, and packages you can filter by, plus any configured tasks and their skill refs.
+When core steering is enabled, responses also include its ref and revision.
 
 When filters are provided but no skills match, a no_match response is returned with
 the same vocabulary as a hint to help reformulate the query.
@@ -57,6 +59,7 @@ Examples:
   skillex query --topic error-handling
   skillex query --tags migration,breaking-change
   skillex query --package @acme/foo
+  skillex query --source skillex
   skillex query --path packages/app-a/src/auth.ts --search "session handling" --limit 8
   skillex read --ref <ref-from-query> --section <optional-section-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -78,6 +81,10 @@ Examples:
 			if err != nil {
 				return err
 			}
+			core, err := cfg.CoreGuidance()
+			if err != nil {
+				return err
+			}
 			if cfg.MCPEnabled() {
 				runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 				if err != nil {
@@ -85,7 +92,7 @@ Examples:
 				}
 				eng = query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
 			}
-			eng.WithTasks(cfg.Tasks)
+			eng.WithTasks(cfg.Tasks).WithCore(core)
 
 			var topics []string
 			if topicFlag != "" {
@@ -125,6 +132,7 @@ Examples:
 				Tags:           tags,
 				Package:        packageFlag,
 				Search:         searchFlag,
+				Source:         sourceFlag,
 				Format:         format,
 				Limit:          limitFlag,
 				Cursor:         cursorFlag,
@@ -142,6 +150,7 @@ Examples:
 			if flagJSON {
 				return writeJSONWithNotices(os.Stdout, resp, notices, true)
 			}
+			printCoreMarker(resp.Core)
 
 			switch resp.Type {
 			case query.ResponseTypeResults:
@@ -164,6 +173,12 @@ Examples:
 			case query.ResponseTypeVocabulary:
 				if !flagQuiet {
 					printVocabulary(resp.Vocabulary, "")
+					if len(resp.CoreSkills) > 0 {
+						fmt.Println("Core skills:")
+						for _, skill := range resp.CoreSkills {
+							fmt.Printf("  %s: %s\n    ref: %s\n", skill.Name, skill.When, skill.Ref)
+						}
+					}
 					if len(resp.Tasks) > 0 {
 						fmt.Println("Tasks:")
 						for _, task := range resp.Tasks {
@@ -187,6 +202,7 @@ Examples:
 	cmd.Flags().StringVar(&tagsFlag, "tags", "", "Comma-separated tag filters")
 	cmd.Flags().StringVar(&packageFlag, "package", "", "Package name filter")
 	cmd.Flags().StringVar(&searchFlag, "search", "", "Keyword search across skill names and descriptions (space/comma-separated terms)")
+	cmd.Flags().StringVar(&sourceFlag, "source", "", "Select the bundled Skillex skill catalog (skillex)")
 	cmd.Flags().StringVar(&formatFlag, "format", "", "Output format: summary (default) or deprecated bounded content")
 	cmd.Flags().IntVar(&limitFlag, "limit", 8, "Maximum discovery results (1-20)")
 	cmd.Flags().StringVar(&cursorFlag, "cursor", "", "Continuation cursor from a previous discovery response")

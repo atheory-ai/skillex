@@ -12,8 +12,17 @@ const (
 	markerEnd   = "<!-- skillex:end -->"
 )
 
-// MCPTaskSetup tells agents how to discover and apply project tasks.
-const MCPTaskSetup = "At session setup, call `skillex_query` with no filters to discover configured tasks. Use each task's `when` cue to decide when it applies. Reconsider the list as work changes across turns. Before each matching task, use `skillex_read` with its returned ref if the skill is not already in context, and follow the skill for that occurrence."
+// MCPSetupReminder is surfaced by MCP and in the generated agent bootstrap.
+const MCPSetupReminder = "At the start of each conversation, call `skillex_query` with no filters if Skillex setup context is missing."
+
+// MCPInstructions provides the agent-facing guidance shipped by the server.
+const MCPInstructions = MCPSetupReminder + "\n\n" +
+	"- The setup response includes configured tasks. Use each task's `when` cue to decide when it applies. Reconsider the list as work changes across turns. Before each matching task, use `skillex_read` with its returned ref if the skill is missing from context, and follow it for that occurrence.\n" +
+	"- If a lookup returns a core ref and revision, read it with `skillex_read` when that revision's guidance is missing from context or the revision changes. Core guidance gives short cues and skill refs. Apply the cues throughout the conversation.\n" +
+	"- Use `source: skillex` to discover bundled skills. Project tasks can also point to bundled skills.\n" +
+	"- Query by path, topic, tags, package, or intent to discover additional skills. If `too_broad` is true, use `narrow_with` to refine the query.\n" +
+	"- Read one selected ref or section at a time. MCP skill resources provide a table of contents.\n" +
+	"- Treat update notices as advisory. Suggest the appropriate update when useful and reconnect MCP after updating. A project-pinned installation needs a dependency update."
 
 // GenerateSection creates the stable Skillex bootstrap section for AGENTS.md.
 func GenerateSection() string { return GenerateSectionWithCommand("skillex") }
@@ -26,26 +35,19 @@ func GenerateSectionWithCommand(command string) string {
 	sb.WriteString("## Skillex\n\n")
 	sb.WriteString("This project uses Skillex for skill management. Use the skillex MCP server\n")
 	sb.WriteString("if available (preferred), otherwise use the CLI commands below.\n\n")
-	sb.WriteString("Results may include `skillex_update_available` notices. Suggest the appropriate\n")
-	sb.WriteString("update when useful; project-pinned installs need a dependency update. Restart\n")
-	sb.WriteString("or reconnect MCP after updating. Notices are advisory, not permission to install.\n\n")
-
 	sb.WriteString("### MCP (preferred)\n\n")
-	sb.WriteString("If the `skillex` MCP server is connected, use it directly:\n\n")
-	sb.WriteString("- " + MCPTaskSetup + "\n")
-	sb.WriteString("- For additional context, use `skillex_query` (path, topic, tags, package, search, limit, cursor). It returns bounded discovery summaries, not whole skill files.\n")
-	sb.WriteString("- If `too_broad` is true, use its candidate-scoped `narrow_with` facets and suggestions to refine the query.\n")
-	sb.WriteString("- Use `skillex_read` with a selected result `ref` and optional section id only after discovery; keep reads bounded.\n")
-	sb.WriteString("- MCP resources provide a skill table of contents. Do not bulk-load skill content.\n\n")
+	sb.WriteString(MCPSetupReminder + " Follow the setup guidance from Skillex and use `skillex_read` for returned refs.\n\n")
 
 	sb.WriteString("### CLI (fallback)\n\n")
 	sb.WriteString("If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:\n\n")
-	sb.WriteString("Start with the unfiltered query below to discover configured tasks. Match tasks using their cues and reconsider them across turns. Before each matching task, use `read --ref` with the returned ref if the skill is not already in context, and follow it for that occurrence.\n\n")
+	sb.WriteString("Run the unfiltered query at the start of each conversation if setup context is missing. If it returns a core ref, use `read --ref` when that revision's guidance is missing or the revision changes. When a core cue applies, read its linked skill if needed. Match tasks using their cues and apply the linked skill before each occurrence. Use `read --ref` when a linked skill is missing from context.\n\n")
+	sb.WriteString("Use filtered queries for additional context. Refine broad results before reading a selected skill or section. Treat update notices as advisory.\n\n")
 	sb.WriteString("```\n")
 	sb.WriteString("  " + command + " query\n")
-	sb.WriteString("  " + command + " query --search \"<concepts>\"\n")
-	sb.WriteString("  " + command + " query --path <filepath> --limit 8\n")
-	sb.WriteString("  " + command + " query --topic <topic> --tags <tags>\n")
+	sb.WriteString("  " + command + " query --search \"<concepts>\" --json\n")
+	sb.WriteString("  " + command + " query --path <filepath> --limit 8 --json\n")
+	sb.WriteString("  " + command + " query --topic <topic> --tags <tags> --json\n")
+	sb.WriteString("  " + command + " query --source skillex --json\n")
 	sb.WriteString("  " + command + " read --ref <ref-from-query> --section <optional-section-id>\n")
 	sb.WriteString("```\n\n")
 
