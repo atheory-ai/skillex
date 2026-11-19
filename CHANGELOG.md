@@ -6,8 +6,11 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
-- Ship agent usage guidance through MCP initialization. Experimental, opt-in core presets advertise short cues and refs for the bundled `minimal-comments`, `verify-behavior`, and `recheck-assumptions` skills. Query the bundled catalog with `--source skillex` or bind a bundled skill directly to a project task.
-- Configure which skills agents should apply before named tasks such as committing or opening a pull request. Session setup discovers task cues and skill refs through the CLI or MCP.
+## [0.12.0] - 2026-11-19
+
+- Bind a project or bundled skill to a task such as creating a commit or opening a pull request. CLI and MCP session setup return each task’s cue and skill ref.
+- Opt into experimental core steering with `Core.Presets`. The three presets are `minimal-comments`, `verify-behavior`, and `recheck-assumptions`. Each defaults to off. Agents receive short cues at setup and can load the detailed skills when those cues apply.
+- After upgrading, run `skillex refresh` to index the bundled skills and reconnect MCP. Use `skillex query --source skillex` to browse the catalog with any preset selection.
 
 ## [0.11.1] - 2026-10-22
 
