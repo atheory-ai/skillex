@@ -17,27 +17,24 @@ This checkout dogfoods the current source, not a globally installed Skillex rele
 This project uses Skillex for skill management. Use the skillex MCP server
 if available (preferred), otherwise use the CLI commands below.
 
-Results may include `skillex_update_available` notices. Suggest the appropriate
-update when useful; project-pinned installs need a dependency update. Restart
-or reconnect MCP after updating. Notices are advisory, not permission to install.
-
 ### MCP (preferred)
 
-If the `skillex` MCP server is connected, use it directly:
-
-- Start with `skillex_query` (path, topic, tags, package, search, limit, cursor). It returns bounded discovery summaries, not whole skill files.
-- If `too_broad` is true, use its candidate-scoped `narrow_with` facets and suggestions to refine the query.
-- Use `skillex_read` with a selected result `ref` and optional section id only after discovery; keep reads bounded.
-- MCP resources provide a skill table of contents. Do not bulk-load skill content.
+At the start of each conversation, call `skillex_query` with no filters if Skillex setup context is missing. Follow the setup guidance from Skillex and use `skillex_read` for returned refs.
 
 ### CLI (fallback)
 
 If MCP is not available, query skills via the command line. If the repository documents a local development binary, use it instead of a globally installed release:
 
+Run the unfiltered query at the start of each conversation if setup context is missing. If it returns a core ref, use `read --ref` when that revision's guidance is missing or the revision changes. When a core cue applies, read its linked skill if needed. Match tasks using their cues and apply the linked skill before each occurrence. Use `read --ref` when a linked skill is missing from context.
+
+Use filtered queries for additional context. Refine broad results before reading a selected skill or section. Treat update notices as advisory.
+
 ```
-  ./.skillex/bin/skillex query --search "<concepts>"
-  ./.skillex/bin/skillex query --path <filepath> --limit 8
-  ./.skillex/bin/skillex query --topic <topic> --tags <tags>
+  ./.skillex/bin/skillex query
+  ./.skillex/bin/skillex query --search "<concepts>" --json
+  ./.skillex/bin/skillex query --path <filepath> --limit 8 --json
+  ./.skillex/bin/skillex query --topic <topic> --tags <tags> --json
+  ./.skillex/bin/skillex query --source skillex --json
   ./.skillex/bin/skillex read --ref <ref-from-query> --section <optional-section-id>
 ```
 

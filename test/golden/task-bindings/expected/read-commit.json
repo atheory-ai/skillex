@@ -1,0 +1,6 @@
+{
+  "ref": "skill:c2tpbGxzL2NvbW1pdC5tZA",
+  "path": "skills/commit.md",
+  "content": "# Commit\n\nReview the staged diff before creating a commit. Leave unrelated changes out.\n",
+  "content_bytes": 88
+}

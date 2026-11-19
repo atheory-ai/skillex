@@ -10,6 +10,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/frontmatter"
 	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/packs"
+	"github.com/atheory-ai/skillex/internal/steering"
 )
 
 // SkillFile represents a discovered skill file and its parsed metadata.
@@ -59,6 +60,8 @@ type Scanner struct {
 	root      string
 	cfg       *config.Config
 	resolvers []Resolver
+	// Bound files are read inside the project root once per scan.
+	taskFiles map[string][]byte
 	// devMode includes devDependencies
 	devMode bool
 }
@@ -87,7 +90,12 @@ type ScanResult struct {
 }
 
 // Scan performs a full discovery scan.
-func (s *Scanner) Scan() (*ScanResult, error) {
+func (s Scanner) Scan() (*ScanResult, error) {
+	var err error
+	s.taskFiles, err = ReadTaskFiles(s.root, s.cfg.Tasks)
+	if err != nil {
+		return nil, err
+	}
 	result := &ScanResult{}
 
 	// 1. Collect repo-level skills from Rules
@@ -141,6 +149,10 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	result.RepoSkills = append(result.RepoSkills, agentSkills...)
 	result.Errors = append(result.Errors, agentErrs...)
 
+	if err := s.scanTaskSkills(result); err != nil {
+		return nil, err
+	}
+
 	activatedMCP, mcpErrs := packs.ActivateProjectMCPServers(s.root)
 	result.Errors = append(result.Errors, mcpErrs...)
 	for _, activation := range activatedMCP {
@@ -156,6 +168,45 @@ func (s *Scanner) Scan() (*ScanResult, error) {
 	}
 
 	return result, nil
+}
+
+// scanTaskSkills indexes task-only skills while preserving the scopes and
+// provenance of skills already discovered by rules, packs, or agent directories.
+func (s *Scanner) scanTaskSkills(result *ScanResult) error {
+	if len(s.cfg.Tasks) == 0 {
+		return nil
+	}
+	indexed := make(map[string]bool, len(result.RepoSkills)+len(result.DepSkills))
+	for _, skills := range [][]SkillFile{result.RepoSkills, result.DepSkills} {
+		for _, skill := range skills {
+			if !skill.IsTest {
+				indexed[skill.RelPath] = true
+			}
+		}
+	}
+
+	for _, task := range s.cfg.Tasks {
+		if indexed[task.Skill] || strings.HasPrefix(task.Skill, steering.SkillPrefix) {
+			continue
+		}
+		skills, err := s.readSkillFile(filepath.Join(s.root, task.Skill), task.Skill, "", "", "repo", "repo", "", "")
+		if err != nil {
+			return fmt.Errorf("task %q skill %q: %w", task.Name, task.Skill, err)
+		}
+		if len(skills) == 0 {
+			return fmt.Errorf("task %q skill %q was not found", task.Name, task.Skill)
+		}
+		result.RepoSkills = append(result.RepoSkills, skills...)
+		indexed[task.Skill] = true
+
+		testPath := strings.TrimSuffix(task.Skill, ".md") + ".test.md"
+		tests, err := s.readSkillFile(filepath.Join(s.root, testPath), testPath, "", "", "repo", "repo", "", "")
+		if err != nil && !os.IsNotExist(err) {
+			result.Errors = append(result.Errors, fmt.Errorf("repo test %s: %w", testPath, err))
+		}
+		result.RepoSkills = append(result.RepoSkills, tests...)
+	}
+	return nil
 }
 
 // scanDependencyBoundary resolves dependencies at a configured boundary and scans exported skills.
@@ -340,7 +391,7 @@ func (s *Scanner) scanSkilexDir(skilexDir, pkgName, pkgVersion, boundaryRel, pkg
 			}
 
 			relToRoot, _ := filepath.Rel(s.root, path)
-			sfs, err := s.readSkillFile(path, relToRoot, pkgName, pkgVersion, vis, "dependency", boundaryRel, pkgRootRel)
+			sfs, err := s.readSkillFile(path, filepath.ToSlash(relToRoot), pkgName, pkgVersion, vis, "dependency", boundaryRel, pkgRootRel)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("reading %s: %w", path, err))
 				return nil
@@ -362,6 +413,16 @@ func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibilit
 }
 
 func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel string, explicitScopes []string) ([]SkillFile, error) {
+	if data, bound := s.taskFiles[relPath]; bound {
+		if data == nil {
+			return nil, nil // optional test file
+		}
+		files, err := s.readSkillDataWithScopes(data, absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel, explicitScopes)
+		for i := range files {
+			files[i].VerifiedContent = data
+		}
+		return files, err
+	}
 	// Rules and local dependency replacements can point into the installed cache
 	// too. Classify the normalized path and consume its authenticated snapshot,
 	// so those routes cannot reopen mutable installed guidance after verification.

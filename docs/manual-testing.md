@@ -244,6 +244,56 @@ Each journey represents a real workflow a user would perform. Test them end-to-e
 - Whether the CLI output format is easy for the agent to parse.
 - Common mistakes the agent makes when constructing queries.
 
+### Task Bindings Across Turns
+
+1. In a scratch checkout, bind two Markdown skills to the `commit` and
+   `open-pr` tasks. Give them distinct instructions, such as reviewing the
+   staged diff and including verification evidence in the PR body. Run
+   `skillex init --yes` to index the skills and generate setup instructions.
+2. Start an MCP session. Ask for an explanation with no commit or PR. Confirm
+   the agent receives names, cues, and refs from an unfiltered Skillex query.
+   Neither task skill should be read for this request.
+3. In the same session, ask for a commit and then say, “Prepare a pull request
+   for that commit and show me the draft before opening it.” Observe whether
+   the agent uses Skillex to load the corresponding skill before each task.
+4. Ask for a follow-up edit and another commit. Check whether the agent reviews
+   the new staged diff, even if it can reuse the skill text already in context.
+5. Repeat with MCP disconnected. Verify that the generated instructions lead
+   the agent through `skillex query` and `skillex read --ref`.
+
+### Core Steering Across Tasks
+
+Prepare two copies of the same scratch project, one with all three presets
+enabled and one with an empty preset list. Refresh each index. Use the same
+agent, model, and tool permissions in two fresh conversations. Confirm setup
+succeeds in each. Start with the explanation, then run the other tasks as
+follow-ups in each conversation. For each turn record successful skill reads,
+commands run, observed results, and the action or conclusion in the reply.
+
+| Situation | What to observe |
+| --- | --- |
+| Explain a function without changing it | Setup returns the enabled cues. The explanation requires no detailed skill reads. |
+| Review a comment that restates a loop, required API docs, and a compatibility note | The agent reads the comment skill when enabled, flags the redundant comment, and preserves the required docs and the reason for the constraint. |
+| Fix a user-visible bug with a reproducible example | The agent reads verification guidance before handoff and exercises the same entry point as the original failure. |
+| Continue debugging after two fixes failed the same check and shared an assumption | The agent loads the assumption-checking skill and gathers evidence before making another edit. |
+
+#### Observed Codex MCP comparison
+
+On November 19, 2026, two fresh, read-only Codex sessions ran the same four
+turns against copies of a small Python CLI. One enabled all three presets and
+the other enabled none. Both had access to the Skillex query and read tools.
+
+| Turn | Detailed skill read with presets enabled | Observed behavior |
+| --- | --- | --- |
+| Explain a doubling function | None. The agent read the short core ref at setup. | Both sessions inspected the function and explained it in one sentence. |
+| Review three proposed comments | `minimal-comments` | Both dropped the redundant comment, considered the API contract, and retained the compatibility explanation. |
+| Verify the invalid-number fix | `verify-behavior` | Both ran the CLI with invalid and valid inputs and reported exit status 2 for invalid input. |
+| Investigate two failed cache fixes | `recheck-assumptions` | Both varied the environment variable, observed the output change, and identified the environment as the controlling input. |
+
+The control session made no detailed skill reads. This single paired run
+demonstrated selective retrieval across turns. Both sessions performed the
+intended checks, so the comparison leaves the effect on output quality open.
+
 ### Journey 5A: Dynamic MCP Capability Broker
 
 **Persona:** Developer whose harness registers only Skillex but needs several

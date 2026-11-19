@@ -1,0 +1,18 @@
+{
+  "type": "results",
+  "results": [
+    {
+      "ref": "skill:c2tpbGxzL2NvbW1pdC5tZA",
+      "path": "skills/commit.md",
+      "name": "Commit",
+      "description": "Review the staged changes before creating a Git commit.",
+      "visibility": "repo",
+      "source_type": "repo",
+      "scopes": ["src/**"],
+      "content_bytes": 88,
+      "sections": [{"id": "commit", "title": "Commit", "level": 1}]
+    }
+  ],
+  "match_count": 1,
+  "returned_count": 1
+}

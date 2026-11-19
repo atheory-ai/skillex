@@ -1,0 +1,18 @@
+{
+  "type": "vocabulary",
+  "vocabulary": {
+    "total_skills": 1
+  },
+  "tasks": [
+    {
+      "name": "commit",
+      "when": "You are about to create a Git commit.",
+      "ref": "skill:c2tpbGxzL2NvbW1pdC5tZA"
+    },
+    {
+      "name": "open-pr",
+      "when": "You are preparing to open a pull request.",
+      "ref": "skillex:verify-behavior"
+    }
+  ]
+}

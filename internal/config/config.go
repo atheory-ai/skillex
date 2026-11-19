@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
+	"github.com/atheory-ai/skillex/internal/steering"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,9 +37,30 @@ type Config struct {
 	Install    *InstallConfig         `yaml:"Install,omitempty" json:"Install,omitempty"`
 	Version    int                    `yaml:"Version" json:"Version"`
 	Rules      []Rule                 `yaml:"Rules" json:"Rules"`
+	Tasks      []TaskBinding          `yaml:"Tasks,omitempty" json:"Tasks,omitempty"`
+	Core       *CoreConfig            `yaml:"Core,omitempty" json:"Core,omitempty"`
 	MCP        *MCPConfig             `yaml:"MCP,omitempty" json:"MCP,omitempty"`
 	Registries []PackRegistry         `yaml:"registries,omitempty" json:"registries,omitempty"`
 	Policy     map[string]interface{} `yaml:"policy,omitempty" json:"policy,omitempty"`
+}
+
+// CoreConfig selects optional, built-in standing guidance for agents.
+type CoreConfig struct {
+	Presets []string `yaml:"Presets,omitempty" json:"Presets,omitempty"`
+}
+
+func (c *Config) CoreGuidance() (*steering.Guidance, error) {
+	if c == nil || c.Core == nil {
+		return nil, nil
+	}
+	return steering.Resolve(c.Core.Presets)
+}
+
+// TaskBinding tells an agent when to load a project skill.
+type TaskBinding struct {
+	Name  string `yaml:"Name" json:"Name"`
+	When  string `yaml:"When" json:"When"`
+	Skill string `yaml:"Skill" json:"Skill"`
 }
 
 // PackRegistry selects a transport for the bundled manifest signing identity.
@@ -148,6 +172,12 @@ func (c *Config) Validate() error {
 	if err := c.Install.Validate(); err != nil {
 		return err
 	}
+	if err := validateTasks(c.Tasks); err != nil {
+		return err
+	}
+	if _, err := c.CoreGuidance(); err != nil {
+		return fmt.Errorf("Core.Presets: %w", err)
+	}
 	if len(c.Policy) > 0 {
 		return fmt.Errorf("registry policy filtering is not yet supported")
 	}
@@ -228,6 +258,40 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("%s duplicates server %q version %q scope %q", prefix, binding.Server, binding.Version, binding.Scope)
 		}
 		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func validateTasks(tasks []TaskBinding) error {
+	const maxTasks = 32
+	if len(tasks) > maxTasks {
+		return fmt.Errorf("at most %d bindings are supported in Tasks", maxTasks)
+	}
+	seen := make(map[string]struct{}, len(tasks))
+	for i, task := range tasks {
+		prefix := fmt.Sprintf("Tasks[%d]", i)
+		if len(task.Name) > 64 || !validCatalogName(task.Name) {
+			return fmt.Errorf("%s.Name must be 1–64 letters, digits, hyphens, periods, or underscores", prefix)
+		}
+		name := strings.ToLower(task.Name)
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("%s.Name duplicates task %q", prefix, task.Name)
+		}
+		seen[name] = struct{}{}
+		if len(task.When) > 240 || strings.TrimSpace(task.When) == "" || strings.ContainsFunc(task.When, unicode.IsControl) {
+			return fmt.Errorf("%s.When must be a single line of 1–240 bytes", prefix)
+		}
+		if strings.HasPrefix(task.Skill, steering.SkillPrefix) {
+			if _, ok := steering.FindSkill(task.Skill); !ok {
+				return fmt.Errorf("%s.Skill names an unknown bundled skill %q", prefix, task.Skill)
+			}
+			continue
+		}
+		if len(task.Skill) > 512 || !fs.ValidPath(task.Skill) || !filepath.IsLocal(filepath.FromSlash(task.Skill)) ||
+			strings.ContainsAny(task.Skill, `\:`) || strings.ContainsFunc(task.Skill, unicode.IsControl) ||
+			!strings.HasSuffix(task.Skill, ".md") || strings.HasSuffix(task.Skill, ".test.md") {
+			return fmt.Errorf("%s.Skill must be a project-relative Markdown skill path using '/' separators", prefix)
+		}
 	}
 	return nil
 }

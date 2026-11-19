@@ -22,6 +22,7 @@ tags: []
 
 	cfg := &config.Config{
 		Version: 4,
+		Tasks:   []config.TaskBinding{{Name: "usage", When: "When using example.", Skill: "deps/example/skillex/public/usage.md"}},
 		Rules: []config.Rule{
 			{Scope: "**", Skills: []string{"skills/repo.md"}},
 			{Scope: "app/**", DependencyBoundary: "app"},
@@ -80,6 +81,9 @@ tags: []
 	}
 
 	got := result.DepSkills[0]
+	if got.RelPath != cfg.Tasks[0].Skill || got.SourceType != "dependency" {
+		t.Fatalf("bound dependency path or provenance changed: %+v", got)
+	}
 	if got.PackageName != "example" {
 		t.Fatalf("PackageName = %q, want example", got.PackageName)
 	}

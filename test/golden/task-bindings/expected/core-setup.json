@@ -1,0 +1,34 @@
+{
+  "type": "vocabulary",
+  "vocabulary": {
+    "total_skills": 1
+  },
+  "tasks": [
+    {
+      "name": "commit",
+      "when": "You are about to create a Git commit.",
+      "ref": "skill:c2tpbGxzL2NvbW1pdC5tZA"
+    },
+    {
+      "name": "open-pr",
+      "when": "You are preparing to open a pull request.",
+      "ref": "skillex:verify-behavior"
+    }
+  ],
+  "core": {
+    "ref": "core:steering",
+    "revision": "629cce0d540f7421"
+  },
+  "core_skills": [
+    {
+      "name": "verify-behavior",
+      "when": "Before declaring a change done, verify its behavior through the normal entry point.",
+      "ref": "skillex:verify-behavior"
+    },
+    {
+      "name": "recheck-assumptions",
+      "when": "If two fixes based on the same assumption fail the same check, test the assumption before trying again.",
+      "ref": "skillex:recheck-assumptions"
+    }
+  ]
+}

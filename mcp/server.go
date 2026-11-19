@@ -10,6 +10,7 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/atheory-ai/skillex/internal/agents"
 	"github.com/atheory-ai/skillex/internal/broker"
 	"github.com/atheory-ai/skillex/internal/brokerruntime"
 	"github.com/atheory-ai/skillex/internal/capability"
@@ -17,12 +18,13 @@ import (
 	"github.com/atheory-ai/skillex/internal/mcperror"
 	"github.com/atheory-ai/skillex/internal/query"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/steering"
 	"github.com/atheory-ai/skillex/internal/updatecheck"
 )
 
 // Serve starts the MCP server using stdio transport.
 func Serve(reg *registry.Registry, version string) error {
-	return serve(reg, query.New(reg), nil, version, nil, updatecheck.NewEnvironment(version, updatecheck.Installation{}))
+	return serve(reg, query.New(reg), nil, nil, version, nil, updatecheck.NewEnvironment(version, updatecheck.Installation{}))
 }
 
 // ServeConfigured starts Skillex with additive capability discovery and broker
@@ -34,29 +36,48 @@ func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version s
 		install.Strategy, install.PackageManager = cfg.Install.Strategy, cfg.Install.PackageManager
 	}
 	updates := updatecheck.NewEnvironment(version, install)
-	if cfg == nil || !cfg.MCPEnabled() {
-		return serve(reg, query.New(reg), nil, version, before, updates)
+	if cfg == nil {
+		return serve(reg, query.New(reg), nil, nil, version, before, updates)
+	}
+	core, err := cfg.CoreGuidance()
+	if err != nil {
+		return err
+	}
+	if !cfg.MCPEnabled() {
+		return serve(reg, query.New(reg).WithTasks(cfg.Tasks), nil, core, version, before, updates)
 	}
 	runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 	if err != nil {
 		return err
 	}
-	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View)
-	return serve(reg, engine, runtime, version, before, updates)
+	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View).WithTasks(cfg.Tasks)
+	return serve(reg, engine, runtime, core, version, before, updates)
 }
 
-func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, version string, before func(), updates *updatecheck.Checker) error {
+func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, core *steering.Guidance, version string, before func(), updates *updatecheck.Checker) error {
 	callBefore := func() {
 		if before != nil {
 			before()
 		}
+	}
+	engine.WithCore(core)
+	instructions := agents.MCPInstructions
+	if marker := core.Marker(); marker != nil {
+		if err := engine.CheckBundledCatalog(); err != nil {
+			instructions += "\n\nSkillex core guidance unavailable: " + err.Error()
+		} else {
+			instructions += fmt.Sprintf("\n\n## Skillex core guidance\nRef %s, revision %s\n\n%s", marker.Ref, marker.Revision, core.Text)
+		}
+	}
+	if notice := updateInstructions(updates.CachedNotices()); notice != "" {
+		instructions += "\n\n" + notice
 	}
 	s := server.NewMCPServer(
 		"skillex",
 		updatecheck.Version(version),
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(true, true),
-		server.WithInstructions(updateInstructions(updates.CachedNotices())),
+		server.WithInstructions(instructions),
 	)
 
 	// Register query tool
@@ -64,6 +85,9 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		"skillex_query",
 		mcplib.WithDescription(
 			"Query skillex skills by path, topic, tags, package, or keyword search. "+
+				agents.MCPSetupReminder+" Setup discovers configured tasks and optional core guidance. "+
+				"If a result's core revision is new or its guidance is missing from context, read the core ref and apply it throughout the conversation. "+
+				"Before doing a matching task, read its skill by ref if needed and follow it each time the task applies. "+
 				"Use 'search' for intent-based discovery when you don't know the skill taxonomy — "+
 				"pass space or comma-separated concepts and all matching skills are returned in one call. "+
 				"Use topic/tags for structured filtering when you know the organization. "+
@@ -80,6 +104,10 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		),
 		mcplib.WithString("package",
 			mcplib.Description("Package name filter (e.g. @acme/foo)"),
+		),
+		mcplib.WithString("source",
+			mcplib.Description("Select the bundled Skillex skill catalog"),
+			mcplib.Enum(steering.Source),
 		),
 		mcplib.WithString("search",
 			mcplib.Description(
@@ -105,14 +133,14 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		return handleQuery(engine, req)
 	}))
 	readTool := mcplib.NewTool("skillex_read",
-		mcplib.WithDescription("Read one selected Skillex skill or Markdown section within a byte budget. Always discover and narrow with skillex_query first."),
-		mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Skill ref returned by skillex_query")),
+		mcplib.WithDescription("Read one selected Skillex skill, Markdown section, or core guidance within a byte budget. Discover refs with skillex_query."),
+		mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Skill or core ref returned by skillex_query")),
 		mcplib.WithString("section", mcplib.Description("Optional section id returned by skillex_query")),
 		mcplib.WithNumber("max_bytes", mcplib.Description("Maximum content bytes to return (default 24576, max 65536)")),
 	)
 	s.AddTool(readTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 		callBefore()
-		return handleRead(reg, req)
+		return handleRead(engine, req)
 	}))
 	if runtime != nil {
 		describeTool := mcplib.NewTool("skillex_mcp_describe",
@@ -177,6 +205,7 @@ func handleQuery(eng *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToo
 	tagsVal, _ := req.Params.Arguments["tags"].(string)
 	pkgVal, _ := req.Params.Arguments["package"].(string)
 	searchVal, _ := req.Params.Arguments["search"].(string)
+	sourceVal, _ := req.Params.Arguments["source"].(string)
 	formatVal, _ := req.Params.Arguments["format"].(string)
 	limitVal, _ := req.Params.Arguments["limit"].(float64)
 	cursorVal, _ := req.Params.Arguments["cursor"].(string)
@@ -214,6 +243,7 @@ func handleQuery(eng *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToo
 		Tags:           tags,
 		Package:        pkgVal,
 		Search:         searchVal,
+		Source:         sourceVal,
 		Format:         format,
 		Limit:          int(limitVal),
 		Cursor:         cursorVal,
@@ -300,11 +330,11 @@ func toolError(err error) *mcplib.CallToolResult {
 	return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: string(encoded)}}, IsError: true}
 }
 
-func handleRead(reg *registry.Registry, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func handleRead(engine *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ref, _ := req.Params.Arguments["ref"].(string)
 	section, _ := req.Params.Arguments["section"].(string)
 	maxBytes, _ := req.Params.Arguments["max_bytes"].(float64)
-	resp, err := query.New(reg).Read(ref, section, int(maxBytes))
+	resp, err := engine.Read(ref, section, int(maxBytes))
 	if err != nil {
 		return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: err.Error()}}, IsError: true}, nil
 	}
