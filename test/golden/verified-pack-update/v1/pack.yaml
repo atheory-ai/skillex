@@ -1,0 +1,6 @@
+name: test.example
+version: 1.0.0
+skills:
+  - file: skills/guide.md
+    scope: repo
+    activate-when: {files-present: [go.mod]}

@@ -14,7 +14,7 @@ func ValidateDirectoryForTest(dir string, verifier func([]byte, []byte) error) (
 	return validateDirectoryWithVerifier(dir, verifier)
 }
 func ListForTest(root string, verifier func([]byte, []byte) error) ([]Lock, error) {
-	return listWithVerifier(root, verifier)
+	return listInstalled(root, verifier, false)
 }
 func DownloadForTest(ctx context.Context, address string, limit int64, client *http.Client) ([]byte, error) {
 	return downloadWithClient(ctx, address, limit, client)

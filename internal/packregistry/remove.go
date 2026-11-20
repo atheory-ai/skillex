@@ -93,34 +93,21 @@ func Remove(root string, selected Entry, reindex func() error) error {
 	if err := validateEntry(selected); err != nil {
 		return err
 	}
-	parent, err := installationParent(root, false)
-	if err != nil {
-		return err
-	}
-	defer parent.Close()
-	id := selected.Name + "@" + selected.Version
-	stage, err := removalStage(parent, true)
+	return withMutationLock(root, false, func(parent *os.Root) error {
+		if err := noPendingUpdate(parent); err != nil {
+			return err
+		}
+		return removeSelected(parent, selected, reindex)
+	})
+}
+
+func removeSelected(parent *os.Root, selected Entry, reindex func() error) error {
+	id := identity(selected)
+	stage, err := removalStage(parent, false)
 	if err != nil {
 		return err
 	}
 	defer stage.Close()
-	// The SQLite writer is released on commit. Keep staged files owned by
-	// this removal until cleanup finishes, including when a second CLI retries.
-	lease, err := stage.OpenFile(".lock", os.O_CREATE|os.O_RDWR|syscall.O_NONBLOCK, 0o600)
-	if err != nil {
-		return err
-	}
-	defer lease.Close()
-	stat, err := lease.Stat()
-	if err != nil {
-		return err
-	}
-	if !stat.Mode().IsRegular() {
-		return fmt.Errorf("unsafe pack removal lock")
-	}
-	if err := filelock.TryExclusive(lease); err != nil {
-		return fmt.Errorf("another pack removal may be finishing: %w", err)
-	}
 	stagedPath := filepath.Join(removalDir, id)
 	_, err = stage.Lstat(id)
 	if os.IsNotExist(err) {
@@ -152,4 +139,25 @@ func Remove(root string, selected Entry, reindex func() error) error {
 		return fmt.Errorf("removed %s from index, cleaning staged files: %w", id, err)
 	}
 	return nil
+}
+
+func mutationLock(stage *os.Root) (*os.File, error) {
+	lease, err := stage.OpenFile(".lock", os.O_CREATE|os.O_RDWR|syscall.O_NONBLOCK, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := lease.Stat()
+	if err != nil {
+		lease.Close()
+		return nil, err
+	}
+	if !stat.Mode().IsRegular() {
+		lease.Close()
+		return nil, fmt.Errorf("unsafe pack removal lock")
+	}
+	if err := filelock.TryExclusive(lease); err != nil {
+		lease.Close()
+		return nil, fmt.Errorf("another pack removal may be finishing: %w", err)
+	}
+	return lease, nil
 }

@@ -1123,6 +1123,32 @@ YAML, JSON, and text files. Installed packs use the existing activation rules an
 are indexed during installation. Pack content remains project guidance to review;
 signing establishes its source and integrity.
 
+Use `pack update <name>` to review and apply a newer stable version of an
+installed pack. Omit the name to review all installed packs together. If
+several versions of one pack are installed, select the source as
+`name@version`. Updates verify the local installation, fetch a signed catalog,
+and verify the proposed archive. The preview shows the old and new version and
+SHA256, each added, removed, or changed file, and both sets of activation rules
+and MCP suggestions.
+
+```sh
+skillex pack update --preview --json
+skillex pack update --approve <approval-from-preview> --json
+```
+
+For a named update, pass the same name to both commands. In an interactive
+terminal, `pack update` prints the preview and asks for confirmation. For
+automation, pass the preview's `approval` value to authorize those exact
+changes. If the proposal changes, the command prints the current preview and
+exits so it can be reviewed again. When all selected packs are already current,
+the JSON preview contains an empty `updates` array.
+
+The whole approved batch shares one index transaction. A download, validation,
+or rebuild failure preserves the previous versions and index. If the process
+stops during a swap, run `skillex pack update --recover` from the project.
+Recovery uses local signed evidence and the index's commit record to restore
+the previous directories or finish cleanup for an already committed update.
+
 Use `pack remove <name>` to remove one installed registry pack and rebuild the
 project index. If several versions are installed, select one explicitly, for
 example `skillex pack remove atheory-ai.javascript.tool.example@0.1.1`.
@@ -1145,8 +1171,7 @@ Optional transport configuration (one registry in this MVP):
 The default is the upstream URL. Mirrors must serve the same authentic signed
 bytes. Project configuration cannot replace the bundled signer or root. Custom
 roots, multiple registries, and policy filters are rejected until federation is
-implemented. Compatibility-aware resolution, pack updates, and
-automatic supersession remain follow-up work.
+implemented. Compatibility-aware resolution and automatic supersession remain follow-up work.
 
 Files live in `.skillex/packs/<name>@<version>/` alongside
 `manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains

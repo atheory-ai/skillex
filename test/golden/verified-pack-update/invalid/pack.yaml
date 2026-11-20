@@ -1,0 +1,5 @@
+name: test.example
+version: 2.0.0
+skills:
+  - file: skills/missing.md
+    activate-when: {files-present: [go.mod]}

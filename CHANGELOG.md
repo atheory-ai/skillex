@@ -6,6 +6,7 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- `skillex pack update [name]` previews changes to signed registry packs and applies the approved versions and archive digests together. CLI and MCP lookups switch to the new guidance when the rebuilt index commits.
 - Remove an installed registry pack with `skillex pack remove <name[@version]>`. Skillex verifies the local installation and refreshes CLI and MCP discovery.
 - Search the signed pack catalog with `skillex pack search` and inspect the available versions, compatibility declarations, and signer with `skillex pack info`.
 - Agents can use `list_available_packs` and `propose_pack_install` over MCP. Proposals show the same verified contents and activation rules as the CLI preview. Installation requires separate consent.
