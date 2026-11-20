@@ -86,30 +86,59 @@ func newPackCmd() *cobra.Command {
 	get.Flags().BoolVar(&yes, "yes", false, "Confirm installation after reviewing the verified preview")
 	get.Flags().BoolVar(&preview, "preview", false, "Show verified files and activation rules without installing")
 	list := &cobra.Command{Use: "list", Short: "List installed packs after offline signature and content verification", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		installed, err := packregistry.List(repoRoot())
+		status, err := registry.PackStatus(repoRoot())
 		if err != nil {
 			return err
 		}
-		type summary struct {
-			Name     string `json:"name"`
-			Version  string `json:"version"`
-			Tier     string `json:"tier"`
-			Registry string `json:"registry"`
-		}
-		result := []summary{}
-		for _, lock := range installed {
-			result = append(result, summary{lock.Entry.Name, lock.Entry.Version, lock.Entry.Tier, lock.Registry})
-		}
-		if flagJSON {
-			return json.NewEncoder(os.Stdout).Encode(result)
-		}
-		for _, entry := range result {
-			fmt.Fprintf(os.Stdout, "%s@%s [%s] %s\n", entry.Name, entry.Version, entry.Tier, entry.Registry)
-		}
-		return nil
+		return printPackStatus(cmd, status)
 	}}
-	cmd.AddCommand(get, list, newPackUpdateCmd(), newPackRemoveCmd(), newPackSearchCmd(), newPackInfoCmd())
+	check := &cobra.Command{Use: "check", Short: "Fetch signed revocations and refresh installed pack guidance", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		root := repoRoot()
+		cfg, err := config.Load(root)
+		if err != nil {
+			return err
+		}
+		evidence, err := packregistry.FetchCheck(cmd.Context(), packregistry.ManifestURL(cfg))
+		if err != nil {
+			return err
+		}
+		reg, err := registry.Open(filepath.Join(root, ".skillex", "index.db"))
+		if err != nil {
+			return err
+		}
+		defer reg.Close()
+		status, err := reg.CheckPacks(cfg, root, evidence)
+		if err != nil {
+			return err
+		}
+		return printPackStatus(cmd, status)
+	}}
+	cmd.AddCommand(get, list, check, newPackUpdateCmd(), newPackRemoveCmd(), newPackSearchCmd(), newPackInfoCmd())
 	return cmd
+}
+
+func printPackStatus(cmd *cobra.Command, status []packregistry.PackStatus) error {
+	if flagJSON {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(status)
+	}
+	for _, p := range status {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s [%s] %s — %s (%s", p.Name, p.Version, p.Tier, p.Registry, p.Status, p.Evidence)
+		if p.CatalogGeneratedAt != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), ", published %s", p.CatalogGeneratedAt)
+		}
+		if p.CheckedAt != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), ", checked %s", p.CheckedAt)
+		}
+		fmt.Fprint(cmd.OutOrStdout(), ")")
+		if p.Reason != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), " — %s", p.Reason)
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+	}
+	if len(status) == 0 && !flagQuiet {
+		fmt.Fprintln(cmd.OutOrStdout(), "No installed registry packs.")
+	}
+	return nil
 }
 
 func newPackRemoveCmd() *cobra.Command {

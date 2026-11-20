@@ -57,6 +57,18 @@ func InstalledFilePath(file string) (string, string, bool) {
 	return filepath.FromSlash(clean[:start+boundary]), rest[boundary+1:], true
 }
 
+// ResolvedInstalledFilePath also recognizes a project symlink into a pack.
+func ResolvedInstalledFilePath(path string) (string, string, bool) {
+	if dir, file, ok := InstalledFilePath(path); ok {
+		return dir, file, true
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", "", false
+	}
+	return InstalledFilePath(resolved)
+}
+
 type Manifest struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	Registry      string         `json:"registry"`
@@ -409,6 +421,13 @@ func (p *Prepared) Install(root string) error {
 	}
 	return withMutationLock(root, true, func(parent *os.Root) error {
 		if err := noPendingUpdate(parent); err != nil {
+			return err
+		}
+		check, err := savedCheck(parent)
+		if err != nil {
+			return err
+		}
+		if err = check.AllowsInstall(p.Lock); err != nil {
 			return err
 		}
 		return p.installInto(parent, files)

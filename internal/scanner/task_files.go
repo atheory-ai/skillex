@@ -48,7 +48,7 @@ func readTaskFile(root *os.Root, path string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("expected a regular Markdown file")
 	}
-	if dir, file, installed := packregistry.InstalledFilePath(filepath.Join(root.Name(), name)); installed {
+	if dir, file, installed := packregistry.ResolvedInstalledFilePath(filepath.Join(root.Name(), name)); installed {
 		lock, err := packregistry.ValidateDirectory(dir)
 		if err != nil {
 			return nil, err

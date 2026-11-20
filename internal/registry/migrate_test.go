@@ -318,3 +318,28 @@ func TestMigrate_PartialMigration_IsRecoverable(t *testing.T) {
 		t.Error("pattern_type missing after recovery from partial migration")
 	}
 }
+
+func TestMigrate_PackCheckFromV6(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	reg, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reg.db.Exec("DROP TABLE pack_catalog_check; PRAGMA user_version=6"); err != nil {
+		t.Fatal(err)
+	}
+	if err = reg.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reg, err = Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	if disabled, err := reg.TaskDisabled("existing.md"); err != nil || disabled {
+		t.Fatalf("existing task disabled=%v err=%v", disabled, err)
+	}
+	if check, err := currentCheck(reg.db, t.TempDir()); err != nil || check != nil {
+		t.Fatalf("unexpected check after migration: %v %v", check, err)
+	}
+}

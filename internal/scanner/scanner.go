@@ -57,9 +57,10 @@ type CapabilitySuggestion struct {
 
 // Scanner discovers skill files within a repository.
 type Scanner struct {
-	root      string
-	cfg       *config.Config
-	resolvers []Resolver
+	DisabledPacks packregistry.DisabledPaths
+	root          string
+	cfg           *config.Config
+	resolvers     []Resolver
 	// Bound files are read inside the project root once per scan.
 	taskFiles map[string][]byte
 	// devMode includes devDependencies
@@ -142,7 +143,9 @@ func (s Scanner) Scan() (*ScanResult, error) {
 		result.Errors = append(result.Errors, errs...)
 	}
 
-	packSkills, errs := s.scanProjectPacks()
+	activatedSkills, activatedMCP, activationErrors := packs.ProjectGuidance(s.root, s.DisabledPacks)
+	result.Errors = append(result.Errors, activationErrors...)
+	packSkills, errs := s.scanProjectPacks(activatedSkills)
 	result.RepoSkills = append(result.RepoSkills, packSkills...)
 	result.Errors = append(result.Errors, errs...)
 	agentSkills, agentErrs := s.scanProjectAgentSkills()
@@ -153,8 +156,6 @@ func (s Scanner) Scan() (*ScanResult, error) {
 		return nil, err
 	}
 
-	activatedMCP, mcpErrs := packs.ActivateProjectMCPServers(s.root)
-	result.Errors = append(result.Errors, mcpErrs...)
 	for _, activation := range activatedMCP {
 		result.CapabilitySuggestions = append(result.CapabilitySuggestions, CapabilitySuggestion{
 			ServerRef:    activation.Server.Ref,
@@ -277,6 +278,9 @@ func (s *Scanner) scanDependencyBoundary(boundaryPath, boundaryRel string) ([]Sk
 }
 
 func (s *Scanner) scanDependencyPack(manifestPath string, boundary Boundary, pkgRoot PackageRoot) ([]SkillFile, []CapabilitySuggestion, []error) {
+	if s.DisabledPacks.Contains(manifestPath) {
+		return nil, nil, nil
+	}
 	var skills []SkillFile
 	var suggestions []CapabilitySuggestion
 	var errs []error
@@ -413,6 +417,9 @@ func (s *Scanner) readSkillFile(absPath, relPath, pkgName, pkgVersion, visibilit
 }
 
 func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion, visibility, sourceType, boundaryRel, pkgRootRel string, explicitScopes []string) ([]SkillFile, error) {
+	if s.DisabledPacks.Contains(absPath) {
+		return nil, nil
+	}
 	if data, bound := s.taskFiles[relPath]; bound {
 		if data == nil {
 			return nil, nil // optional test file
@@ -430,7 +437,7 @@ func (s *Scanner) readSkillFileWithScopes(absPath, relPath, pkgName, pkgVersion,
 	if err != nil {
 		return nil, err
 	}
-	if packDir, file, ok := packregistry.InstalledFilePath(absolute); ok {
+	if packDir, file, ok := packregistry.ResolvedInstalledFilePath(absolute); ok {
 		lock, err := packregistry.ValidateDirectory(packDir)
 		if err != nil {
 			return nil, err
@@ -488,6 +495,9 @@ func (s *Scanner) readSkillDataWithScopes(data []byte, absPath, relPath, pkgName
 }
 
 func (s *Scanner) readPackSkillWithScopes(pack *packs.Pack, absPath, relPath string, explicitScopes []string) ([]SkillFile, error) {
+	if s.DisabledPacks.Contains(absPath) {
+		return nil, nil
+	}
 	if pack.VerifiedFiles == nil {
 		return s.readSkillFileWithScopes(absPath, relPath, "", "", "repo", "pack", "", "", explicitScopes)
 	}
@@ -506,10 +516,9 @@ func (s *Scanner) readPackSkillWithScopes(pack *packs.Pack, absPath, relPath str
 	return files, err
 }
 
-func (s *Scanner) scanProjectPacks() ([]SkillFile, []error) {
+func (s *Scanner) scanProjectPacks(activated []packs.ActivatedSkill) ([]SkillFile, []error) {
 	var skills []SkillFile
-
-	activated, errs := packs.ActivateProject(s.root)
+	var errs []error
 	for _, activation := range activated {
 		absPath := filepath.Join(activation.Pack.Dir, activation.Skill.File)
 		relPath, _ := filepath.Rel(s.root, absPath)

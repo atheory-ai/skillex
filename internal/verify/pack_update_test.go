@@ -15,9 +15,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/atheory-ai/skillex/cli"
 	"github.com/atheory-ai/skillex/internal/packregistry"
@@ -134,9 +136,14 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 	otherNext := makeEntry(other, "2.0.0", "other-v2.tar.gz", updateArchive(t, "v2", other))
 	type snapshot struct{ manifest, bundle []byte }
 	var combined map[string]json.RawMessage
+	published := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	catalog := func(entries []packregistry.Entry, revoked []packregistry.Revocation) snapshot {
 		t.Helper()
-		manifest, err := json.Marshal(map[string]any{"schemaVersion": 1, "registry": "fixture", "packs": entries, "revocations": revoked})
+		published = published.Add(time.Minute)
+		if revoked == nil {
+			revoked = []packregistry.Revocation{}
+		}
+		manifest, err := json.Marshal(map[string]any{"generatedAt": published, "schemaVersion": 1, "registry": "fixture", "packs": entries, "revocations": revoked})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +178,7 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 	}
 	first := catalog([]packregistry.Entry{old, otherOld}, nil)
 	second := catalog([]packregistry.Entry{old, next, otherOld, otherNext}, nil)
-	withdrawn := catalog([]packregistry.Entry{old, next, otherOld, otherNext}, []packregistry.Revocation{{Name: name, Version: next.Version, Reason: "withdrawn"}})
+	withdrawn := catalog([]packregistry.Entry{old, next}, []packregistry.Revocation{{Name: name, Version: next.Version, Reason: "withdrawn"}})
 	// A changed gzip header preserves file contents and version but changes
 	// the authenticated digest. An earlier approval must not authorize it.
 	repacked := bytes.Clone(v2)
@@ -327,4 +334,154 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 	if out := run("pack", "update", "--json"); strings.TrimSpace(string(out)) != `{"updates":[]}` {
 		t.Fatal(string(out))
 	}
+	t.Run("explicit revocation check", func(t *testing.T) {
+		decode := func(args ...string) []packregistry.PackStatus {
+			t.Helper()
+			var status []packregistry.PackStatus
+			if err := json.Unmarshal(run(args...), &status); err != nil || len(status) != 2 {
+				t.Fatalf("pack status: %v (%v)", status, err)
+			}
+			return status
+		}
+		if s := decode("pack", "list", "--json"); s[0].Evidence != "installation_snapshot" || s[0].CheckedAt != "" {
+			t.Fatal(s)
+		}
+		if s := decode("pack", "check", "--json"); s[0].Evidence != "registry_check" || s[0].Status != "not_revoked" || s[0].CheckedAt == "" {
+			t.Fatal(s)
+		}
+		var before helpers.QueryResponse
+		if err := json.Unmarshal(run("query", "--topic", "updated", "--json"), &before); err != nil || len(before.Results) != 2 {
+			t.Fatalf("expected two indexed skills: %+v %v", before, err)
+		}
+		var revokedRef, activeRef string
+		for _, skill := range before.Results {
+			if strings.Contains(skill.Path, name+"@") {
+				revokedRef = skill.Ref
+			} else {
+				activeRef = skill.Ref
+			}
+		}
+		// A rule, a task binding, and a project pack depend on the withdrawn pack.
+		cfgPath := filepath.Join(project, "skillex.json")
+		baseCfg, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg map[string]any
+		if err = json.Unmarshal(baseCfg, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		target := ".skillex/packs/" + name + "@2.0.0/skills/checks.md"
+		aliasDir := filepath.Join(project, ".agents", "skills", "pack-alias")
+		if runtime.GOOS != "windows" {
+			if err := os.MkdirAll(aliasDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(project, target), filepath.Join(aliasDir, "SKILL.md")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg["Tasks"] = []map[string]string{{"Name": "verify-pack", "When": "when checking", "Skill": target}}
+		cfg["Rules"] = []map[string]any{{"Scope": "**", "Skills": []string{target}}}
+		withTasks, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(cfgPath, withTasks)
+		localPack := filepath.Join(project, "skillex")
+		if err = os.MkdirAll(localPack, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(filepath.Join(localPack, "pack.yaml"), []byte("name: local\nversion: 1.0.0\nskills:\n  - file: gated.md\n    scope: repo\n    activate-when: {detector: test.example-go}\n"))
+		write(filepath.Join(localPack, "gated.md"), []byte("---\nname: Gated\ntopics: [gated]\n---\nDepends on registry detector."))
+		run("refresh", "--quiet")
+		check("gated", "results")
+		taskClient := helpers.StartMCPCommand(t, command("mcp"))
+		setup := func(want bool) {
+			t.Helper()
+			mcpSetup, err := taskClient.CallToolText("skillex_query", map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, out := range []string{mcpSetup, string(run("query", "--json"))} {
+				if strings.Contains(out, "verify-pack") != want {
+					t.Fatalf("unexpected task setup: %s", out)
+				}
+			}
+		}
+		setup(true)
+		serve(withdrawn)
+		// A failed rebuild must preserve the prior receipt as well as both skills.
+		if _, err := db.Exec("CREATE TRIGGER deny_check BEFORE INSERT ON skills BEGIN SELECT RAISE(ABORT,'denied check'); END"); err != nil {
+			t.Fatal(err)
+		}
+		fail("denied check", "pack", "check")
+		if s := decode("pack", "list", "--json"); s[0].Status != "not_revoked" {
+			t.Fatal(s)
+		}
+		if _, err := db.Exec("DROP TRIGGER deny_check"); err != nil {
+			t.Fatal(err)
+		}
+		status := decode("pack", "check", "--json")
+		if status[0].Name != name || status[0].Reason != "withdrawn" || status[0].Status != "revoked" || status[0].CatalogGeneratedAt != "2026-10-01T00:03:00Z" || status[1].Name != other || status[1].Status != "not_revoked" {
+			t.Fatal(status)
+		}
+		assertVisible := func() {
+			t.Helper()
+			a := run("query", "--topic", "updated", "--json")
+			b, err := client.CallToolText("skillex_query", map[string]any{"topic": "updated"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, data := range [][]byte{a, []byte(b)} {
+				var response helpers.QueryResponse
+				if err := json.Unmarshal(data, &response); err != nil || len(response.Results) != 1 || response.Results[0].Ref != activeRef {
+					t.Fatalf("unexpected guidance: %s", data)
+				}
+			}
+			fail("not found", "read", "--ref", revokedRef)
+			if _, err := client.CallToolText("skillex_read", map[string]any{"ref": revokedRef}); err == nil {
+				t.Fatal("MCP served withdrawn ref")
+			}
+			if data, err := client.CallToolText("skillex_read", map[string]any{"ref": activeRef}); err != nil || !strings.Contains(data, "Run both project checks") {
+				t.Fatalf("unaffected read: %s (%v)", data, err)
+			}
+		}
+		assertVisible()
+		setup(false)
+		check("gated", "no_match")
+		serve(second)
+		fail("stale", "pack", "check")
+		serve(replacement)
+		fail("omits prior revocation", "pack", "check")
+		serve(snapshot{withdrawn.manifest, first.bundle})
+		if out, err := command("pack", "check").CombinedOutput(); err == nil {
+			t.Fatalf("accepted mismatched signature: %s", out)
+		}
+		// Even with the catalog unavailable, refresh and list use the accepted snapshot.
+		if err := os.Remove(filepath.Join(fixture, "manifest.json")); err != nil {
+			t.Fatal(err)
+		}
+		run("refresh", "--quiet")
+		run("refresh", "--check")
+		if s := decode("pack", "list", "--json"); !slices.Equal(s, status) {
+			t.Fatalf("saved status changed: %+v", s)
+		}
+		assertVisible()
+		if _, err := os.Stat(filepath.Join(cache, name+"@2.0.0", "manifest.lock.json")); err != nil {
+			t.Fatal(err)
+		}
+		if runtime.GOOS != "windows" {
+			if err := os.Remove(filepath.Join(aliasDir, "SKILL.md")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(cfgPath, baseCfg)
+		if err = os.Remove(filepath.Join(localPack, "pack.yaml")); err != nil {
+			t.Fatal(err)
+		}
+		run("pack", "remove", name)
+		serve(second)
+		fail("revoked", "pack", "get", name, "--yes")
+	})
 }

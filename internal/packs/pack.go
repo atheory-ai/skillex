@@ -422,38 +422,47 @@ func isSafeRelativePath(path string) bool {
 
 // ActivateProject discovers and activates project-local packs for a repo root.
 func ActivateProject(root string) ([]ActivatedSkill, []error) {
-	var activated []ActivatedSkill
-	var errs []error
-	var projectPacks []*Pack
+	projectPacks, ctx, errs := projectActivation(root, nil)
+	activated, skillErrors := activateProjectSkills(root, projectPacks, ctx)
+	return activated, append(errs, skillErrors...)
+}
 
+func projectActivation(root string, disabled packregistry.DisabledPaths) ([]*Pack, ActivationContext, []error) {
+	var projectPacks []*Pack
+	var errs []error
+	known := map[string]bool{}
+	registry, err := NewDetectorRegistry()
+	if err != nil {
+		return nil, ActivationContext{}, []error{err}
+	}
 	for _, manifestPath := range ProjectManifestPaths(root) {
 		pack, err := Load(manifestPath)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		projectPacks = append(projectPacks, pack)
-	}
-
-	registry, err := NewDetectorRegistry()
-	if err != nil {
-		errs = append(errs, err)
-		return activated, errs
-	}
-	for _, pack := range projectPacks {
-		if err := registry.RegisterAll(pack.Manifest.Detectors, pack.Manifest.Name, false); err != nil {
-			errs = append(errs, err)
+		if disabled.Contains(manifestPath) {
+			// Other packs may reference these names. Keep those gates inactive.
+			for name := range pack.Manifest.Detectors {
+				known[name] = true
+			}
 			continue
 		}
+		projectPacks = append(projectPacks, pack)
+		if err := registry.RegisterAll(pack.Manifest.Detectors, pack.Manifest.Name, false); err != nil {
+			errs = append(errs, err)
+		}
 	}
-
 	active, detectorErrs := registry.Evaluate(root, ActivationContext{})
-	errs = append(errs, detectorErrs...)
-	ctx := ActivationContext{
-		DetectorKnown:  registry.KnownMap(),
-		DetectorActive: active,
+	for name := range registry.KnownMap() {
+		known[name] = true
 	}
+	return projectPacks, ActivationContext{DetectorKnown: known, DetectorActive: active}, append(errs, detectorErrs...)
+}
 
+func activateProjectSkills(root string, projectPacks []*Pack, ctx ActivationContext) ([]ActivatedSkill, []error) {
+	var activated []ActivatedSkill
+	var errs []error
 	for _, pack := range projectPacks {
 		for _, skill := range pack.Manifest.Skills {
 			scopes, err := ActivateSkillWithContext(root, skill, ctx)
@@ -480,32 +489,22 @@ func ActivateProject(root string) ([]ActivatedSkill, []error) {
 // project-local packs. It evaluates metadata only and never configures or starts
 // a downstream server.
 func ActivateProjectMCPServers(root string) ([]ActivatedMCPServer, []error) {
+	projectPacks, ctx, errs := projectActivation(root, nil)
+	activated, serverErrors := activateProjectServers(root, projectPacks, ctx)
+	return activated, append(errs, serverErrors...)
+}
+
+// ProjectGuidance evaluates the same detector snapshot for skills and MCP suggestions.
+func ProjectGuidance(root string, disabled packregistry.DisabledPaths) ([]ActivatedSkill, []ActivatedMCPServer, []error) {
+	projectPacks, ctx, errs := projectActivation(root, disabled)
+	skills, skillErrors := activateProjectSkills(root, projectPacks, ctx)
+	servers, serverErrors := activateProjectServers(root, projectPacks, ctx)
+	return skills, servers, append(append(errs, skillErrors...), serverErrors...)
+}
+
+func activateProjectServers(root string, projectPacks []*Pack, ctx ActivationContext) ([]ActivatedMCPServer, []error) {
 	var activated []ActivatedMCPServer
 	var errs []error
-	var projectPacks []*Pack
-
-	for _, manifestPath := range ProjectManifestPaths(root) {
-		pack, err := Load(manifestPath)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		projectPacks = append(projectPacks, pack)
-	}
-
-	registry, err := NewDetectorRegistry()
-	if err != nil {
-		return activated, append(errs, err)
-	}
-	for _, pack := range projectPacks {
-		if err := registry.RegisterAll(pack.Manifest.Detectors, pack.Manifest.Name, false); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	active, detectorErrs := registry.Evaluate(root, ActivationContext{})
-	errs = append(errs, detectorErrs...)
-	ctx := ActivationContext{DetectorKnown: registry.KnownMap(), DetectorActive: active}
-
 	for _, pack := range projectPacks {
 		for _, server := range pack.Manifest.MCPServers {
 			scopes, err := ActivateMCPServerWithContext(root, server, ctx)

@@ -28,6 +28,7 @@ type RefreshOptions struct {
 
 // RefreshResult summarizes what was written.
 type RefreshResult struct {
+	PackStatus        []packregistry.PackStatus
 	SkillsAdded       int
 	TestsAdded        int
 	CapabilitiesAdded int
@@ -86,15 +87,45 @@ func (r *Registry) beginRebuild() (*sql.Tx, error) {
 
 func rebuild(tx *sql.Tx, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
 	// Validate saved evidence before publishing a rebuilt index. Ordinary
-	// refresh works offline using the signed revocation snapshot in each lock.
+	// refresh uses installation snapshots and the latest saved catalog check.
 	listPacks := packregistry.List
 	if opts.updatingPacks {
 		listPacks = packregistry.ListUpdating
 	}
-	if _, err := listPacks(opts.Root); err != nil {
+	locks, err := listPacks(opts.Root)
+	if err != nil {
 		return nil, fmt.Errorf("validating installed registry packs: %w", err)
 	}
-	result := &RefreshResult{}
+	var reader rowReader
+	if tx != nil {
+		reader = tx
+	}
+	check, err := currentCheck(reader, opts.Root)
+	if err != nil {
+		return nil, fmt.Errorf("reading saved pack check: %w", err)
+	}
+	return rebuildWithPacks(tx, cfg, opts, locks, check)
+}
+
+func rebuildWithPacks(tx *sql.Tx, cfg *config.Config, opts RefreshOptions, locks []packregistry.Lock, check *packregistry.CatalogCheck) (*RefreshResult, error) {
+	disabled := check.Disabled(opts.Root, locks)
+	if len(disabled) > 0 {
+		active := *cfg
+		active.Tasks = nil
+		for _, task := range cfg.Tasks {
+			if !disabled.Contains(filepath.Join(opts.Root, task.Skill)) {
+				active.Tasks = append(active.Tasks, task)
+				continue
+			}
+			if tx != nil {
+				if _, err := tx.Exec("INSERT OR IGNORE INTO pack_disabled_tasks VALUES(?)", task.Skill); err != nil {
+					return nil, err
+				}
+			}
+		}
+		cfg = &active
+	}
+	result := &RefreshResult{PackStatus: check.Status(locks)}
 	var capabilityRecords []CapabilityRecord
 	if cfg.MCPEnabled() {
 		trusted, _, err := trust.LoadConfigured()
@@ -141,6 +172,7 @@ func rebuild(tx *sql.Tx, cfg *config.Config, opts RefreshOptions) (*RefreshResul
 
 	// 1. Scan
 	sc := scanner.New(opts.Root, cfg, opts.DevMode)
+	sc.DisabledPacks = disabled
 	scanResult, err := sc.Scan()
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)

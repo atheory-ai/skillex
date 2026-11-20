@@ -74,6 +74,10 @@ refresh. skillex query does not watch the filesystem.`,
 				return err
 			}
 
+			if len(result.PackStatus) > 0 && !flagQuiet && !flagJSON {
+				fmt.Fprintln(os.Stderr, "Pack revocation status uses saved evidence. Use skillex pack list for dates or skillex pack check to check online.")
+			}
+
 			if len(result.Errors) > 0 && !flagQuiet {
 				fmt.Fprintln(os.Stderr, styleWarn.Render("Warnings:"))
 				fmt.Fprint(os.Stderr, registry.FormatErrors(result.Errors))
@@ -85,6 +89,9 @@ refresh. skillex query does not watch the filesystem.`,
 					"tests_added":  result.TestsAdded,
 					"errors":       len(result.Errors),
 					"dry_run":      dryRun,
+				}
+				if len(result.PackStatus) > 0 {
+					output["pack_status"] = result.PackStatus
 				}
 				if cfg.MCPEnabled() {
 					output["capabilities_added"] = result.CapabilitiesAdded
