@@ -1098,6 +1098,7 @@ skillex pack info atheory-ai.javascript.tool.example --json
 skillex pack get atheory-ai.javascript.tool.example --preview
 skillex pack get atheory-ai.javascript.tool.example
 skillex pack list --json
+skillex pack remove atheory-ai.javascript.tool.example
 ```
 
 Search and info fetch and authenticate the configured registry manifest on each
@@ -1122,6 +1123,15 @@ YAML, JSON, and text files. Installed packs use the existing activation rules an
 are indexed during installation. Pack content remains project guidance to review;
 signing establishes its source and integrity.
 
+Use `pack remove <name>` to remove one installed registry pack and rebuild the
+project index. If several versions are installed, select one explicitly, for
+example `skillex pack remove atheory-ai.javascript.tool.example@0.1.1`.
+Removal verifies the saved signature and files locally and refuses a modified
+installation. A successful command reports the exact version removed. CLI
+lookups and running MCP sessions see the rebuilt index immediately. If the
+rebuild fails, the installation and previous index are restored. If the process stops
+while rebuilding the index, rerun the same removal command to finish.
+
 Optional transport configuration (one registry in this MVP):
 
 ```json
@@ -1135,7 +1145,7 @@ Optional transport configuration (one registry in this MVP):
 The default is the upstream URL. Mirrors must serve the same authentic signed
 bytes. Project configuration cannot replace the bundled signer or root. Custom
 roots, multiple registries, and policy filters are rejected until federation is
-implemented. Compatibility-aware resolution, pack updates and removal, and
+implemented. Compatibility-aware resolution, pack updates, and
 automatic supersession remain follow-up work.
 
 Files live in `.skillex/packs/<name>@<version>/` alongside

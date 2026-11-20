@@ -1,11 +1,15 @@
 package acceptance
 
 import (
+	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/atheory-ai/skillex/internal/filelock"
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/test/helpers"
 )
 
@@ -244,5 +248,154 @@ skills:
 	resp, _ = helpers.RunQueryJSON(t, dir, "query", "--topic", "composed")
 	if resp.Type != "no_match" {
 		t.Fatalf("removed gate response=%s", resp.Type)
+	}
+}
+
+// Replay the published installation evidence so the golden project exercises
+// the normal offline verifier without depending on GitHub.
+func installPublishedExample(t *testing.T, dir string, legacy bool) packregistry.Entry {
+	t.Helper()
+	fixture := filepath.Join("..", "..", "cli", "testdata", "pack-registry")
+	archivePath := filepath.Join(fixture, "archive.tar.gz")
+	if legacy {
+		fixture = filepath.Join("..", "..", "internal", "verify", "testdata")
+		archivePath = filepath.Join("..", "..", "internal", "packregistry", "testdata", "example.tar.gz")
+	}
+	read := func(file string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	manifest := read(filepath.Join(fixture, "manifest.json"))
+	var catalog packregistry.Manifest
+	if err := json.Unmarshal(manifest, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	entry := catalog.Packs[0].Entry
+	pack := packregistry.Prepared{Archive: read(archivePath), Lock: packregistry.Lock{
+		Entry: entry, Registry: catalog.Registry, ManifestURL: packregistry.DefaultURL,
+		Manifest: manifest, Bundle: read(filepath.Join(fixture, "manifest.json.bundle")),
+	}}
+	if err := pack.Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	return entry
+}
+
+func TestPack_RemoveVerifiedInstallation(t *testing.T) {
+	dir := helpers.CopyFixture(t, "go-basic")
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"fixture"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entry := installPublishedExample(t, dir, false)
+	id := entry.Name + "@" + entry.Version
+	packs := filepath.Join(dir, ".skillex", "packs")
+	installed := filepath.Join(packs, id)
+	if res := helpers.Run(t, dir, "refresh"); res.ExitCode != 0 {
+		t.Fatal(res.Stderr)
+	}
+	client := helpers.StartMCPServer(t, dir)
+	check := func(topic, suffix string, present bool) {
+		t.Helper()
+		cli, _ := helpers.RunQueryJSON(t, dir, "query", "--topic", topic, "--path", "main.go")
+		body, err := client.CallToolText("skillex_query", map[string]any{"topic": topic, "path": "main.go"})
+		var mcp helpers.QueryResponse
+		if err != nil || json.Unmarshal([]byte(body), &mcp) != nil {
+			t.Fatalf("MCP lookup: %s, %v", body, err)
+		}
+		for _, result := range []helpers.QueryResponse{cli, mcp} {
+			if present {
+				helpers.AssertSkillPresent(t, result.Results, suffix)
+			} else if result.Type != "no_match" || len(result.Results) != 0 {
+				t.Fatalf("removed skill still discoverable: %+v", result)
+			}
+		}
+	}
+	check("example", "usage.md", true)
+
+	// Both released versions carry authentic evidence. A bare name must never
+	// silently select one; removing the older version preserves the active one.
+	legacy := installPublishedExample(t, dir, true)
+	if r := helpers.Run(t, dir, "pack", "remove", entry.Name); r.ExitCode == 0 || !strings.Contains(r.Stderr, "ambiguous") || !strings.Contains(r.Stderr, legacy.Version) || !strings.Contains(r.Stderr, entry.Version) {
+		t.Fatalf("ambiguous selection: %+v", r)
+	}
+	if r := helpers.Run(t, dir, "pack", "remove", legacy.Name+"@"+legacy.Version); r.ExitCode != 0 {
+		t.Fatal(r.Stderr)
+	}
+	check("example", "usage.md", true)
+
+	// A retry cannot take over staged files while an earlier removal finishes.
+	lease, err := os.OpenFile(filepath.Join(packs, ".removing", ".lock"), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filelock.TryExclusive(lease); err != nil {
+		t.Fatal(err)
+	}
+	if r := helpers.Run(t, dir, "pack", "remove", id); r.ExitCode == 0 || !strings.Contains(r.Stderr, "another pack removal") {
+		t.Fatalf("concurrent removal: %+v", r)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A local edit is never unlinked by removal.
+	note := filepath.Join(installed, "my-notes.md")
+	if err := os.WriteFile(note, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := helpers.Run(t, dir, "pack", "remove", id); r.ExitCode == 0 || !strings.Contains(r.Stderr, "unexpected installed file") {
+		t.Fatalf("accepted unverified installation: %+v", r)
+	}
+	if err := os.Remove(note); err != nil {
+		t.Fatal(err)
+	}
+
+	// Force a write failure after the old index has been cleared within the transaction.
+	db, err := sql.Open("sqlite", filepath.Join(dir, ".skillex", "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TRIGGER reject_rebuild BEFORE INSERT ON skills BEGIN SELECT RAISE(ABORT, 'test rebuild failure'); END"); err != nil {
+		t.Fatal(err)
+	}
+	if r := helpers.Run(t, dir, "pack", "remove", id); r.ExitCode == 0 || !strings.Contains(r.Stderr, "test rebuild failure") {
+		t.Fatalf("expected rebuild failure: %+v", r)
+	}
+	if _, err := os.Stat(installed); err != nil {
+		t.Fatal("removal failed to restore installation", err)
+	}
+	check("example", "usage.md", true)
+	if _, err := db.Exec("DROP TRIGGER reject_rebuild"); err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Pack    packregistry.Entry
+		Removed bool
+	}
+	if r := helpers.RunJSON(t, dir, &result, "pack", "remove", entry.Name); r.ExitCode != 0 || !result.Removed || result.Pack != entry {
+		t.Fatalf("remove: %+v, %+v", r, result)
+	}
+	if _, err := os.Stat(installed); !os.IsNotExist(err) {
+		t.Fatalf("installation still present: %v", err)
+	}
+	check("example", "usage.md", false)
+	check("go", "modules.md", true)
+	if r := helpers.Run(t, dir, "pack", "list", "--json"); r.ExitCode != 0 || strings.TrimSpace(r.Stdout) != "[]" {
+		t.Fatalf("installed packs: %+v", r)
+	}
+
+	// A retry after interruption between staging and commit finishes normally.
+	installPublishedExample(t, dir, false)
+	if err := os.Rename(installed, filepath.Join(packs, ".removing", id)); err != nil {
+		t.Fatal(err)
+	}
+	if r := helpers.Run(t, dir, "pack", "remove", id); r.ExitCode != 0 || !strings.Contains(r.Stdout, id) {
+		t.Fatalf("resume: %+v", r)
 	}
 }

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bufio"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -34,9 +35,57 @@ type RefreshResult struct {
 
 // Refresh rebuilds the registry from the given configuration.
 func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
-	// Installed registry packs remain authenticated on offline refresh. Refuse
-	// tampering before clearing the existing index; fresh revocations are fetched
-	// by explicit pack commands rather than adding network to normal discovery.
+	if opts.DryRun {
+		return rebuild(nil, cfg, opts)
+	}
+	tx, err := reg.beginRebuild()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck // Commit closes the transaction.
+	result, err := rebuild(tx, cfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	return result, tx.Commit()
+}
+
+// RemovePack restores the verified installation and rolls back the index if
+// the remaining project cannot be indexed completely.
+func (r *Registry) RemovePack(cfg *config.Config, root string, selected packregistry.Entry) error {
+	tx, err := r.beginRebuild()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // Commit closes the transaction.
+	return packregistry.Remove(root, selected, func() error {
+		result, err := rebuild(tx, cfg, RefreshOptions{Root: root, DevMode: true})
+		if err != nil {
+			return err
+		}
+		if len(result.Errors) > 0 {
+			return fmt.Errorf("reindexing after removal: %s", FormatErrors(result.Errors))
+		}
+		return tx.Commit()
+	})
+}
+
+// Acquire the SQLite writer before scanning so concurrent rebuilds see filesystem
+// changes in order. Readers keep their previous complete index until commit.
+func (r *Registry) beginRebuild() (*sql.Tx, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	if err := (indexWriter{tx}).Clear(); err != nil {
+		return nil, errors.Join(fmt.Errorf("clearing registry: %w", err), tx.Rollback())
+	}
+	return tx, nil
+}
+
+func rebuild(tx *sql.Tx, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
+	// Validate saved evidence before publishing a rebuilt index. Ordinary
+	// refresh works offline using the signed revocation snapshot in each lock.
 	if _, err := packregistry.List(opts.Root); err != nil {
 		return nil, fmt.Errorf("validating installed registry packs: %w", err)
 	}
@@ -146,10 +195,7 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 		return result, nil
 	}
 
-	// 3. Clear and rebuild
-	if err := reg.Clear(); err != nil {
-		return nil, fmt.Errorf("clearing registry: %w", err)
-	}
+	reg := indexWriter{tx}
 	for _, skill := range steering.Skills() {
 		if _, err := reg.InsertSkill(Skill{
 			Path: skill.Ref(), Name: skill.Name, Description: skill.When, Content: skill.Content,
@@ -227,12 +273,21 @@ func Refresh(reg *Registry, cfg *config.Config, opts RefreshOptions) (*RefreshRe
 	// 6. Insert capability metadata. Catalog loading above is metadata-only and
 	// never connects to or executes a downstream MCP server.
 	for _, record := range capabilityRecords {
-		if _, err := reg.InsertCapability(record); err != nil {
+		if _, err := tx.Exec("SAVEPOINT capability_record"); err != nil {
+			return nil, err
+		}
+		if _, err := insertCapability(tx, record); err != nil {
+			if _, rollbackErr := tx.Exec("ROLLBACK TO capability_record"); rollbackErr != nil {
+				return nil, rollbackErr
+			}
 			result.Errors = append(result.Errors, fmt.Errorf("inserting MCP capability %s/%s: %w",
 				record.Capability.Server.Identity.CanonicalName, record.Capability.Name, err))
-			continue
+		} else {
+			result.CapabilitiesAdded++
 		}
-		result.CapabilitiesAdded++
+		if _, err := tx.Exec("RELEASE capability_record"); err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
