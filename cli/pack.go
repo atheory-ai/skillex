@@ -17,7 +17,7 @@ import (
 )
 
 func newPackCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "pack", Short: "Install and inspect cryptographically verified registry packs"}
+	cmd := &cobra.Command{Use: "pack", Short: "Manage cryptographically verified registry packs"}
 	var yes, preview bool
 	get := &cobra.Command{Use: "get <name>", Short: "Verify, preview, and install a registry pack", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		root := repoRoot()
@@ -108,8 +108,42 @@ func newPackCmd() *cobra.Command {
 		}
 		return nil
 	}}
-	cmd.AddCommand(get, list, newPackSearchCmd(), newPackInfoCmd())
+	cmd.AddCommand(get, list, newPackRemoveCmd(), newPackSearchCmd(), newPackInfoCmd())
 	return cmd
+}
+
+func newPackRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <name[@version]>",
+		Short: "Remove one verified installed pack and refresh the project index",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root := repoRoot()
+			selected, err := packregistry.SelectInstalled(root, args[0])
+			if err != nil {
+				return err
+			}
+			cfg, err := config.Load(root)
+			if err != nil {
+				return err
+			}
+			reg, err := registry.Open(filepath.Join(root, ".skillex", "index.db"))
+			if err != nil {
+				return err
+			}
+			defer reg.Close()
+			if err := reg.RemovePack(cfg, root, selected); err != nil {
+				return err
+			}
+			if flagJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"pack": selected, "removed": true})
+			}
+			if !flagQuiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s@%s and refreshed the index.\n", selected.Name, selected.Version)
+			}
+			return nil
+		},
+	}
 }
 
 func loadPackCatalog(ctx context.Context) (*packregistry.Manifest, string, error) {

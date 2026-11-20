@@ -1,6 +1,6 @@
 //go:build darwin || linux || freebsd || openbsd || netbsd || dragonfly
 
-package updatecheck
+package filelock
 
 import (
 	"os"
@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func lockFile(file *os.File) error {
+// TryExclusive acquires a non-blocking lock until the file is closed.
+func TryExclusive(file *os.File) error {
 	return unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 }

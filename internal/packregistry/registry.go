@@ -417,6 +417,11 @@ func (p *Prepared) Install(root string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	if _, err := parent.Lstat(filepath.Join(removalDir, target)); err == nil {
+		return fmt.Errorf("pack removal in progress: %s", target)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	stage := ".install-" + rand.Text()
 	if err := parent.Mkdir(stage, 0o700); err != nil {
 		return err

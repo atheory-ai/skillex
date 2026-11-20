@@ -367,6 +367,19 @@ func resolveCatalogPath(root, configured string) (string, error) {
 // InsertCapability upserts one canonical capability and replaces its search
 // document and contextual bindings.
 func (r *Registry) InsertCapability(record CapabilityRecord) (int64, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	id, err := insertCapability(tx, record)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+func insertCapability(tx *sql.Tx, record CapabilityRecord) (int64, error) {
 	selected, err := record.Capability.WithComputedSchemaDigest()
 	if err != nil {
 		return 0, err
@@ -392,11 +405,6 @@ func (r *Registry) InsertCapability(record CapabilityRecord) (int64, error) {
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.Exec(`INSERT INTO mcp_servers
 		(canonical_name, publisher, source_type, source_ref, indexed_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -499,9 +507,6 @@ func (r *Registry) InsertCapability(record CapabilityRecord) (int64, error) {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, capabilityID, capabilityID,
 		selected.Server.Identity.CanonicalName, selected.Name, selected.Title,
 		selected.Description, schemaSearchText(selected), strings.Join(bindingSearch, " ")); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return capabilityID, nil

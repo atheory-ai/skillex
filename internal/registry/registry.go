@@ -68,8 +68,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS skill_search USING fts5(
 
 // Registry wraps a SQLite database for skill storage and retrieval.
 type Registry struct {
+	indexWriter
 	db   *sql.DB
 	path string
+}
+
+// indexWriter uses either the live database or the transaction rebuilding its index.
+type indexWriter struct {
+	db interface {
+		Exec(string, ...any) (sql.Result, error)
+		QueryRow(string, ...any) *sql.Row
+	}
 }
 
 // Skill is a registry entry.
@@ -131,7 +140,7 @@ func Open(path string) (*Registry, error) {
 		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
 
-	return &Registry{db: db, path: path}, nil
+	return &Registry{indexWriter: indexWriter{db}, db: db, path: path}, nil
 }
 
 // Close closes the database.
@@ -145,7 +154,7 @@ func (r *Registry) Path() string {
 }
 
 // Clear removes all data from the registry (for a full rebuild).
-func (r *Registry) Clear() error {
+func (r indexWriter) Clear() error {
 	_, err := r.db.Exec(`
 		DELETE FROM mcp_capability_search;
 		DELETE FROM mcp_capability_bindings;
@@ -165,7 +174,7 @@ func (r *Registry) Clear() error {
 }
 
 // InsertSkill inserts a skill into the registry.
-func (r *Registry) InsertSkill(s Skill) (int64, error) {
+func (r indexWriter) InsertSkill(s Skill) (int64, error) {
 	if strings.HasPrefix(s.Path, steering.SkillPrefix) != (s.SourceType == steering.Source) {
 		return 0, fmt.Errorf("reserved Skillex skill namespace for %q", s.Path)
 	}
@@ -281,7 +290,7 @@ func (r *Registry) PathsBySource(sourceType string) ([]string, error) {
 }
 
 // InsertTestScenario inserts a test scenario linked to a skill.
-func (r *Registry) InsertTestScenario(t TestScenario) error {
+func (r indexWriter) InsertTestScenario(t TestScenario) error {
 	_, err := r.db.Exec(
 		`INSERT INTO skill_tests (skill_id, name, prompt, extra_skills, criteria) VALUES (?, ?, ?, ?, ?)`,
 		t.SkillID, t.Name, t.Prompt,
@@ -292,7 +301,7 @@ func (r *Registry) InsertTestScenario(t TestScenario) error {
 }
 
 // getSkillIDByPath retrieves a skill ID by path.
-func (r *Registry) getSkillIDByPath(path string) (int64, error) {
+func (r indexWriter) getSkillIDByPath(path string) (int64, error) {
 	var id int64
 	err := r.db.QueryRow(`SELECT id FROM skills WHERE path = ?`, path).Scan(&id)
 	return id, err

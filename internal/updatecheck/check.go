@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atheory-ai/skillex/internal/filelock"
 	"golang.org/x/mod/semver"
 )
 
@@ -220,7 +221,7 @@ func (c *Checker) Notices(ctx context.Context) []Notice {
 		return c.notices(state)
 	}
 	defer lease.Close()
-	if lockFile(lease) != nil {
+	if filelock.TryExclusive(lease) != nil {
 		return c.notices(state)
 	}
 	// The OS releases this nonblocking lease even if the process crashes. Keep

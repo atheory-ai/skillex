@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/atheory-ai/skillex/internal/filelock"
 )
 
 func testChecker(t *testing.T, handler http.HandlerFunc) (*Checker, *atomic.Int32, *time.Time) {
@@ -170,7 +172,7 @@ func TestLeaseRecoveryAndUnwritableCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := lockFile(lease); err != nil {
+	if err := filelock.TryExclusive(lease); err != nil {
 		t.Fatal(err)
 	}
 	c.Notices(context.Background())
@@ -228,7 +230,7 @@ func TestCheckerProcess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := lockFile(file); err != nil {
+		if err := filelock.TryExclusive(file); err != nil {
 			t.Fatal(err)
 		}
 		os.Exit(0)
