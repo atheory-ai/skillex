@@ -72,8 +72,29 @@ func TestPackGetFailsClosedBeforeProjectWrites(t *testing.T) {
 
 func TestPackPreviewIncludesContentAndAllActivationConsequences(t *testing.T) {
 	prepared := &packregistry.Prepared{Files: map[string][]byte{"skills/usage.md": []byte("Guidance requiring human review")}}
-	pack := &packs.Pack{Manifest: packs.Manifest{Detectors: packs.Detectors{"custom": {Matches: []packs.DetectorMatch{{File: &packs.FileCondition{Path: "project.marker"}}}}}, Skills: []packs.SkillRef{{File: "skills/usage.md", Scope: "subtree", ActivateWhen: packs.ActivateWhen{Detector: "custom"}}}, MCPServers: []packs.MCPServerRef{{Ref: "io.example/server", Version: "1.0.0", Relationship: "suggested", Scope: "matching-files", ActivateWhen: packs.ActivateWhen{FilesPresent: []string{"project.marker"}}}}}}
-	preview := packPreview(prepared, pack, []string{"skills/usage.md"})
+	prepared.Lock.Entry.Name = "fixture"
+	prepared.Lock.Entry.Version = "1.0.0"
+	prepared.Files["pack.yaml"] = []byte(`name: fixture
+version: 1.0.0
+detectors:
+  custom:
+    matches:
+      - file: {path: project.marker}
+skills:
+  - file: skills/usage.md
+    scope: subtree
+    activate-when: {detector: custom}
+mcp-servers:
+  - ref: io.example/server
+    version: 1.0.0
+    relationship: suggested
+    scope: matching-files
+    activate-when: {files-present: [project.marker]}
+`)
+	preview, err := packs.Preview(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := json.Marshal(preview)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +104,7 @@ func TestPackPreviewIncludesContentAndAllActivationConsequences(t *testing.T) {
 			t.Fatalf("consent preview omitted %q: %s", expected, data)
 		}
 	}
-	if preview["installed"] != false {
+	if preview.Installed {
 		t.Fatal("preview must never claim installation")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/capability"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/mcperror"
+	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/query"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/atheory-ai/skillex/internal/steering"
@@ -25,7 +26,7 @@ import (
 
 // Serve starts the MCP server using stdio transport.
 func Serve(reg *registry.Registry, version string) error {
-	return serve(reg, query.New(reg), nil, nil, version, nil, updatecheck.NewEnvironment(version, updatecheck.Installation{}))
+	return serve(reg, query.New(reg), nil, nil, packregistry.DefaultURL, version, nil, updatecheck.NewEnvironment(version, updatecheck.Installation{}))
 }
 
 // ServeConfigured starts Skillex with additive capability discovery and broker
@@ -38,24 +39,24 @@ func ServeConfigured(reg *registry.Registry, cfg *config.Config, root, version s
 	}
 	updates := updatecheck.NewEnvironment(version, install)
 	if cfg == nil {
-		return serve(reg, query.New(reg), nil, nil, version, before, updates)
+		return serve(reg, query.New(reg), nil, nil, packregistry.DefaultURL, version, before, updates)
 	}
 	core, err := cfg.CoreGuidance()
 	if err != nil {
 		return err
 	}
 	if !cfg.MCPEnabled() {
-		return serve(reg, query.New(reg).WithTasks(cfg.Tasks), nil, core, version, before, updates)
+		return serve(reg, query.New(reg).WithTasks(cfg.Tasks), nil, core, packregistry.ManifestURL(cfg), version, before, updates)
 	}
 	runtime, err := brokerruntime.NewDiscovery(root, cfg, reg)
 	if err != nil {
 		return err
 	}
 	engine := query.NewWithCapabilities(reg, runtime.Broker, runtime.ContextDigest, runtime.View).WithTasks(cfg.Tasks)
-	return serve(reg, engine, runtime, core, version, before, updates)
+	return serve(reg, engine, runtime, core, packregistry.ManifestURL(cfg), version, before, updates)
 }
 
-func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, core *steering.Guidance, version string, before func(), updates *updatecheck.Checker) error {
+func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.Runtime, core *steering.Guidance, manifestURL, version string, before func(), updates *updatecheck.Checker) error {
 	callBefore := func() {
 		if before != nil {
 			before()
@@ -80,6 +81,8 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		server.WithResourceCapabilities(true, true),
 		server.WithInstructions(instructions),
 	)
+
+	registerPackTools(s, manifestURL, updates)
 
 	// Register query tool
 	queryTool := mcplib.NewTool(

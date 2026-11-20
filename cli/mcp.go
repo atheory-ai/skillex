@@ -22,6 +22,7 @@ func newMCPCmd() *cobra.Command {
 The MCP server exposes:
   - Resources: bounded skill summaries and section tables of contents
   - Tools: skillex_query for discovery and skillex_read for bounded selected content
+  - Registry packs: list_available_packs for catalog searches and propose_pack_install for read-only previews
   - Startup instructions: retrieval guidance and any enabled core steering
   - Session setup: call skillex_query with no filters for tasks and the optional core ref
   - When explicitly enabled: downstream capability discovery, describe, and call tools

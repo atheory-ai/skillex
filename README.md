@@ -963,6 +963,14 @@ Parameters:
 Use `skillex_read` with a selected result `ref` and optional section id for bounded content.
 ```
 
+**Registry pack tools**
+
+Call `list_available_packs` when the user asks about packs available to install.
+It accepts `filter`, `tier`, `limit`, and `offset`. Pass a selected pack's exact
+`name` to `propose_pack_install` to review its files and activation rules with
+the user. Both tools are read-only. Installation requires separate CLI consent.
+See [registry pack commands](#skillex-pack).
+
 **Resources**
 
 Each skill in the registry is exposed as a discoverable MCP resource at:
@@ -1085,10 +1093,25 @@ available release notices and their upgrade plan refs.
 ### `skillex pack`
 
 ```sh
+skillex pack search javascript --tier core --limit 5
+skillex pack info atheory-ai.javascript.tool.example --json
 skillex pack get atheory-ai.javascript.tool.example --preview
-skillex pack get atheory-ai.javascript.tool.example --yes
+skillex pack get atheory-ai.javascript.tool.example
 skillex pack list --json
 ```
+
+Search and info fetch and authenticate the configured registry manifest on each
+call. Search matches every query word against the name and description and
+returns one latest stable version per pack, in name order. Pages default to 10
+results and allow up to 50. Use `--json` for the total and `next_offset`, then
+pass that offset to the next search with the same filters.
+
+Info shows the registry, manifest and signature bundle URLs, verified signer, and the original
+signed entries for available stable versions, newest first. A version can declare
+authors, license, runtime compatibility, and tarball URL, size, and SHA256.
+Compatibility ranges describe the publisher's requirements. The resolver always
+selects the latest stable version and refuses a revoked latest release. Discovery
+downloads only the manifest and signature bundle.
 
 Registry installation verifies the manifest's Sigstore signature against the
 engine-bundled public root and exact GitHub manifest-workflow identity, then
@@ -1112,9 +1135,8 @@ Optional transport configuration (one registry in this MVP):
 The default is the upstream URL. Mirrors must serve the same authentic signed
 bytes. Project configuration cannot replace the bundled signer or root. Custom
 roots, multiple registries, and policy filters are rejected until federation is
-implemented. Resolution currently selects the latest stable version; compatibility
-ranges, supersession, search/info/update/remove, and MCP install proposals remain
-follow-up work.
+implemented. Compatibility-aware resolution, pack updates and removal, and
+automatic supersession remain follow-up work.
 
 Files live in `.skillex/packs/<name>@<version>/` alongside
 `manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains
@@ -1126,11 +1148,12 @@ fresh manifest; offline refresh only knows revocations in its saved snapshot and
 cannot detect a later withdrawal. Normal skill discovery and refresh remain
 offline. Trust-root rotation requires an engine release.
 
-The currently published example `0.1.0` archive uses an obsolete engine manifest
-schema and is refused after integrity verification. A producer `0.1.1` release
-and newly signed registry manifest are required before the example commands can
-complete; [the companion registry PR](https://github.com/atheory-ai/skillex-packs/pull/19)
-prepares that release without publishing it.
+The published `atheory-ai.javascript.tool.example@0.1.1` works with the engine
+pack schema. For this registry, `pack info` includes an `attestation_lookup` URL
+for each version, keyed to its signed archive digest. Follow the URL to inspect
+the available GitHub attestations. Skillex does not fetch or verify those
+attestations during discovery. The CLI authenticates the registry manifest and verifies the
+archive against its signed pin during preview and installation.
 
 ### `skillex get`
 

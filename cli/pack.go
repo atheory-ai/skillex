@@ -1,11 +1,11 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/config"
@@ -25,42 +25,20 @@ func newPackCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		manifestURL := packregistry.DefaultURL
-		if len(cfg.Registries) > 0 {
-			manifestURL = cfg.Registries[0].URL
-		}
-		prepared, err := packregistry.Prepare(cmd.Context(), manifestURL, args[0])
+		prepared, err := packregistry.Prepare(cmd.Context(), packregistry.ManifestURL(cfg), args[0])
 		if err != nil {
 			return err
 		}
-		// Validate the engine manifest against a disposable verified tree before
-		// asking for consent or writing anything inside the project.
-		temp, err := os.MkdirTemp("", "skillex-pack-preview-")
+		proposal, err := packs.Preview(prepared)
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(temp)
-		if err := prepared.WriteTree(temp); err != nil {
-			return err
-		}
-		pack, err := packs.Load(filepath.Join(temp, "pack.yaml"))
-		if err != nil {
-			return err
-		}
-		if pack.Manifest.Name != prepared.Lock.Entry.Name || pack.Manifest.Version != prepared.Lock.Entry.Version {
-			return fmt.Errorf("pack identity differs from signed manifest")
-		}
-		var files []string
-		for name := range prepared.Files {
-			files = append(files, name)
-		}
-		sort.Strings(files)
 		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Verified %s@%s [%s] from %s\n", pack.Manifest.Name, pack.Manifest.Version, prepared.Lock.Entry.Tier, prepared.Lock.Registry)
-			for _, name := range files {
+			fmt.Fprintf(os.Stderr, "Verified %s@%s [%s] from %s\n", proposal.Pack.Name, proposal.Pack.Version, prepared.Lock.Entry.Tier, prepared.Lock.Registry)
+			for _, name := range proposal.Files {
 				fmt.Fprintf(os.Stderr, "  + %s\n", name)
 			}
-			activation, err := yaml.Marshal(map[string]interface{}{"skills": pack.Manifest.Skills, "detectors": pack.Manifest.Detectors, "mcp-servers": pack.Manifest.MCPServers})
+			activation, err := yaml.Marshal(map[string]interface{}{"skills": proposal.Skills, "detectors": proposal.Detectors, "mcp-servers": proposal.MCPServers})
 			if err != nil {
 				return err
 			}
@@ -70,7 +48,7 @@ func newPackCmd() *cobra.Command {
 			}
 		}
 		if preview {
-			return json.NewEncoder(os.Stdout).Encode(packPreview(prepared, pack, files))
+			return json.NewEncoder(os.Stdout).Encode(proposal)
 		}
 		if !yes {
 			if flagJSON || flagQuiet {
@@ -130,14 +108,66 @@ func newPackCmd() *cobra.Command {
 		}
 		return nil
 	}}
-	cmd.AddCommand(get, list)
+	cmd.AddCommand(get, list, newPackSearchCmd(), newPackInfoCmd())
 	return cmd
 }
 
-func packPreview(prepared *packregistry.Prepared, pack *packs.Pack, files []string) map[string]interface{} {
-	contents := map[string]string{}
-	for name, data := range prepared.Files {
-		contents[name] = string(data)
+func loadPackCatalog(ctx context.Context) (*packregistry.Manifest, string, error) {
+	cfg, err := config.Load(repoRoot())
+	if err != nil {
+		return nil, "", err
 	}
-	return map[string]interface{}{"pack": prepared.Lock.Entry, "files": files, "contents": contents, "skills": pack.Manifest.Skills, "detectors": pack.Manifest.Detectors, "mcp_servers": pack.Manifest.MCPServers, "installed": false}
+	url := packregistry.ManifestURL(cfg)
+	m, _, _, err := packregistry.Fetch(ctx, url)
+	return m, url, err
+}
+
+func newPackSearchCmd() *cobra.Command {
+	var tier string
+	var limit, offset int
+	cmd := &cobra.Command{Use: "search [query]", Short: "Search the signed catalog for available packs", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		m, _, err := loadPackCatalog(cmd.Context())
+		if err != nil {
+			return err
+		}
+		page, err := m.Search(strings.Join(args, " "), tier, limit, offset)
+		if err != nil {
+			return err
+		}
+		if flagJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(page)
+		}
+		for _, r := range page.Results {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s [%s] %s\n", r.Name, r.Version, r.Tier, r.Description)
+		}
+		if len(page.Results) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No matching packs on this page.")
+		}
+		if page.NextOffset != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "More results: use --offset %d\n", *page.NextOffset)
+		}
+		return nil
+	}}
+	cmd.Flags().StringVar(&tier, "tier", "", "Filter by signed registry tier")
+	cmd.Flags().IntVar(&limit, "limit", packregistry.DefaultSearchLimit, "Maximum results per page (1–50)")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Start at this result offset")
+	return cmd
+}
+
+func newPackInfoCmd() *cobra.Command {
+	return &cobra.Command{Use: "info <name>", Short: "Show signed metadata for a pack's catalogued stable versions", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		m, url, err := loadPackCatalog(cmd.Context())
+		if err != nil {
+			return err
+		}
+		info, err := m.Info(url, args[0])
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		if !flagJSON {
+			enc.SetIndent("", "  ")
+		}
+		return enc.Encode(info)
+	}}
 }
