@@ -722,6 +722,13 @@ func (e *Engine) vocabularyResponse() (*Response, error) {
 		}
 		for _, task := range e.tasks {
 			if !indexed[task.Skill] && !strings.HasPrefix(task.Skill, steering.SkillPrefix) {
+				disabled, err := e.reg.TaskDisabled(task.Skill)
+				if err != nil {
+					return nil, err
+				}
+				if disabled {
+					continue
+				}
 				return nil, fmt.Errorf("task %q skill %q is not indexed; run 'skillex refresh'", task.Name, task.Skill)
 			}
 			response.Tasks = append(response.Tasks, TaskSummary{Name: task.Name, When: task.When, Ref: skillRef(task.Skill)})

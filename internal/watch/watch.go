@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/atheory-ai/skillex/internal/scanner"
 	"github.com/atheory-ai/skillex/internal/validator"
@@ -343,7 +344,7 @@ func (w *Watcher) syncOne(rel string) {
 		w.report(err)
 		return
 	}
-	if err := applySkillFiles(w.reg, files); err != nil {
+	if err := w.applySkillFiles(files); err != nil {
 		w.report(err)
 	}
 }
@@ -384,7 +385,7 @@ func (w *Watcher) syncDiscovered(skills []scanner.SkillFile, allowDelete bool) e
 	seen := map[string]bool{}
 	for rel, files := range grouped {
 		seen[rel] = true
-		if err := applySkillFiles(w.reg, files); err != nil {
+		if err := w.applySkillFiles(files); err != nil {
 			return err
 		}
 	}
@@ -540,7 +541,20 @@ func groupSkillFiles(files []scanner.SkillFile) map[string][]scanner.SkillFile {
 	return grouped
 }
 
-func applySkillFiles(reg *registry.Registry, files []scanner.SkillFile) error {
+func (w *Watcher) applySkillFiles(files []scanner.SkillFile) error {
+	// Aliases into installed packs must pass the same authenticated rebuild as
+	// direct pack references, including revocations committed during discovery.
+	for _, file := range files {
+		if file.VerifiedContent != nil {
+			cfg, err := config.Load(w.root)
+			if err != nil {
+				return err
+			}
+			_, err = registry.Refresh(w.reg, cfg, registry.RefreshOptions{Root: w.root, DevMode: true})
+			return err
+		}
+	}
+	reg := w.reg
 	var skill *scanner.SkillFile
 	var tests []scanner.SkillFile
 	for i := range files {

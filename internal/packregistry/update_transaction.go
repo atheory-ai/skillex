@@ -167,7 +167,14 @@ func ApplyUpdates(root string, changes []Update, commit func(string) error) erro
 }
 
 func stageUpdates(parent, incoming *os.Root, changes []Update, journal *updateJournal) error {
+	check, err := savedCheck(parent)
+	if err != nil {
+		return err
+	}
 	for _, change := range changes {
+		if err = check.AllowsInstall(change.To.Lock); err != nil {
+			return err
+		}
 		p := replacement{change.From.Entry, change.To.Lock.Entry}
 		if err := validReplacement(p); err != nil {
 			return err

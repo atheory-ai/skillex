@@ -1097,6 +1097,7 @@ skillex pack search javascript --tier core --limit 5
 skillex pack info atheory-ai.javascript.tool.example --json
 skillex pack get atheory-ai.javascript.tool.example --preview
 skillex pack get atheory-ai.javascript.tool.example
+skillex pack check --json
 skillex pack list --json
 skillex pack remove atheory-ai.javascript.tool.example
 ```
@@ -1175,13 +1176,25 @@ implemented. Compatibility-aware resolution and automatic supersession remain fo
 
 Files live in `.skillex/packs/<name>@<version>/` alongside
 `manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains
-the signed manifest and bundle. Offline refresh and list reverify that evidence
-and compare every installed file with the pinned archive; they refuse tampered
-or revoked versions before rebuilding the index. Revocations are read from the
-authenticated manifest's embedded `revocations` array. Installation fetches a
-fresh manifest; offline refresh only knows revocations in its saved snapshot and
-cannot detect a later withdrawal. Normal skill discovery and refresh remain
-offline. Trust-root rotation requires an engine release.
+the signed manifest and bundle. Offline refresh and list verify the saved
+signature and compare every installed file with the pinned archive.
+
+Use `skillex pack check` to fetch the signed catalog and check every installed
+version for revocation. A successful check rebuilds the index. CLI and running
+MCP sessions immediately stop returning guidance from explicitly revoked
+versions, including previously issued read refs. The files remain available
+for inspection and `pack remove`. A version omitted from the catalog remains
+available unless a signed revocation names it.
+
+`pack list` reports the evidence available offline. Before the first check,
+`evidence` is `installation_snapshot`. After a check, `registry_check` includes
+the local `checked_at` time and signed `catalog_generated_at` time. A newer
+installation can carry a more recent snapshot. The `not_revoked` status applies
+only to the reported catalog. A revoked entry includes the publisher's reason.
+A completed check exits successfully even when it finds a revocation. Automation
+can inspect `status` in the JSON array. An invalid signature, older catalog, or
+failed rebuild leaves the previous check in effect. Ordinary refresh and query
+use local data. Trust-root rotation requires an engine release.
 
 The published `atheory-ai.javascript.tool.example@0.1.1` works with the engine
 pack schema. For this registry, `pack info` includes an `attestation_lookup` URL

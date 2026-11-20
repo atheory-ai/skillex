@@ -12,6 +12,12 @@ import (
 	_ "modernc.org/sqlite" // register the pure-Go sqlite driver as "sqlite"
 )
 
+const packCheckSchema = `
+CREATE TABLE IF NOT EXISTS pack_catalog_check (singleton INTEGER PRIMARY KEY CHECK(singleton=1), evidence BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS pack_disabled_tasks (path TEXT PRIMARY KEY);
+
+`
+
 const schema = `
 CREATE TABLE IF NOT EXISTS skills (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +169,7 @@ func (r indexWriter) Clear() error {
 		DELETE FROM mcp_transports;
 		DELETE FROM mcp_server_versions;
 		DELETE FROM mcp_servers;
+		DELETE FROM pack_disabled_tasks;
 		DELETE FROM skill_tests;
 		DELETE FROM skill_scopes;
 		DELETE FROM skill_tags;

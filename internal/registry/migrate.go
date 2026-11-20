@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is incremented whenever a migration is added.
 // Registry.Open sets this on all databases it manages.
-const currentSchemaVersion = 6
+const currentSchemaVersion = 7
 
 // migrateSchema applies any pending schema migrations.
 //
@@ -159,6 +159,12 @@ func migrateSchema(db *sql.DB) error {
 		}
 	}
 
+	// v7: preserve signed catalog checks across index rebuilds and record task
+	// paths excluded from the same committed index.
+	if _, err := db.Exec(packCheckSchema); err != nil {
+		db.Exec("ROLLBACK") //nolint:errcheck
+		return fmt.Errorf("creating pack check tables: %w", err)
+	}
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)); err != nil {
 		db.Exec("ROLLBACK") //nolint:errcheck
 		return fmt.Errorf("setting schema version: %w", err)
