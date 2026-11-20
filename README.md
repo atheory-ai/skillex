@@ -195,7 +195,7 @@ Development/source builds and CI suppress automatic checks and notices.
 Available updates appear in:
 
 - CLI stderr, including noninteractive invocations, unless `--quiet` is set.
-- An optional top-level `notices` array in `query --json` and `read --json` output,
+- An optional top-level `notices` array in `query --json`, `read --json`, and `doctor --json` output,
   including with `--quiet`.
 - The first text block of successful MCP tool results, inside the existing JSON.
   Cached notices also appear in MCP initialization instructions and resource
@@ -1075,7 +1075,12 @@ skillex doctor                    # Full diagnostics report
 skillex doctor --json             # Machine-readable report
 ```
 
-Checks: configuration validity, registry health, test coverage, topic/tag distribution, skills missing `name`/`description` (search discoverability), AGENTS.md presence, vendor skill provenance.
+Checks: configuration validity, registry health, test coverage, topic/tag distribution, skills missing `name`/`description` (search discoverability), the managed Skillex block in `AGENTS.md`, and vendor skill provenance.
+After upgrading, run the project's `skillex doctor`. It compares the managed
+block with the installed executable's setup instructions and reports a repair
+command when the block is missing or stale. Project-authored guidance outside
+the markers is excluded from the comparison. `doctor --json` also includes
+available release notices and their upgrade plan refs.
 
 ### `skillex pack`
 

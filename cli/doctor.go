@@ -1,13 +1,14 @@
 package cli
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/atheory-ai/skillex/internal/agents"
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 )
@@ -19,6 +20,7 @@ func newDoctorCmd() *cobra.Command {
 		Long: `Run comprehensive diagnostics on the skillex configuration and registry.
 
 Checks:
+  - Managed AGENTS.md setup and available Skillex updates
   - Configuration validity
   - Registry existence and skill counts
   - Test coverage (skills without tests, orphaned tests)
@@ -27,7 +29,7 @@ Checks:
   - Vendor skill provenance`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := repoRoot()
-			return runDoctor(root)
+			return runDoctor(cmd.Context(), root)
 		},
 	}
 }
@@ -45,7 +47,7 @@ type doctorReport struct {
 	Warnings        []string `json:"warnings"`
 }
 
-func runDoctor(root string) error {
+func runDoctor(ctx context.Context, root string) error {
 	report := &doctorReport{}
 	var errs []string
 	var warns []string
@@ -167,13 +169,15 @@ func runDoctor(root string) error {
 	}
 
 	// 4. Check AGENTS.md
-	agentsPath := filepath.Join(root, "AGENTS.md")
-	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
-		warns = append(warns, "AGENTS.md not found — run 'skillex init' to configure agent integration")
-		printCheck(false, "AGENTS.md", "not found")
-	} else {
-		printCheck(true, "AGENTS.md", "present")
+	if report.ConfigOK {
+		if err := agents.CheckSetup(filepath.Join(root, "AGENTS.md"), cfg.Install.CLI()); err != nil {
+			warns = append(warns, err.Error())
+			printCheck(false, "agent setup", err.Error())
+		} else {
+			printCheck(true, "AGENTS.md", "Skillex setup is current")
+		}
 	}
+	notices := commandUpdateNotices(ctx)
 
 	report.Errors = errs
 	report.Warnings = warns
@@ -194,9 +198,7 @@ func runDoctor(root string) error {
 	}
 
 	if flagJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(report)
+		return writeJSONWithNotices(os.Stdout, report, notices, true)
 	}
 
 	if len(errs) > 0 {

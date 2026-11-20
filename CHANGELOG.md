@@ -10,6 +10,7 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 - Update notices include a plan covering every release between the installed and target versions. Agents can read the plan through CLI or MCP and reuse the same ref after upgrading.
 - Agents running 0.12.0 can follow the release link in their existing update notice. See the [0.12.1 upgrade instructions](internal/upgrade/guide.md#0121).
+- `skillex doctor` checks the managed agent instructions against the installed version and project invocation. Its JSON report also includes available update notices.
 - Release preparation now requires a matching upgrade guide entry.
 
 ## [0.12.0] - 2026-11-19

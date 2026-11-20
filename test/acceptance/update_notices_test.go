@@ -51,6 +51,9 @@ func TestUpdateNoticesCLIAndMCP(t *testing.T) {
 		}
 	}
 	seed("0.11.0")
+	var diagnostic map[string]any
+	helpers.RunJSON(t, dir, &diagnostic, "doctor", "--quiet")
+	assertUpdateNotice(t, diagnostic, "0.11.0")
 	for _, args := range [][]string{
 		{"query", "--search", "keyboard", "--limit", "1"},
 		{"query"}, // Vocabulary must carry the same advisory metadata.

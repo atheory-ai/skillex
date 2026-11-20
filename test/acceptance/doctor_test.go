@@ -35,6 +35,47 @@ func TestDoctor_ReportsExplicitMCPOptIn(t *testing.T) {
 	}
 }
 
+func TestDoctor_ChecksManagedSetupAfterUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	const project = "# Project guidance\n"
+	const stale = project + "<!-- skillex:start -->\nOld agent setup.\n<!-- skillex:end -->\n"
+	if err := os.WriteFile(path, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	init := func() {
+		if res := helpers.Run(t, dir, "init", "--yes", "--invocation", "pnpm"); res.ExitCode != 0 {
+			t.Fatal(res.Stderr)
+		}
+	}
+	init()
+	if err := os.WriteFile(path, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var report doctorReport
+	helpers.RunJSON(t, dir, &report, "doctor")
+	if !strings.Contains(strings.Join(report.Warnings, "\n"), "node ./node_modules/@atheory-ai/skillex/bin/skillex.js init --yes") {
+		t.Fatalf("expected project-local setup repair command: %v", report.Warnings)
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != stale {
+		t.Fatal("doctor changed the stale file", err)
+	}
+	init()
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.HasPrefix(string(data), project) {
+		t.Fatal("init failed to preserve project instructions", err)
+	}
+	withNotes := strings.ReplaceAll(string(data), "\r\n", "\n") + "\nTeam notes.\n"
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(withNotes, "\n", "\r\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var repaired doctorReport
+	helpers.RunJSON(t, dir, &repaired, "doctor")
+	if strings.Contains(strings.Join(repaired.Warnings, "\n"), "AGENTS.md") {
+		t.Fatalf("current setup produced a warning: %v", repaired.Warnings)
+	}
+}
+
 func TestDoctor_MissingAgentsMdRecommendsInit(t *testing.T) {
 	dir := helpers.CopyFixture(t, "monorepo-pnpm")
 

@@ -56,6 +56,32 @@ func GenerateSectionWithCommand(command string) string {
 	return sb.String()
 }
 
+// CheckSetup compares only the managed block against the current project invocation.
+func CheckSetup(path, command string) error {
+	data, err := os.ReadFile(path)
+	repair := fmt.Sprintf("run '%s init --yes'", command)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("AGENTS.md not found — %s", repair)
+	}
+	if err != nil {
+		return fmt.Errorf("reading AGENTS.md: %w", err)
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if !strings.Contains(text, markerStart) && !strings.Contains(text, markerEnd) {
+		return fmt.Errorf("AGENTS.md is missing its Skillex setup block — %s", repair)
+	}
+	_, rest, _ := strings.Cut(text, markerStart)
+	block, _, closed := strings.Cut(rest, markerEnd)
+	if !closed || strings.Count(text, markerStart) != 1 || strings.Count(text, markerEnd) != 1 {
+		return fmt.Errorf("AGENTS.md has malformed Skillex markers — restore a single ordered marker pair before running init")
+	}
+	expected := strings.TrimSuffix(GenerateSectionWithCommand(command), "\n")
+	if markerStart+block+markerEnd != expected {
+		return fmt.Errorf("AGENTS.md has outdated Skillex setup instructions — %s", repair)
+	}
+	return nil
+}
+
 // UpdateFile writes (or updates) the skillex section in the AGENTS.md file.
 // If the file does not exist, it creates it.
 // If it does exist, it replaces the content between markers.

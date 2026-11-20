@@ -108,7 +108,9 @@ For a pinned project, update the dependency or installer pin to 0.12.1.
 
 **After installing**, use the project's Skillex executable to run
 `skillex version` and confirm it reports `0.12.1`. Reconnect any running
-Skillex MCP server. To verify the new feature, run
+Skillex MCP server. Run the upgraded project’s `skillex doctor` and follow
+its setup diagnostic if the managed block is missing or stale. To verify the
+upgrade plan, run
 `skillex read --ref upgrade:0.12.0:0.12.1` or call `skillex_read` with
 `{"ref":"upgrade:0.12.0:0.12.1"}` after reconnecting. The plan should contain
 only the 0.12.1 entry.

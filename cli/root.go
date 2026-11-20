@@ -38,7 +38,7 @@ packages, follow repo conventions, and work safely in a codebase.`,
 				}
 			}
 			switch cmd.Name() {
-			case "query", "read", "mcp", "version", "help", "completion", "__complete", "__completeNoDesc":
+			case "query", "read", "doctor", "mcp", "version", "help", "completion", "__complete", "__completeNoDesc":
 				return
 			}
 			commandUpdateNotices(cmd.Context())
