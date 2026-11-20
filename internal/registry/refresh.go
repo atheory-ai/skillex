@@ -20,9 +20,10 @@ import (
 
 // RefreshOptions controls the refresh behavior.
 type RefreshOptions struct {
-	Root    string
-	DevMode bool
-	DryRun  bool
+	Root          string
+	DevMode       bool
+	DryRun        bool
+	updatingPacks bool
 }
 
 // RefreshResult summarizes what was written.
@@ -86,7 +87,11 @@ func (r *Registry) beginRebuild() (*sql.Tx, error) {
 func rebuild(tx *sql.Tx, cfg *config.Config, opts RefreshOptions) (*RefreshResult, error) {
 	// Validate saved evidence before publishing a rebuilt index. Ordinary
 	// refresh works offline using the signed revocation snapshot in each lock.
-	if _, err := packregistry.List(opts.Root); err != nil {
+	listPacks := packregistry.List
+	if opts.updatingPacks {
+		listPacks = packregistry.ListUpdating
+	}
+	if _, err := listPacks(opts.Root); err != nil {
 		return nil, fmt.Errorf("validating installed registry packs: %w", err)
 	}
 	result := &RefreshResult{}

@@ -187,6 +187,11 @@ func prepareWithVerifier(ctx context.Context, manifestURL, name string, verifier
 	if err != nil {
 		return nil, err
 	}
+	return prepareEntry(ctx, Lock{Entry: e, Registry: m.Registry, ManifestURL: manifestURL, Manifest: data, Bundle: envelope}, fetch)
+}
+
+func prepareEntry(ctx context.Context, lock Lock, fetch registryDownload) (*Prepared, error) {
+	e := lock.Entry
 	archive, err := fetch(ctx, e.Tarball.URL, maxDownload)
 	if err != nil {
 		return nil, err
@@ -195,7 +200,7 @@ func prepareWithVerifier(ctx context.Context, manifestURL, name string, verifier
 	if err != nil {
 		return nil, err
 	}
-	return &Prepared{Lock: Lock{Entry: e, Registry: m.Registry, ManifestURL: manifestURL, Manifest: data, Bundle: envelope}, Archive: archive, Files: files}, nil
+	return &Prepared{Lock: lock, Archive: archive, Files: files}, nil
 }
 func verifiedArchive(e Entry, data []byte) (map[string][]byte, error) {
 	digest := sha256.Sum256(data)
@@ -398,19 +403,27 @@ func installationParent(root string, create bool) (*os.Root, error) {
 
 // Install atomically publishes a verified tree; existing installs are not overwritten.
 func (p *Prepared) Install(root string) error {
+	files, err := p.verifiedFiles()
+	if err != nil {
+		return err
+	}
+	return withMutationLock(root, true, func(parent *os.Root) error {
+		if err := noPendingUpdate(parent); err != nil {
+			return err
+		}
+		return p.installInto(parent, files)
+	})
+}
+
+func (p *Prepared) verifiedFiles() (map[string][]byte, error) {
 	if err := validateEntry(p.Lock.Entry); err != nil {
-		return err
+		return nil, err
 	}
-	// Re-derive the tree from its pinned bytes rather than trusting mutable preview data.
-	files, err := verifiedArchive(p.Lock.Entry, p.Archive)
-	if err != nil {
-		return err
-	}
-	parent, err := installationParent(root, true)
-	if err != nil {
-		return err
-	}
-	defer parent.Close()
+	// Always derive the tree from pinned bytes, including when preview data is available.
+	return verifiedArchive(p.Lock.Entry, p.Archive)
+}
+
+func (p *Prepared) installInto(parent *os.Root, files map[string][]byte) error {
 	target := p.Lock.Entry.Name + "@" + p.Lock.Entry.Version
 	if _, err := parent.Lstat(target); err == nil {
 		return fmt.Errorf("pack already installed: %s", target)
@@ -604,10 +617,13 @@ func validateChildWithVerifier(parent *os.Root, name string, verifier manifestVe
 }
 
 func List(root string) ([]Lock, error) {
-	return listWithVerifier(root, verify.Manifest)
+	return listInstalled(root, verify.Manifest, false)
 }
 
-func listWithVerifier(root string, verifier manifestVerifier) ([]Lock, error) {
+// ListUpdating verifies the installed set while the caller owns the update transaction.
+func ListUpdating(root string) ([]Lock, error) { return listInstalled(root, verify.Manifest, true) }
+
+func listInstalled(root string, verifier manifestVerifier, updating bool) ([]Lock, error) {
 	parent, err := installationParent(root, false)
 	if os.IsNotExist(err) {
 		return []Lock{}, nil
@@ -616,6 +632,11 @@ func listWithVerifier(root string, verifier manifestVerifier) ([]Lock, error) {
 		return nil, err
 	}
 	defer parent.Close()
+	if !updating {
+		if err := noPendingUpdate(parent); err != nil {
+			return nil, err
+		}
+	}
 	directory, err := parent.Open(".")
 	if err != nil {
 		return nil, err

@@ -1,0 +1,16 @@
+name: test.example
+version: 2.0.0
+detectors:
+  go-project:
+    matches:
+      - file: {path: go.mod}
+skills:
+  - file: skills/checks.md
+    scope: subtree
+    activate-when: {detector: go-project}
+mcp-servers:
+  - ref: io.example/checks
+    version: 1.0.0
+    relationship: suggested
+    scope: repo
+    activate-when: {detector: go-project}
