@@ -20,6 +20,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/atheory-ai/skillex/internal/steering"
 	"github.com/atheory-ai/skillex/internal/updatecheck"
+	"github.com/atheory-ai/skillex/internal/upgrade"
 )
 
 // Serve starts the MCP server using stdio transport.
@@ -133,14 +134,14 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		return handleQuery(engine, req)
 	}))
 	readTool := mcplib.NewTool("skillex_read",
-		mcplib.WithDescription("Read one selected Skillex skill, Markdown section, or core guidance within a byte budget. Discover refs with skillex_query."),
-		mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Skill or core ref returned by skillex_query")),
+		mcplib.WithDescription("Read one selected Skillex skill, Markdown section, core guidance, or upgrade plan within a byte budget. Discover refs with skillex_query."),
+		mcplib.WithString("ref", mcplib.Required(), mcplib.Description("Skill, core, or upgrade plan ref returned by skillex_query")),
 		mcplib.WithString("section", mcplib.Description("Optional section id returned by skillex_query")),
 		mcplib.WithNumber("max_bytes", mcplib.Description("Maximum content bytes to return (default 24576, max 65536)")),
 	)
 	s.AddTool(readTool, withUpdateNotices(updates, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 		callBefore()
-		return handleRead(engine, req)
+		return handleRead(ctx, engine, req)
 	}))
 	if runtime != nil {
 		describeTool := mcplib.NewTool("skillex_mcp_describe",
@@ -330,11 +331,17 @@ func toolError(err error) *mcplib.CallToolResult {
 	return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: string(encoded)}}, IsError: true}
 }
 
-func handleRead(engine *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func handleRead(ctx context.Context, engine *query.Engine, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ref, _ := req.Params.Arguments["ref"].(string)
 	section, _ := req.Params.Arguments["section"].(string)
 	maxBytes, _ := req.Params.Arguments["max_bytes"].(float64)
-	resp, err := engine.Read(ref, section, int(maxBytes))
+	var resp *query.ReadResponse
+	var err error
+	if strings.HasPrefix(ref, upgrade.Prefix) {
+		resp, err = query.ReadUpgrade(ctx, ref, section, int(maxBytes))
+	} else {
+		resp, err = engine.Read(ref, section, int(maxBytes))
+	}
 	if err != nil {
 		return &mcplib.CallToolResult{Content: []mcplib.Content{mcplib.TextContent{Type: "text", Text: err.Error()}}, IsError: true}, nil
 	}

@@ -30,6 +30,9 @@ func printUpdateNotices(notices []updatecheck.Notice) {
 	}
 	for _, notice := range notices {
 		fmt.Fprintf(rootCmd.ErrOrStderr(), "skillex: %s", notice.Message)
+		if notice.UpgradePlanRef != "" {
+			fmt.Fprintf(rootCmd.ErrOrStderr(), " Plan ref: %s.", notice.UpgradePlanRef)
+		}
 		if notice.UpdateCommand != "" {
 			fmt.Fprintf(rootCmd.ErrOrStderr(), " Update: %s", notice.UpdateCommand)
 		} else {

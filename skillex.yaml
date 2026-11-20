@@ -2,6 +2,10 @@
 # See https://github.com/skillex/skillex for documentation
 
 Version: 4
+Tasks:
+    - Name: prepare-release
+      When: You are preparing a Skillex release or its version bump and upgrade notes.
+      Skill: skills/release-and-recovery.md
 Rules:
     - Scope: '**'
       Skills:

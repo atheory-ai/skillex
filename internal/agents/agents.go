@@ -22,7 +22,7 @@ const MCPInstructions = MCPSetupReminder + "\n\n" +
 	"- Use `source: skillex` to discover bundled skills. Project tasks can also point to bundled skills.\n" +
 	"- Query by path, topic, tags, package, or intent to discover additional skills. If `too_broad` is true, use `narrow_with` to refine the query.\n" +
 	"- Read one selected ref or section at a time. MCP skill resources provide a table of contents.\n" +
-	"- Treat update notices as advisory. Suggest the appropriate update when useful and reconnect MCP after updating. A project-pinned installation needs a dependency update."
+	"- Treat update notices as advisory. Offer a new target once per conversation. Read its upgrade_plan_ref with skillex_read to explain the applicable steps. Keep the ref across installation, get approval before making changes, and reconnect MCP afterward. A project-pinned installation needs a dependency update."
 
 // GenerateSection creates the stable Skillex bootstrap section for AGENTS.md.
 func GenerateSection() string { return GenerateSectionWithCommand("skillex") }
@@ -54,6 +54,32 @@ func GenerateSectionWithCommand(command string) string {
 	sb.WriteString(markerEnd + "\n")
 
 	return sb.String()
+}
+
+// CheckSetup compares only the managed block against the current project invocation.
+func CheckSetup(path, command string) error {
+	data, err := os.ReadFile(path)
+	repair := fmt.Sprintf("run '%s init --yes'", command)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("AGENTS.md not found — %s", repair)
+	}
+	if err != nil {
+		return fmt.Errorf("reading AGENTS.md: %w", err)
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if !strings.Contains(text, markerStart) && !strings.Contains(text, markerEnd) {
+		return fmt.Errorf("AGENTS.md is missing its Skillex setup block — %s", repair)
+	}
+	_, rest, _ := strings.Cut(text, markerStart)
+	block, _, closed := strings.Cut(rest, markerEnd)
+	if !closed || strings.Count(text, markerStart) != 1 || strings.Count(text, markerEnd) != 1 {
+		return fmt.Errorf("AGENTS.md has malformed Skillex markers — restore a single ordered marker pair before running init")
+	}
+	expected := strings.TrimSuffix(GenerateSectionWithCommand(command), "\n")
+	if markerStart+block+markerEnd != expected {
+		return fmt.Errorf("AGENTS.md has outdated Skillex setup instructions — %s", repair)
+	}
+	return nil
 }
 
 // UpdateFile writes (or updates) the skillex section in the AGENTS.md file.

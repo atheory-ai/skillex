@@ -5,6 +5,7 @@
 Prompt: VERSION is ready to release. What is the safe Skillex release sequence?
 Success criteria:
   - Uses VERSION as the source of truth
+  - Adds upgrade notes for that exact version, including an explicit no-project-changes entry for a binary-only release
   - Requires merged, clean, up-to-date main
   - Uses make release-tag rather than manually moving a tag
 
