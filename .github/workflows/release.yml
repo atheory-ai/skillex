@@ -165,6 +165,12 @@ jobs:
       - name: Publish GitHub release (archives + signatures + SBOM)
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
+          body: |
+            ## Upgrading an existing project
+
+            Record your installed version before updating. Read every entry after it through this release in the [versioned upgrade guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/internal/upgrade/guide.md). Check prerequisites before installation and verify the result with the target binary.
+
+            If your update notice includes an `upgrade_plan_ref`, read it with `skillex_read` or `skillex read --ref` before installing. On older clients, including 0.12.0, use the linked guide directly. Explain the applicable changes and get approval before installing. After installation you can recover the same plan with `skillex read --ref upgrade:<previous-version>:${{ needs.verify_release.outputs.version }}`.
           generate_release_notes: true
           files: release-assets/*
 

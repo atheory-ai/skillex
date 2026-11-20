@@ -211,7 +211,7 @@ retrieval fields (versions below are illustrative):
     "code": "skillex_update_available",
     "current_version": "0.10.0",
     "latest_version": "0.11.0",
-    "message": "Skillex 0.11.0 is available; running 0.10.0. Suggest updating when appropriate; restart or reconnect MCP after updating.",
+    "upgrade_plan_ref": "upgrade:0.10.0:0.11.0",
     "restart_required": true
   }]
 }
@@ -229,6 +229,28 @@ has it. Project-local installations receive a package-manager command that updat
 their dev dependency. Ambiguous global installations receive the release link
 and should use their original installation method.
 
+### Applying a suggested update
+
+Offer the update once for each target version in a conversation. Read the
+notice's `upgrade_plan_ref` with `skillex_read` or the project's CLI to explain
+what will change. Keep the ref across the installation and MCP reconnect.
+For example:
+
+```sh
+skillex read --ref upgrade:0.10.0:0.12.0
+```
+
+The plan includes each stable release after the installed version through the
+target, in order. Review prerequisites before installing. Once the user agrees,
+use the project's installation method, apply the relevant steps with the target
+binary, and verify the result. Optional features require a separate choice.
+
+Reading a newer target's plan explicitly retrieves the guide from the target's
+official GitHub tag. Normal lookups do not fetch upgrade guides. The installed
+binary includes guidance through its own release for offline use. Clients that
+predate plan refs can follow the upgrade guide linked from new GitHub release
+notes and select the same range by hand.
+
 Controls:
 
 - `SKILLEX_NO_UPDATE_CHECK=1` disables automatic checks and notices. Presence of
@@ -242,8 +264,7 @@ Controls:
 
 Release checks are separate from telemetry. They send no project paths, names,
 skill content, or installation identifiers. Retrieval and capability discovery
-continue to use local data; the optional release-metadata request is the network
-exception.
+use local data. Only explicit upgrade-plan reads can fetch the tagged guide.
 
 ## Quick start
 

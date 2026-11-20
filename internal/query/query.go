@@ -16,6 +16,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/config"
 	"github.com/atheory-ai/skillex/internal/registry"
 	"github.com/atheory-ai/skillex/internal/steering"
+	"github.com/atheory-ai/skillex/internal/upgrade"
 	"github.com/gobwas/glob"
 )
 
@@ -579,6 +580,15 @@ func (e *Engine) Read(ref, sectionID string, maxBytes int) (*ReadResponse, error
 	}
 	resp.Path = s.Path
 	return boundedRead(resp, s.Content, sectionID, maxBytes)
+}
+
+// ReadUpgrade returns a bounded migration plan independently of the project registry.
+func ReadUpgrade(ctx context.Context, ref, section string, maxBytes int) (*ReadResponse, error) {
+	content, err := upgrade.Plan(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return boundedRead(&ReadResponse{Ref: ref}, content, section, maxBytes)
 }
 
 func boundedRead(resp *ReadResponse, content, sectionID string, maxBytes int) (*ReadResponse, error) {

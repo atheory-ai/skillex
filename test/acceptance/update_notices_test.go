@@ -124,6 +124,18 @@ func TestUpdateNoticesCLIAndMCP(t *testing.T) {
 		json.Unmarshal([]byte(text), &payload)
 		assertUpdateNotice(t, payload, "0.12.0")
 	}
+	// Keep the advertised range, including after the old binary is replaced.
+	refPlan := "upgrade:0.10.0:0.12.0"
+	cliPlan := helpers.Run(t, dir, "read", "--ref", refPlan, "--quiet", "--json")
+	mcpPlan, err := client.CallToolText("skillex_read", map[string]any{"ref": refPlan})
+	var cliGuide, mcpGuide map[string]any
+	if err != nil || cliPlan.ExitCode != 0 || json.Unmarshal([]byte(cliPlan.Stdout), &cliGuide) != nil || json.Unmarshal([]byte(mcpPlan), &mcpGuide) != nil || !reflect.DeepEqual(cliGuide, mcpGuide) {
+		t.Fatalf("upgrade plan CLI/MCP mismatch: %v %#v %s", err, cliPlan, mcpPlan)
+	}
+	content, _ := cliGuide["content"].(string)
+	if !strings.Contains(content, "## 0.11.1") || !strings.Contains(content, "skillex init --yes") || strings.Contains(content, "## 0.10.0") {
+		t.Fatalf("expected skipped releases through target: %s", content)
+	}
 	resources, err := client.ListResources()
 	if err != nil || len(resources) == 0 {
 		t.Fatal("resources", err)
@@ -141,7 +153,7 @@ func assertUpdateNotice(t *testing.T, payload map[string]any, version string) {
 		t.Fatalf("missing notice: %#v", payload)
 	}
 	notice := notices[0].(map[string]any)
-	if notice["code"] != "skillex_update_available" || notice["latest_version"] != version || notice["restart_required"] != true {
+	if notice["code"] != "skillex_update_available" || notice["latest_version"] != version || notice["restart_required"] != true || notice["upgrade_plan_ref"] != "upgrade:0.10.0:"+version {
 		t.Fatalf("notice: %#v", notice)
 	}
 }

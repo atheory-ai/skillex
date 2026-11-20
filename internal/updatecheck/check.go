@@ -33,6 +33,7 @@ type Notice struct {
 	CheckedAt       time.Time `json:"checked_at"`
 	Message         string    `json:"message"`
 	ReleaseURL      string    `json:"release_url"`
+	UpgradePlanRef  string    `json:"upgrade_plan_ref,omitempty"`
 	UpdateCommand   string    `json:"update_command,omitempty"`
 	RestartRequired bool      `json:"restart_required"`
 }
@@ -266,11 +267,20 @@ func (c *Checker) notices(state cache) []Notice {
 		return nil
 	}
 	version := strings.TrimPrefix(latest, "v")
-	message := "Skillex " + version + " is available; running " + strings.TrimPrefix(current, "v") + ". Suggest updating when appropriate; restart or reconnect MCP after updating."
+	installed := strings.TrimPrefix(current, "v")
+	message := "Skillex " + version + " is available; running " + installed + ". Offer this update once per target per conversation. "
+	var planRef string
+	if semver.Prerelease(current) == "" {
+		planRef = "upgrade:" + installed + ":" + version
+		message += "Read the upgrade plan with Skillex read before installing. "
+	} else {
+		message += "Consult the target release notes before installing. "
+	}
+	message += "Apply required steps with user approval, then restart or reconnect MCP."
 	return []Notice{{Code: "skillex_update_available", CurrentVersion: strings.TrimPrefix(current, "v"),
 		LatestVersion: version, CheckedAt: state.LastSuccessAt, Message: message,
-		ReleaseURL:    "https://github.com/atheory-ai/skillex/releases/tag/v" + version,
-		UpdateCommand: updateCommand(c.opts.Installation, c.opts.Source, version), RestartRequired: true}}
+		ReleaseURL:     "https://github.com/atheory-ai/skillex/releases/tag/v" + version,
+		UpgradePlanRef: planRef, UpdateCommand: updateCommand(c.opts.Installation, c.opts.Source, version), RestartRequired: true}}
 }
 
 // AddNotices decorates a JSON object without touching retrieval fields. With no

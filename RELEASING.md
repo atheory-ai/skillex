@@ -14,7 +14,14 @@ This document is for maintainers.
 
 1. Make sure the intended release changes are merged to `main`.
 2. Update `VERSION`.
-3. Update `CHANGELOG.md`.
+3. Update `CHANGELOG.md` and append a matching release entry to
+   [the upgrade guide](internal/upgrade/guide.md). Cover prerequisites, project
+   changes and verification. Keep the tagged guide path and its ascending
+   `## major.minor.patch` headings stable for earlier clients. Label optional
+   adoption separately. Use “No project
+   changes required.” for a binary-only update. Run `go test ./internal/upgrade`
+   and preview a plan that skips a release. The tag workflow links the tagged
+   guide in the GitHub release notes for clients that predate plan refs.
 4. Open and merge the release PR.
 5. Pull the merged `main` branch locally.
 6. Create and push the release tag:

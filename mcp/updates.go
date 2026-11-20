@@ -13,6 +13,9 @@ func updateInstructions(notices []updatecheck.Notice) string {
 	var text strings.Builder
 	for _, notice := range notices {
 		text.WriteString(notice.Message)
+		if notice.UpgradePlanRef != "" {
+			text.WriteString(" Use skillex_read with ref " + notice.UpgradePlanRef + ".")
+		}
 		if notice.UpdateCommand != "" {
 			text.WriteString(" Suggested command: " + notice.UpdateCommand)
 		} else {

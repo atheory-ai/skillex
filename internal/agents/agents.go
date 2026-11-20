@@ -22,7 +22,7 @@ const MCPInstructions = MCPSetupReminder + "\n\n" +
 	"- Use `source: skillex` to discover bundled skills. Project tasks can also point to bundled skills.\n" +
 	"- Query by path, topic, tags, package, or intent to discover additional skills. If `too_broad` is true, use `narrow_with` to refine the query.\n" +
 	"- Read one selected ref or section at a time. MCP skill resources provide a table of contents.\n" +
-	"- Treat update notices as advisory. Suggest the appropriate update when useful and reconnect MCP after updating. A project-pinned installation needs a dependency update."
+	"- Treat update notices as advisory. Offer a new target once per conversation. Read its upgrade_plan_ref with skillex_read to explain the applicable steps. Keep the ref across installation, get approval before making changes, and reconnect MCP afterward. A project-pinned installation needs a dependency update."
 
 // GenerateSection creates the stable Skillex bootstrap section for AGENTS.md.
 func GenerateSection() string { return GenerateSectionWithCommand("skillex") }

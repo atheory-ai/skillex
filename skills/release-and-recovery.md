@@ -10,6 +10,8 @@ tags: [versioning, github-actions, publishing]
 ## Prepare and tag
 
 - Treat the root `VERSION` file as the release version source of truth. Include its changelog entry in the release change.
+- Append an entry for the exact `VERSION` to `internal/upgrade/guide.md`. Identify affected installations, pre-install prerequisites, required project changes, and how to verify them. Label optional features separately. If installation alone suffices, write “No project changes required.”
+- Keep older entries so a user who skips releases can read every applicable step. Run `go test ./internal/upgrade` and preview a skipped-version plan with the local binary's `read --ref upgrade:<from>:<target>` after rebuilding.
 - Merge the release commit to `main`, start from a clean checkout that matches `origin/main`, and run `make release-tag`.
 - Let the guarded target create the matching immutable `v<version>` tag. Do not create or move a release tag manually.
 - Run the relevant local gate before tagging. The tag workflow is the authoritative release gate and also exercises release-only packaging and publishing paths.

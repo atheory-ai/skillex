@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-19
+
+- Update notices include a plan covering every release between the installed and target versions. Agents can read the plan through CLI or MCP and reuse the same ref after upgrading.
+- Agents running 0.12.0 can follow the release link in their existing update notice. See the [0.12.1 upgrade instructions](internal/upgrade/guide.md#0121).
+- Release preparation now requires a matching upgrade guide entry.
+
 ## [0.12.0] - 2026-11-19
 
 - Bind a project or bundled skill to a task such as creating a commit or opening a pull request. CLI and MCP session setup return each task’s cue and skill ref.
