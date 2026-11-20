@@ -58,10 +58,10 @@ func InstalledFilePath(file string) (string, string, bool) {
 }
 
 type Manifest struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	Registry      string       `json:"registry"`
-	Packs         []Entry      `json:"packs"`
-	Revocations   []Revocation `json:"revocations"`
+	SchemaVersion int            `json:"schemaVersion"`
+	Registry      string         `json:"registry"`
+	Packs         []CatalogEntry `json:"packs"`
+	Revocations   []Revocation   `json:"revocations"`
 }
 type Entry struct {
 	Name        string `json:"name"`
@@ -139,22 +139,14 @@ func authenticatedWithVerifier(data, envelope []byte, verifier manifestVerifier)
 var safeName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
 
 func (m *Manifest) Resolve(name string) (Entry, error) {
-	var candidates []Entry
-	seenVersions := map[string]bool{}
-	for _, e := range m.Packs {
-		if e.Name == name && semver.IsValid("v"+e.Version) && semver.Prerelease("v"+e.Version) == "" {
-			if seenVersions[e.Version] {
-				return Entry{}, fmt.Errorf("ambiguous signed pack identity %s@%s", e.Name, e.Version)
-			}
-			seenVersions[e.Version] = true
-			candidates = append(candidates, e)
-		}
+	versions, err := stableVersions(m.Packs, name)
+	if err != nil {
+		return Entry{}, err
 	}
-	if len(candidates) == 0 {
+	if len(versions) == 0 {
 		return Entry{}, fmt.Errorf("no stable pack %q in signed manifest", name)
 	}
-	sort.Slice(candidates, func(i, j int) bool { return semver.Compare("v"+candidates[i].Version, "v"+candidates[j].Version) > 0 })
-	e := candidates[0]
+	e := versions[0].Entry
 	if err := validateEntry(e); err != nil {
 		return Entry{}, err
 	}
@@ -534,7 +526,7 @@ func validateChildWithVerifier(parent *os.Root, name string, verifier manifestVe
 			if signed != nil {
 				return lock, fmt.Errorf("ambiguous signed pack identity")
 			}
-			candidate := e
+			candidate := e.Entry
 			signed = &candidate
 		}
 	}

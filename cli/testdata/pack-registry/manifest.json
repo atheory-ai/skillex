@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-03T01:38:41.947Z",
+  "registry": "atheory-ai/skillex-packs",
+  "packs": [
+    {
+      "name": "atheory-ai.javascript.tool.example",
+      "handle": "atheory-ai",
+      "tier": "core",
+      "version": "0.1.1",
+      "description": "Minimal example pack that exercises the registry build pipeline.",
+      "homepage": "https://github.com/atheory-ai/skillex-packs/tree/main/ecosystems/javascript/packs/atheory-ai/tool.example",
+      "license": "Apache-2.0",
+      "authors": [
+        "atheory-ai"
+      ],
+      "compatibility": {
+        "node": ">=20",
+        "skillex": ">=0.7 <2"
+      },
+      "tarball": {
+        "url": "https://github.com/atheory-ai/skillex-packs/releases/download/pack/atheory-ai.javascript.tool.example/v0.1.1/atheory-ai.javascript.tool.example-0.1.1.tar.gz",
+        "sha256": "14536a902ddfbbb42c96c6eba04756a722bcb4900f42b03b7a07aa6307b52f00",
+        "size": 1376
+      }
+    }
+  ],
+  "revocations": []
+}

@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- Search the signed pack catalog with `skillex pack search` and inspect the available versions, compatibility declarations, and signer with `skillex pack info`.
+- Agents can use `list_available_packs` and `propose_pack_install` over MCP. Proposals show the same verified contents and activation rules as the CLI preview. Installation requires separate consent.
+
 ## [0.12.1] - 2026-11-19
 
 - Update notices include a plan covering every release between the installed and target versions. Agents can read the plan through CLI or MCP and reuse the same ref after upgrading.

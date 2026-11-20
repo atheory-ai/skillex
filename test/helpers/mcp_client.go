@@ -73,7 +73,12 @@ func StartMCPServer(t *testing.T, dir string) *MCPClient {
 	t.Helper()
 	cmd := exec.Command(SkilexBinary(), "mcp")
 	cmd.Dir = dir
+	return StartMCPCommand(t, cmd)
+}
 
+// StartMCPCommand runs the normal handshake against a supplied stdio command.
+func StartMCPCommand(t *testing.T, cmd *exec.Cmd) *MCPClient {
+	t.Helper()
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatalf("creating stdin pipe: %v", err)

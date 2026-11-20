@@ -160,6 +160,10 @@ func Load(path string) (*Pack, error) {
 		return nil, err
 	}
 
+	return parseManifest(path, data, verifiedFiles)
+}
+
+func parseManifest(path string, data []byte, verifiedFiles map[string][]byte) (*Pack, error) {
 	var manifest Manifest
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
