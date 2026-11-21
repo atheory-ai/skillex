@@ -219,17 +219,48 @@ func prepareEntry(ctx context.Context, lock Lock, fetch registryDownload) (*Prep
 	if err != nil {
 		return nil, err
 	}
-	files, err := verifiedArchive(e, archive)
+	if err := checkArchivePin(e, archive); err != nil {
+		return nil, err
+	}
+	if verify.RequiresPackEvidence(lock.Registry) {
+		signature, err := fetch(ctx, e.Tarball.URL+".bundle", 1<<20)
+		if err != nil {
+			return nil, fmt.Errorf("fetching signature for %s: %w", identity(e), err)
+		}
+		attestations, err := fetch(ctx, attestationURL(e)+"?predicate_type=provenance", 4<<20)
+		if err != nil {
+			return nil, fmt.Errorf("fetching build provenance for %s: %w", identity(e), err)
+		}
+		if err := verify.PackRelease(e.Name, e.Version, archive, signature, attestations); err != nil {
+			return nil, err
+		}
+	}
+	files, err := extractPack(e, archive)
 	if err != nil {
 		return nil, err
 	}
 	return &Prepared{Lock: lock, Archive: archive, Files: files}, nil
 }
-func verifiedArchive(e Entry, data []byte) (map[string][]byte, error) {
+func attestationURL(e Entry) string {
+	return "https://api.github.com/repos/" + verify.PackRegistry + "/attestations/sha256:" + e.Tarball.SHA256
+}
+
+func checkArchivePin(e Entry, data []byte) error {
 	digest := sha256.Sum256(data)
 	if int64(len(data)) != e.Tarball.Size || hex.EncodeToString(digest[:]) != e.Tarball.SHA256 {
-		return nil, fmt.Errorf("tarball SHA256 or size mismatch")
+		return fmt.Errorf("tarball SHA256 or size mismatch")
 	}
+	return nil
+}
+
+func verifiedArchive(e Entry, data []byte) (map[string][]byte, error) {
+	if err := checkArchivePin(e, data); err != nil {
+		return nil, err
+	}
+	return extractPack(e, data)
+}
+
+func extractPack(e Entry, data []byte) (map[string][]byte, error) {
 	files, err := Extract(data)
 	if err != nil {
 		return nil, err

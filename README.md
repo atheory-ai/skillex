@@ -1127,7 +1127,21 @@ manifest and signature bundle.
 
 Registry installation verifies the manifest's Sigstore signature against the
 engine-bundled public root and exact GitHub manifest-workflow identity, then
-checks the signed tarball SHA256 and size. `--preview` returns the full proposed
+checks the signed tarball SHA256 and size. Before unpacking a downloaded archive,
+Skillex verifies its cosign blob signature and a GitHub Actions SLSA v1 build
+attestation for the same filename and SHA256. Both signatures must come from
+the registry's `release-pack.yml` workflow at the exact pack release tag.
+The build statement must also identify that repository, workflow, tag and
+builder. Mirrors use the same built-in trust policy.
+
+These checks apply to CLI and MCP previews, fresh installations and updates.
+Fetching a release without a supported signature bundle or verifiable build
+attestation fails before extraction. Existing installations continue to work
+offline using their saved signed manifest and pinned archive. To check an
+already installed version against the producer, run `pack get <name> --preview`
+and confirm the preview selected that version and digest.
+
+`--preview` returns the full proposed
 text contents, detectors, skills, MCP suggestions, and activation scopes for review
 before consent. Installation rejects archive links and unsafe paths and accepts only Markdown,
 YAML, JSON, and text files. Installed packs use the existing activation rules and
@@ -1236,8 +1250,8 @@ The published `atheory-ai.javascript.tool.example@0.1.1` works with the engine
 pack schema. For this registry, `pack info` includes an `attestation_lookup` URL
 for each version, keyed to its signed archive digest. Follow the URL to inspect
 the available GitHub attestations. Skillex does not fetch or verify those
-attestations during discovery. The CLI authenticates the registry manifest and verifies the
-archive against its signed pin during preview and installation.
+attestations during search or info. Archive previews, installations and updates
+fetch and verify the release signature and build provenance.
 
 ### `skillex get`
 
