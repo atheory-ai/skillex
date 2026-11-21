@@ -264,6 +264,16 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 		t.Fatalf("compatible installation: %+v %v", installed, err)
 	}
 	run("pack", "remove", name)
+	t.Run("fresh install keeps the requested identity after a signed rename", func(t *testing.T) {
+		serve(renamed)
+		run("pack", "get", name, "--yes", "--quiet")
+		var status []packregistry.PackStatus
+		if err := json.Unmarshal(run("pack", "list", "--json"), &status); err != nil || len(status) != 1 ||
+			status[0].Name != name || status[0].Version != next.Version {
+			t.Fatalf("fresh install after rename: %+v (%v)", status, err)
+		}
+		run("pack", "remove", name)
+	})
 	t.Run("reviewed cross-publisher rename in a bulk update", func(t *testing.T) {
 		serve(first)
 		run("pack", "get", name, "--yes", "--quiet")
