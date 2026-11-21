@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- Pack search, installation, updates, and MCP installation proposals select the newest advertised stable pack compatible with the running Skillex version.
+
 ## [0.13.0] - 2026-11-21
 
 - `skillex pack check` checks installed versions against signed registry revocations. CLI and running MCP sessions stop serving withdrawn guidance. `pack list` reports the saved evidence, dates, and reason offline.

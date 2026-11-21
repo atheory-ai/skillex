@@ -12,6 +12,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/packs"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +62,7 @@ func newPackUpdateCmd() *cobra.Command {
 		}
 		selector := strings.Join(args, "")
 		plan := func() ([]packregistry.Update, packs.UpdatePreview, error) {
-			changes, err := packregistry.PlanUpdates(cmd.Context(), root, packregistry.ManifestURL(cfg), selector)
+			changes, err := packregistry.PlanUpdates(cmd.Context(), root, packregistry.ManifestURL(cfg), selector, updatecheck.Version(Version))
 			if err != nil {
 				return nil, packs.UpdatePreview{}, err
 			}

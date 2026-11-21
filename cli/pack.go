@@ -12,6 +12,7 @@ import (
 	"github.com/atheory-ai/skillex/internal/packregistry"
 	"github.com/atheory-ai/skillex/internal/packs"
 	"github.com/atheory-ai/skillex/internal/registry"
+	"github.com/atheory-ai/skillex/internal/updatecheck"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -25,7 +26,7 @@ func newPackCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		prepared, err := packregistry.Prepare(cmd.Context(), packregistry.ManifestURL(cfg), args[0])
+		prepared, err := packregistry.PrepareForEngine(cmd.Context(), packregistry.ManifestURL(cfg), args[0], updatecheck.Version(Version))
 		if err != nil {
 			return err
 		}
@@ -193,7 +194,7 @@ func newPackSearchCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		page, err := m.Search(strings.Join(args, " "), tier, limit, offset)
+		page, err := m.Search(strings.Join(args, " "), tier, limit, offset, updatecheck.Version(Version))
 		if err != nil {
 			return err
 		}

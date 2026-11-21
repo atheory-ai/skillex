@@ -1104,16 +1104,26 @@ skillex pack remove atheory-ai.javascript.tool.example
 
 Search and info fetch and authenticate the configured registry manifest on each
 call. Search matches every query word against the name and description and
-returns one latest stable version per pack, in name order. Pages default to 10
+returns the newest compatible stable version per pack, in name order. Pages default to 10
 results and allow up to 50. Use `--json` for the total and `next_offset`, then
 pass that offset to the next search with the same filters.
 
 Info shows the registry, manifest and signature bundle URLs, verified signer, and the original
 signed entries for available stable versions, newest first. A version can declare
 authors, license, runtime compatibility, and tarball URL, size, and SHA256.
-Compatibility ranges describe the publisher's requirements. The resolver always
-selects the latest stable version and refuses a revoked latest release. Discovery
-downloads only the manifest and signature bundle.
+Search, install previews, installation, and updates select the newest stable pack
+in the signed catalog whose `compatibility.skillex` range matches the running
+engine. For example, an engine at 0.13.0 can select an older pack declaring
+`>=0.7 <2` when a newer pack requires `>=1`. A revoked latest release still
+blocks the pack. Updates also preserve the existing protection against downgrades.
+
+An omitted Skillex range permits any engine. A declared range requires a
+versioned engine build. The checkout's `make dev-binary` uses its numeric
+`VERSION` for this comparison. Other compatibility fields, such as `node`,
+remain available through `pack info` for review. If no signed version matches,
+install and update report the engine version and latest requirement before
+downloading the archive or writing project files. Discovery downloads only the
+manifest and signature bundle.
 
 Registry installation verifies the manifest's Sigstore signature against the
 engine-bundled public root and exact GitHub manifest-workflow identity, then
@@ -1172,7 +1182,7 @@ Optional transport configuration (one registry in this MVP):
 The default is the upstream URL. Mirrors must serve the same authentic signed
 bytes. Project configuration cannot replace the bundled signer or root. Custom
 roots, multiple registries, and policy filters are rejected until federation is
-implemented. Compatibility-aware resolution and automatic supersession remain follow-up work.
+implemented. Runtime compatibility checks and automatic supersession remain follow-up work.
 
 Files live in `.skillex/packs/<name>@<version>/` alongside
 `manifest.lock.json` and the saved SHA-pinned `archive.tar.gz`. The lock retains

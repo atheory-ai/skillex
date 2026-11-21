@@ -8,7 +8,7 @@ import (
 // These adapters exist only in test builds. Production public entry points
 // always use the immutable embedded Sigstore root and normal HTTPS downloader.
 func PrepareForTest(ctx context.Context, address, name string, verifier func([]byte, []byte) error, fetch func(context.Context, string, int64) ([]byte, error)) (*Prepared, error) {
-	return prepareWithVerifier(ctx, address, name, verifier, fetch)
+	return prepareWithVerifier(ctx, address, name, "0.13.0", verifier, fetch)
 }
 func ValidateDirectoryForTest(dir string, verifier func([]byte, []byte) error) (Lock, error) {
 	return validateDirectoryWithVerifier(dir, verifier)

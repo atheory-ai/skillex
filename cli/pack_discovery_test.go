@@ -29,6 +29,7 @@ func TestPackFixtureCommand(t *testing.T) {
 	if fixture == "" || i == -1 {
 		return
 	}
+	Version = "0.13.0"
 	http.DefaultTransport = packTransport(func(r *http.Request) (*http.Response, error) {
 		var file string
 		switch r.URL.String() {

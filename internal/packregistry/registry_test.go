@@ -53,7 +53,7 @@ func TestPrepareVerifiesBeforeInstall(t *testing.T) {
 				}
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
 			})
-			prepared, err := Prepare(context.Background(), DefaultURL, "atheory-ai.javascript.tool.example")
+			prepared, err := PrepareForEngine(context.Background(), DefaultURL, "atheory-ai.javascript.tool.example", "0.13.0")
 			if tc.valid {
 				if err != nil || len(prepared.Files) == 0 {
 					t.Fatalf("published pin verification: %v", err)
@@ -104,7 +104,7 @@ func TestResolverRefusesRevokedLatest(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Revocations = append(m.Revocations, Revocation{Name: m.Packs[0].Name, Version: m.Packs[0].Version, Reason: "withdrawn"})
-	if _, err := m.Resolve(m.Packs[0].Name); err == nil {
+	if _, err := m.Resolve(m.Packs[0].Name, "0.13.0"); err == nil {
 		t.Fatal("accepted revoked version")
 	}
 }
