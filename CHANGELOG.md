@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-21
+
 - Pack search, installation, updates, and MCP installation proposals select the newest advertised stable pack compatible with the running Skillex version.
 
 ## [0.13.0] - 2026-11-21
