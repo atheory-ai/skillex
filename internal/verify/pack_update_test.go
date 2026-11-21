@@ -201,6 +201,21 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 		{future, map[string]string{"skillex": ">=1"}},
 		{otherNext, map[string]string{"skillex": ">=9"}},
 	}, nil)
+	const successor = "owner.renamed"
+	type renamedEntry struct {
+		packregistry.Entry
+		SupersededBy string `json:"superseded-by,omitempty"`
+		Replaces     string `json:"replaces,omitempty"`
+	}
+	successorEntry := makeEntry(successor, "1.0.0", "renamed.tar.gz", updateArchive(t, "v1", successor))
+	successorEntry.Handle = "owner"
+	successorCatalog := func(replaces string) snapshot {
+		return catalog([]renamedEntry{
+			{Entry: old}, {Entry: next, SupersededBy: successor},
+			{Entry: successorEntry, Replaces: replaces}, {Entry: otherNext},
+		}, nil)
+	}
+	renamed, conflict := successorCatalog(name), successorCatalog(other)
 	roots, err := json.Marshal(combined)
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +264,74 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 		t.Fatalf("compatible installation: %+v %v", installed, err)
 	}
 	run("pack", "remove", name)
+	t.Run("reviewed cross-publisher rename in a bulk update", func(t *testing.T) {
+		serve(first)
+		run("pack", "get", name, "--yes", "--quiet")
+		run("pack", "get", other, "--yes", "--quiet")
+		original := run("pack", "list", "--json")
+		serve(renamed)
+		const pair = name + "=" + successor
+		var review packs.UpdatePreview
+		out := run("pack", "update", "--preview", "--json")
+		if err := json.Unmarshal(out, &review); err != nil || len(review.Updates) != 2 {
+			t.Fatalf("rename preview: %s (%v)", out, err)
+		}
+		r := review.Updates[0]
+		if r.Replacement != pair || r.From != old || r.To != successorEntry || review.Updates[1].Replacement != "" {
+			t.Fatalf("unexpected identities in preview: %+v", review.Updates)
+		}
+		fail("replacement consent", "pack", "update", "--approve", review.Approval)
+		fail("replacement consent", "pack", "update", "--replace", name+"="+other, "--approve", review.Approval)
+		decline := command("pack", "update", "--replace", pair)
+		decline.Stdin = strings.NewReader("n\n")
+		if data, err := decline.CombinedOutput(); err == nil || !bytes.Contains(data, []byte("update cancelled")) {
+			t.Fatalf("decline: %s (%v)", data, err)
+		}
+		apply := []string{"pack", "update", "--replace", pair, "--approve", review.Approval, "--json"}
+		serve(conflict)
+		fail("conflicting rename declarations", apply...)
+		serve(renamed)
+		fail("does not match", "pack", "update", "--replace", pair, "--approve", "obsolete")
+		fail("simulated exit", "interrupt-update")
+		run("pack", "update", "--recover")
+		if got := run("pack", "list", "--json"); !bytes.Equal(got, original) {
+			t.Fatalf("declined, conflicting or interrupted rename changed installation: %s", got)
+		}
+		client := helpers.StartMCPCommand(t, command("mcp"))
+		findRef := func(pack string) string {
+			t.Helper()
+			out, err := client.CallToolText("skillex_query", map[string]any{"topic": "original"})
+			var results helpers.QueryResponse
+			if err != nil || json.Unmarshal([]byte(out), &results) != nil {
+				t.Fatalf("query: %s (%v)", out, err)
+			}
+			for _, r := range results.Results {
+				if strings.Contains(r.Path, pack+"@") {
+					return r.Ref
+				}
+			}
+			t.Fatalf("missing %s in %s", pack, out)
+			return ""
+		}
+		oldRef := findRef(name)
+		run(apply...)
+		if _, err := client.CallToolText("skillex_read", map[string]any{"ref": oldRef}); err == nil {
+			t.Fatal("old pack still served")
+		}
+		if _, err := client.CallToolText("skillex_read", map[string]any{"ref": findRef(successor)}); err != nil {
+			t.Fatal(err)
+		}
+		var status []packregistry.PackStatus
+		if err := json.Unmarshal(run("pack", "list", "--json"), &status); err != nil || len(status) != 2 ||
+			status[0].Name != successor || status[0].Version != successorEntry.Version || status[1].Name != other || status[1].Version != otherNext.Version {
+			t.Fatalf("installed batch: %+v (%v)", status, err)
+		}
+		run("pack", "get", name, "--yes", "--quiet")
+		fail("already installed", "pack", "update", name, "--preview")
+		run("pack", "remove", name)
+		run("pack", "remove", successor)
+		run("pack", "remove", other)
+	})
 	serve(first)
 	run("pack", "get", name, "--yes", "--quiet")
 	run("pack", "get", other, "--yes", "--quiet")

@@ -152,22 +152,27 @@ func authenticatedWithVerifier(data, envelope []byte, verifier manifestVerifier)
 var safeName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
 
 func (m *Manifest) Resolve(name, engine string) (Entry, error) {
+	candidate, err := m.resolveCandidate(name, engine)
+	return candidate.Entry, err
+}
+
+func (m *Manifest) resolveCandidate(name, engine string) (CatalogEntry, error) {
 	versions, err := stableVersions(m.Packs, name)
 	if err != nil {
-		return Entry{}, err
+		return CatalogEntry{}, err
 	}
 	if len(versions) == 0 {
-		return Entry{}, fmt.Errorf("no stable pack %q in signed manifest", name)
+		return CatalogEntry{}, fmt.Errorf("no stable pack %q in signed manifest", name)
 	}
 	candidate, err := m.selectVersion(versions, engine, m.revokedVersions())
 	if err != nil {
-		return Entry{}, err
+		return CatalogEntry{}, err
 	}
 	e := candidate.Entry
 	if err := validateEntry(e); err != nil {
-		return Entry{}, err
+		return CatalogEntry{}, err
 	}
-	return e, nil
+	return candidate, nil
 }
 func validateEntry(e Entry) error {
 	if !safeName.MatchString(e.Name) || !safeName.MatchString(e.Handle) || !strings.HasPrefix(e.Name, e.Handle+".") || !semver.IsValid("v"+e.Version) || semver.Prerelease("v"+e.Version) != "" {
