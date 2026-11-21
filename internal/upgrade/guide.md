@@ -128,3 +128,16 @@ Optional for projects using registry packs: run `skillex pack list --json` to
 inspect installed versions and their saved evidence. Run `skillex pack check`
 to fetch signed revocations and refresh the index. To review available upgrades,
 run `skillex pack update --preview --json` before approving any changes.
+
+## 0.14.0
+
+Update the CLI or project dependency to 0.14.0 using the existing installation
+method. No project changes required. Verify the version with the project's
+`skillex version` and reconnect running Skillex MCP sessions.
+
+Optional for registry pack users: inspect advertised versions with
+`skillex pack info <name>` and preview selection with
+`skillex pack get <name> --preview`. Skillex selects the newest advertised
+stable version whose Skillex range matches the running engine. Other runtime
+ranges are advisory. Existing installations change only when you approve an
+update.
