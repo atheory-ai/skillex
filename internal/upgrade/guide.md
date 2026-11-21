@@ -117,3 +117,14 @@ only the 0.12.1 entry.
 
 A project already set up for 0.12.0 needs no changes to its managed
 `AGENTS.md` block, task bindings, or preset selections for this patch.
+
+## 0.13.0
+
+Update the CLI or project dependency to 0.13.0 using the existing installation
+method. No project changes required. Verify with the project's `skillex version`
+and reconnect running Skillex MCP sessions to load the new pack discovery tools.
+
+Optional for projects using registry packs: run `skillex pack list --json` to
+inspect installed versions and their saved evidence. Run `skillex pack check`
+to fetch signed revocations and refresh the index. To review available upgrades,
+run `skillex pack update --preview --json` before approving any changes.
