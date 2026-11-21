@@ -82,7 +82,7 @@ func serve(reg *registry.Registry, engine *query.Engine, runtime *brokerruntime.
 		server.WithInstructions(instructions),
 	)
 
-	registerPackTools(s, manifestURL, updates)
+	registerPackTools(s, manifestURL, updatecheck.Version(version), updates)
 
 	// Register query tool
 	queryTool := mcplib.NewTool(

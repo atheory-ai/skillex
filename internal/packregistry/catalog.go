@@ -2,6 +2,7 @@ package packregistry
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -125,7 +126,7 @@ type SearchPage struct {
 }
 
 // Search returns one summary per matching pack that get can resolve.
-func (m *Manifest) Search(search, tier string, limit, offset int) (*SearchPage, error) {
+func (m *Manifest) Search(search, tier string, limit, offset int, engine string) (*SearchPage, error) {
 	if limit < 1 || limit > MaxSearchLimit || offset < 0 {
 		return nil, fmt.Errorf("limit must be 1–%d and offset must be non-negative", MaxSearchLimit)
 	}
@@ -144,8 +145,14 @@ func (m *Manifest) Search(search, tier string, limit, offset int) (*SearchPage, 
 		if len(versions) == 0 {
 			continue
 		}
-		e := versions[0]
-		if (tier != "" && tier != e.Tier) || revoked[packVersion{e.Name, e.Version}] {
+		e, err := m.selectVersion(versions, engine, revoked)
+		if errors.Is(err, errUnavailable) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if tier != "" && tier != e.Tier {
 			continue
 		}
 		haystack := strings.ToLower(name + " " + e.Description)

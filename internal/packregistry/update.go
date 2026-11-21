@@ -14,7 +14,7 @@ type Update struct {
 	To   *Prepared
 }
 
-func PlanUpdates(ctx context.Context, root, url, selector string) ([]Update, error) {
+func PlanUpdates(ctx context.Context, root, url, selector, engine string) ([]Update, error) {
 	installed, err := List(root)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func PlanUpdates(ctx context.Context, root, url, selector string) ([]Update, err
 		if old.Registry != catalog.Registry {
 			return nil, fmt.Errorf("registry changed for %s", old.Entry.Name)
 		}
-		next, err := catalog.Resolve(old.Entry.Name)
+		next, err := catalog.Resolve(old.Entry.Name, engine)
 		if err != nil {
 			return nil, err
 		}

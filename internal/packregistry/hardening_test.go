@@ -78,7 +78,7 @@ func installedPublished(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := m.Resolve("atheory-ai.javascript.tool.example")
+	e, err := m.Resolve("atheory-ai.javascript.tool.example", "0.13.0")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -42,7 +42,7 @@ func TestCatalogPagesAndAvailableVersions(t *testing.T) {
 	m.Revocations = []Revocation{{Name: "atheory-ai.tool-a", Version: "1.0.0"}, {Name: "atheory-ai.tool-withdrawn", Version: "2.0.0"}}
 	search := func(offset int) *SearchPage {
 		t.Helper()
-		p, err := m.Search("javascript TOOL", "core", 1, offset)
+		p, err := m.Search("javascript TOOL", "core", 1, offset, "0.13.0")
 		if err != nil || p.Total != 2 {
 			t.Fatalf("search: %+v, %v", p, err)
 		}
@@ -59,7 +59,7 @@ func TestCatalogPagesAndAvailableVersions(t *testing.T) {
 		t.Fatalf("past last page: %+v", p)
 	}
 	for _, bounds := range [][2]int{{0, 0}, {MaxSearchLimit + 1, 0}, {1, -1}} {
-		if _, err := m.Search("", "", bounds[0], bounds[1]); err == nil {
+		if _, err := m.Search("", "", bounds[0], bounds[1], "0.13.0"); err == nil {
 			t.Fatal("accepted invalid page bounds", bounds)
 		}
 	}
@@ -79,7 +79,7 @@ func TestCatalogPagesAndAvailableVersions(t *testing.T) {
 		}
 	}
 	m.Packs = append(m.Packs, m.Packs[0])
-	if _, err := m.Search("", "", 10, 0); err == nil {
+	if _, err := m.Search("", "", 10, 0, "0.13.0"); err == nil {
 		t.Fatal("listed an ambiguous signed identity")
 	}
 }

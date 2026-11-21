@@ -53,13 +53,14 @@ func TestUpdateFixtureCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	verify.UseFixtureRoot(t, data)
+	cli.Version = "0.13.0"
 	http.DefaultTransport = fixtureRegistry(fixture)
 	if os.Args[i+1] == "interrupt-update" {
 		root, err := os.Getwd()
 		if err != nil {
 			t.Fatal(err)
 		}
-		changes, err := packregistry.PlanUpdates(context.Background(), root, "https://fixture.invalid/manifest.json", "")
+		changes, err := packregistry.PlanUpdates(context.Background(), root, "https://fixture.invalid/manifest.json", "", cli.Version)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +138,7 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 	type snapshot struct{ manifest, bundle []byte }
 	var combined map[string]json.RawMessage
 	published := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	catalog := func(entries []packregistry.Entry, revoked []packregistry.Revocation) snapshot {
+	catalog := func(entries any, revoked []packregistry.Revocation) snapshot {
 		t.Helper()
 		published = published.Add(time.Minute)
 		if revoked == nil {
@@ -187,6 +188,19 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 	replacement := catalog([]packregistry.Entry{old, repackedEntry, otherOld, otherNext}, nil)
 	broken := makeEntry(name, "2.0.0", "invalid.tar.gz", updateArchive(t, "invalid", name))
 	invalid := catalog([]packregistry.Entry{old, broken, otherOld, otherNext}, nil)
+	type constrained struct {
+		packregistry.Entry
+		Compatibility map[string]string `json:"compatibility"`
+	}
+	future := next
+	future.Version = "3.0.0"
+	future.Tarball.URL = "https://fixture.invalid/unavailable-future-archive.tar.gz"
+	ranged := catalog([]constrained{
+		{old, map[string]string{"skillex": ">=0.10 <0.13"}},
+		{next, map[string]string{"skillex": "^0.13.0", "node": ">=99"}},
+		{future, map[string]string{"skillex": ">=1"}},
+		{otherNext, map[string]string{"skillex": ">=9"}},
+	}, nil)
 	roots, err := json.Marshal(combined)
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +238,18 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 			t.Fatalf("%v: %s (%v), expected %s", args, out, err, want)
 		}
 	}
+	serve(ranged)
+	fail("no compatible stable version", "pack", "get", other, "--yes")
+	if _, err := os.Stat(filepath.Join(project, ".skillex")); !os.IsNotExist(err) {
+		t.Fatalf("incompatible install changed project: %v", err)
+	}
+	run("pack", "get", name, "--yes", "--quiet")
+	var installed []packregistry.PackStatus
+	if err := json.Unmarshal(run("pack", "list", "--json"), &installed); err != nil || len(installed) != 1 || installed[0].Version != next.Version {
+		t.Fatalf("compatible installation: %+v %v", installed, err)
+	}
+	run("pack", "remove", name)
+	serve(first)
 	run("pack", "get", name, "--yes", "--quiet")
 	run("pack", "get", other, "--yes", "--quiet")
 	client := helpers.StartMCPCommand(t, command("mcp"))
@@ -242,6 +268,31 @@ func TestGoldenVerifiedPackUpdate(t *testing.T) {
 		}
 	}
 	oldWorks := func() { t.Helper(); check("original", "results"); check("updated", "no_match") }
+	oldWorks()
+	serve(ranged)
+	var page packregistry.SearchPage
+	if err := json.Unmarshal(run("pack", "search", "--json"), &page); err != nil || len(page.Results) != 1 || page.Results[0].Version != next.Version {
+		t.Fatalf("compatible search: %+v, %v", page, err)
+	}
+	proposal := run("pack", "get", name, "--preview", "--json")
+	mcpProposal, err := client.CallToolText("propose_pack_install", map[string]any{"name": name})
+	if err != nil || !bytes.Equal(bytes.TrimSpace(proposal), bytes.TrimSpace([]byte(mcpProposal))) {
+		t.Fatalf("CLI/MCP proposal mismatch: %v\n%s\n%s", err, proposal, mcpProposal)
+	}
+	var selected struct {
+		Pack packregistry.Entry `json:"pack"`
+	}
+	if err := json.Unmarshal(proposal, &selected); err != nil || selected.Pack.Version != next.Version {
+		t.Fatalf("wrong compatible version: %s", proposal)
+	}
+	var compatibleUpdate packs.UpdatePreview
+	if err := json.Unmarshal(run("pack", "update", name, "--preview", "--json"), &compatibleUpdate); err != nil || len(compatibleUpdate.Updates) != 1 || compatibleUpdate.Updates[0].To.Version != next.Version {
+		t.Fatalf("wrong compatible update: %+v %v", compatibleUpdate, err)
+	}
+	fail("no compatible stable version", "pack", "update", other, "--preview", "--json")
+	if _, err := client.CallToolText("propose_pack_install", map[string]any{"name": other}); err == nil {
+		t.Fatal("MCP proposed an incompatible install")
+	}
 	oldWorks()
 	serve(second)
 	var review packs.UpdatePreview

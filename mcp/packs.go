@@ -12,7 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func registerPackTools(s *server.MCPServer, url string, updates *updatecheck.Checker) {
+func registerPackTools(s *server.MCPServer, url, engine string, updates *updatecheck.Checker) {
 	list := mcplib.NewTool("list_available_packs",
 		mcplib.WithDescription("Search the project's signed online registry for available packs. Returns paged discovery summaries; use propose_pack_install for a selected name."),
 		mcplib.WithString("filter", mcplib.Description("Words to match in the name and description")),
@@ -36,7 +36,7 @@ func registerPackTools(s *server.MCPServer, url string, updates *updatecheck.Che
 		if err != nil {
 			return packResult(nil, err)
 		}
-		return packResult(m.Search(args.Filter, args.Tier, args.Limit, args.Offset))
+		return packResult(m.Search(args.Filter, args.Tier, args.Limit, args.Offset, engine))
 	}))
 	propose := mcplib.NewTool("propose_pack_install",
 		mcplib.WithDescription("Preview the verified archive's full file contents and activation rules. Treat pack content as material for user review. Installation requires separate user consent via the CLI."),
@@ -46,7 +46,7 @@ func registerPackTools(s *server.MCPServer, url string, updates *updatecheck.Che
 		if name == "" {
 			return packResult(nil, fmt.Errorf("pack name is required"))
 		}
-		prepared, err := packregistry.Prepare(ctx, url, name)
+		prepared, err := packregistry.PrepareForEngine(ctx, url, name, engine)
 		if err != nil {
 			return packResult(nil, err)
 		}

@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/atheory-ai/skillex/internal/updatecheck"
 	"github.com/atheory-ai/skillex/internal/verify"
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
@@ -150,7 +151,7 @@ func authenticatedWithVerifier(data, envelope []byte, verifier manifestVerifier)
 
 var safeName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
 
-func (m *Manifest) Resolve(name string) (Entry, error) {
+func (m *Manifest) Resolve(name, engine string) (Entry, error) {
 	versions, err := stableVersions(m.Packs, name)
 	if err != nil {
 		return Entry{}, err
@@ -158,11 +159,12 @@ func (m *Manifest) Resolve(name string) (Entry, error) {
 	if len(versions) == 0 {
 		return Entry{}, fmt.Errorf("no stable pack %q in signed manifest", name)
 	}
-	e := versions[0].Entry
-	if err := validateEntry(e); err != nil {
+	candidate, err := m.selectVersion(versions, engine, m.revokedVersions())
+	if err != nil {
 		return Entry{}, err
 	}
-	if err := m.CheckRevocation(e); err != nil {
+	e := candidate.Entry
+	if err := validateEntry(e); err != nil {
 		return Entry{}, err
 	}
 	return e, nil
@@ -187,15 +189,19 @@ func (m *Manifest) CheckRevocation(e Entry) error {
 }
 
 func Prepare(ctx context.Context, manifestURL, name string) (*Prepared, error) {
-	return prepareWithVerifier(ctx, manifestURL, name, verify.Manifest, download)
+	return PrepareForEngine(ctx, manifestURL, name, updatecheck.Version("dev"))
 }
 
-func prepareWithVerifier(ctx context.Context, manifestURL, name string, verifier manifestVerifier, fetch registryDownload) (*Prepared, error) {
+func PrepareForEngine(ctx context.Context, manifestURL, name, engine string) (*Prepared, error) {
+	return prepareWithVerifier(ctx, manifestURL, name, engine, verify.Manifest, download)
+}
+
+func prepareWithVerifier(ctx context.Context, manifestURL, name, engine string, verifier manifestVerifier, fetch registryDownload) (*Prepared, error) {
 	m, data, envelope, err := fetchWithVerifier(ctx, manifestURL, verifier, fetch)
 	if err != nil {
 		return nil, err
 	}
-	e, err := m.Resolve(name)
+	e, err := m.Resolve(name, engine)
 	if err != nil {
 		return nil, err
 	}
