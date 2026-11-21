@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/atheory-ai/skillex/internal/verify"
 	"golang.org/x/mod/semver"
@@ -16,7 +17,10 @@ import (
 const pendingDir = ".updating"
 const maxJournalSize = 8 << 20
 
-type replacement struct{ From, To Entry }
+type replacement struct {
+	From, To Entry
+	Engine   string `json:",omitempty"` // Used to recheck signed rename declarations during offline recovery.
+}
 type updateJournal struct {
 	ID    string
 	Packs []replacement
@@ -58,15 +62,15 @@ func HasPendingUpdate(root string) (bool, error) {
 	return true, nil
 }
 
-func verifySelected(dir *os.Root, e Entry) error {
+func selectedLock(dir *os.Root, e Entry) (Lock, error) {
 	lock, err := validateChildWithVerifier(dir, identity(e), verify.Manifest)
 	if err != nil {
-		return err
+		return Lock{}, err
 	}
 	if lock.Entry != e {
-		return fmt.Errorf("installed pack changed: %s", identity(e))
+		return Lock{}, fmt.Errorf("installed pack changed: %s", identity(e))
 	}
-	return nil
+	return lock, nil
 }
 
 func validReplacement(p replacement) error {
@@ -76,8 +80,34 @@ func validReplacement(p replacement) error {
 	if err := validateEntry(p.To); err != nil {
 		return err
 	}
-	if p.From.Name != p.To.Name || semver.Compare("v"+p.From.Version, "v"+p.To.Version) >= 0 {
+	if p.From.Name == p.To.Name && semver.Compare("v"+p.From.Version, "v"+p.To.Version) >= 0 {
 		return fmt.Errorf("invalid pack replacement")
+	}
+	return nil
+}
+
+func (p replacement) verifyRename(source, target Lock, check *CatalogCheck) error {
+	if p.From.Name == p.To.Name {
+		return nil
+	}
+	if source.Registry != target.Registry {
+		return fmt.Errorf("registry changed for %s", p.From.Name)
+	}
+	// The caller authenticated both locks. Honor previously observed withdrawals
+	// of the announcing release as well as withdrawals of the successor.
+	var catalog Manifest
+	if err := json.Unmarshal(target.Manifest, &catalog); err != nil {
+		return err
+	}
+	if check != nil && check.catalog.Registry == catalog.Registry {
+		catalog.Revocations = append(catalog.Revocations, check.catalog.Revocations...)
+	}
+	resolved, err := catalog.updateTarget(p.From, p.Engine)
+	if err != nil {
+		return err
+	}
+	if resolved != p.To {
+		return fmt.Errorf("replacement of %s differs from the signed rename", identity(p.From))
 	}
 	return nil
 }
@@ -175,11 +205,25 @@ func stageUpdates(parent, incoming *os.Root, changes []Update, journal *updateJo
 		if err = check.AllowsInstall(change.To.Lock); err != nil {
 			return err
 		}
-		p := replacement{change.From.Entry, change.To.Lock.Entry}
+		p := replacement{From: change.From.Entry, To: change.To.Lock.Entry}
+		if p.From.Name != p.To.Name {
+			p.Engine = change.engine
+			// Another process may have installed a different successor version after preview.
+			entries, err := fs.ReadDir(parent.FS(), ".")
+			if err != nil {
+				return err
+			}
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), p.To.Name+"@") {
+					return fmt.Errorf("successor %s already installed", p.To.Name)
+				}
+			}
+		}
 		if err := validReplacement(p); err != nil {
 			return err
 		}
-		if err := verifySelected(parent, p.From); err != nil {
+		source, err := selectedLock(parent, p.From)
+		if err != nil {
 			return err
 		}
 		for _, target := range []string{identity(p.To), filepath.Join(removalDir, identity(p.To)), filepath.Join(removalDir, identity(p.From))} {
@@ -196,7 +240,11 @@ func stageUpdates(parent, incoming *os.Root, changes []Update, journal *updateJo
 		if err := change.To.installInto(incoming, files); err != nil {
 			return err
 		}
-		if err := verifySelected(incoming, p.To); err != nil {
+		target, err := selectedLock(incoming, p.To)
+		if err != nil {
+			return err
+		}
+		if err := p.verifyRename(source, target, check); err != nil {
 			return err
 		}
 		journal.Packs = append(journal.Packs, p)
@@ -231,10 +279,11 @@ func RecoverUpdate(root, committedID string) error {
 		}
 		seen := map[string]bool{}
 		for _, p := range j.Packs {
-			if seen[p.From.Name] {
+			if seen[p.From.Name] || seen[p.To.Name] {
 				return fmt.Errorf("duplicate pack in update journal")
 			}
 			seen[p.From.Name] = true
+			seen[p.To.Name] = true
 			if err := validReplacement(p); err != nil {
 				return err
 			}
@@ -246,6 +295,22 @@ func RecoverUpdate(root, committedID string) error {
 func finishUpdate(parent *os.Root, j updateJournal, committed bool) error {
 	if err := checkJournalFiles(parent, j); err != nil {
 		return fmt.Errorf("checking recovery files: %w", err)
+	}
+	for _, p := range j.Packs {
+		if p.From.Name == p.To.Name {
+			continue
+		}
+		source, err := journalLock(parent, "old", p.From)
+		if err != nil {
+			return err
+		}
+		target, err := journalLock(parent, "new", p.To)
+		if err != nil {
+			return err
+		}
+		if err := p.verifyRename(source, target, nil); err != nil {
+			return err
+		}
 	}
 	backups, err := parent.OpenRoot(filepath.Join(pendingDir, "old"))
 	if err != nil {
@@ -265,18 +330,32 @@ func finishUpdate(parent *os.Root, j updateJournal, committed bool) error {
 	return parent.RemoveAll(retired)
 }
 
+// A swap or its rollback can leave either authenticated lock staged or live.
+func journalLock(parent *os.Root, stage string, entry Entry) (Lock, error) {
+	name := identity(entry)
+	if _, err := parent.Lstat(name); os.IsNotExist(err) {
+		dir, err := parent.OpenRoot(filepath.Join(pendingDir, stage))
+		if err != nil {
+			return Lock{}, err
+		}
+		defer dir.Close()
+		parent = dir
+	}
+	return selectedLock(parent, entry)
+}
+
 func restoreOrCheck(parent, backups *os.Root, j updateJournal, committed bool) error {
 	for _, p := range j.Packs {
 		from, to := identity(p.From), identity(p.To)
 		if committed {
-			if err := verifySelected(parent, p.To); err != nil {
+			if _, err := selectedLock(parent, p.To); err != nil {
 				return err
 			}
 			continue
 		}
 		_, err := backups.Lstat(from)
 		if os.IsNotExist(err) {
-			if err := verifySelected(parent, p.From); err != nil {
+			if _, err := selectedLock(parent, p.From); err != nil {
 				return err
 			}
 			continue
@@ -284,14 +363,14 @@ func restoreOrCheck(parent, backups *os.Root, j updateJournal, committed bool) e
 		if err != nil {
 			return err
 		}
-		if err := verifySelected(backups, p.From); err != nil {
+		if _, err := selectedLock(backups, p.From); err != nil {
 			return err
 		}
 		if _, err := parent.Lstat(from); !os.IsNotExist(err) {
 			return fmt.Errorf("cannot restore occupied pack location %s", from)
 		}
 		if _, err := parent.Lstat(to); err == nil {
-			if err := verifySelected(parent, p.To); err != nil {
+			if _, err := selectedLock(parent, p.To); err != nil {
 				return err
 			}
 			if err := parent.Rename(to, filepath.Join(pendingDir, "new", to)); err != nil {
@@ -360,7 +439,7 @@ func checkStagedEntries(stage *os.Root, expected map[string]Entry) error {
 		if !ok {
 			return fmt.Errorf("unexpected staged pack %q", child.Name())
 		}
-		if err := verifySelected(stage, entry); err != nil {
+		if _, err := selectedLock(stage, entry); err != nil {
 			return err
 		}
 	}

@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 
 ## [Unreleased]
 
+- `pack update --preview` shows signed pack renames, including publisher changes. Applying a rename requires explicit consent for each old and new name.
+
 ## [0.14.0] - 2026-11-21
 
 - Pack search, installation, updates, and MCP installation proposals select the newest advertised stable pack compatible with the running Skillex version.

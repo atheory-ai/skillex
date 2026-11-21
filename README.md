@@ -1154,6 +1154,32 @@ changes. If the proposal changes, the command prints the current preview and
 exits so it can be reviewed again. When all selected packs are already current,
 the JSON preview contains an empty `updates` array.
 
+### Reviewing a pack rename
+
+A publisher can announce a rename in a later release of the installed pack.
+Skillex checks the selected compatible releases on both sides of the signed
+catalog. The old name must declare `superseded-by`, and that successor must
+declare `replaces` with the old name. Keep the announcing release discoverable
+for as long as older installations should receive the proposal. Skillex proposes one direct replacement
+at a time. Each name has its own version sequence.
+
+Inspect the preview's `from` and `to` entries for the names, handles, versions
+and archive digests. The `replacement` field gives the exact name pair to
+authorize. For example, if a preview proposes moving from `alice.tool` to
+`bob.tool`, apply it with:
+
+```sh
+skillex pack update --replace alice.tool=bob.tool --approve <approval-from-preview>
+```
+
+Use the same pack selector as the preview, and repeat `--replace` for each
+rename in a bulk update. Omitting consent or declining the interactive prompt
+leaves the whole batch pending. A conflicting declaration, incompatible
+successor, or already-installed successor stops the update. Fresh installs
+continue to use the exact name requested.
+
+### Atomic updates and recovery
+
 The whole approved batch shares one index transaction. A download, validation,
 or rebuild failure preserves the previous versions and index. If the process
 stops during a swap, run `skillex pack update --recover` from the project.

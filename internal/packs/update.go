@@ -24,6 +24,7 @@ type activation struct {
 }
 
 type UpdateReview struct {
+	Replacement         string             `json:"replacement,omitempty"`
 	Registry            string             `json:"registry"`
 	From                packregistry.Entry `json:"from"`
 	To                  packregistry.Entry `json:"to"`
@@ -47,6 +48,9 @@ func PreviewUpdates(changes []packregistry.Update) (UpdatePreview, error) {
 		}
 		old := change.From
 		review := UpdateReview{Registry: old.Registry, From: old.Entry, To: next.Pack, Proposed: activation{next.Skills, next.Detectors, next.MCPServers}}
+		if old.Entry.Name != next.Pack.Name {
+			review.Replacement = old.Entry.Name + "=" + next.Pack.Name
+		}
 		previous, err := parseManifest(Filename, old.VerifiedFiles[Filename], old.VerifiedFiles)
 		if err != nil {
 			review.PreviousSchemaError = err.Error()

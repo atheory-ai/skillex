@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/atheory-ai/skillex/internal/config"
@@ -19,11 +20,15 @@ import (
 func newPackUpdateCmd() *cobra.Command {
 	var previewOnly, recoverOnly bool
 	var approval string
+	var replacements []string
 	cmd := &cobra.Command{Use: "update [name[@version]]", Short: "Review and apply verified updates to installed registry packs", Args: cobra.MaximumNArgs(1)}
 	cmd.Flags().BoolVar(&previewOnly, "preview", false, "Show the proposed file and activation changes and an approval token")
 	cmd.Flags().StringVar(&approval, "approve", "", "Apply only the exact proposal identified by this preview token")
+	cmd.Flags().StringArrayVar(&replacements, "replace", nil, "Consent to the exact old-name=new-name replacement in the preview (repeat for each rename)")
 	cmd.Flags().BoolVar(&recoverOnly, "recover", false, "Finish an interrupted update locally")
 	cmd.MarkFlagsMutuallyExclusive("approve", "preview", "recover")
+	cmd.MarkFlagsMutuallyExclusive("replace", "recover")
+	cmd.MarkFlagsMutuallyExclusive("replace", "preview")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		root := repoRoot()
 		dbPath := filepath.Join(root, ".skillex", "index.db")
@@ -83,6 +88,20 @@ func newPackUpdateCmd() *cobra.Command {
 		if previewOnly {
 			return show(cmd.OutOrStdout())
 		}
+		var required []string
+		for _, update := range review.Updates {
+			if update.Replacement != "" {
+				required = append(required, update.Replacement)
+			}
+		}
+		slices.Sort(required)
+		slices.Sort(replacements)
+		if !slices.Equal(replacements, required) {
+			if err := show(cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return fmt.Errorf("replacement consent must match this preview: pass --replace old-name=new-name for each replacement")
+		}
 		approved := approval
 		if approved == "" && len(changes) == 0 {
 			if flagJSON {
@@ -130,6 +149,10 @@ func newPackUpdateCmd() *cobra.Command {
 		}
 		if !flagQuiet {
 			for _, u := range changes {
+				if u.From.Entry.Name != u.To.Lock.Entry.Name {
+					fmt.Fprintf(cmd.OutOrStdout(), "Replaced %s@%s with %s@%s.\n", u.From.Entry.Name, u.From.Entry.Version, u.To.Lock.Entry.Name, u.To.Lock.Entry.Version)
+					continue
+				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s from %s to %s.\n", u.From.Entry.Name, u.From.Entry.Version, u.To.Lock.Entry.Version)
 			}
 		}
