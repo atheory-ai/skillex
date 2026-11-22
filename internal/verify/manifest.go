@@ -16,7 +16,18 @@ import (
 	sigverify "github.com/sigstore/sigstore-go/pkg/verify"
 )
 
-const ManifestIdentity = "https://github.com/atheory-ai/skillex-packs/.github/workflows/release-manifest.yml@refs/heads/main"
+const ManifestIdentity = producerRepo + "/.github/workflows/release-manifest.yml@refs/heads/main"
+
+// The manifest signer and per-registry producer policy are pinned together.
+// Only test binaries substitute trust for synthetic publisher fixtures.
+type registryPolicy struct{ requirePackEvidence bool }
+
+var manifestRegistries = map[string]registryPolicy{PackRegistry: {requirePackEvidence: true}}
+
+// RequiresPackEvidence is consulted after Manifest authenticates the registry.
+func RequiresPackEvidence(registry string) bool {
+	return manifestRegistries[registry].requirePackEvidence
+}
 
 // Trusted material from sigstore-go v1.3.0 examples/trusted-root-public-good.json.
 // Rotation requires an engine release; no network or project trust override.
@@ -31,7 +42,17 @@ func Manifest(artifact, envelope []byte) error {
 	if err != nil {
 		return fmt.Errorf("loading bundled Sigstore root: %w", err)
 	}
-	return manifestWithTrustedRoot(artifact, envelope, trusted)
+	if err := manifestWithTrustedRoot(artifact, envelope, trusted); err != nil {
+		return err
+	}
+	var catalog struct{ Registry string }
+	if err := json.Unmarshal(artifact, &catalog); err != nil {
+		return err
+	}
+	if _, trusted := manifestRegistries[catalog.Registry]; !trusted {
+		return fmt.Errorf("manifest signer is not trusted for registry %q", catalog.Registry)
+	}
+	return nil
 }
 
 func manifestWithTrustedRoot(artifact, envelope []byte, trusted root.TrustedMaterial) error {
@@ -39,20 +60,23 @@ func manifestWithTrustedRoot(artifact, envelope []byte, trusted root.TrustedMate
 	if err != nil {
 		return fmt.Errorf("reading manifest signature bundle: %w", err)
 	}
-	v, err := sigverify.NewVerifier(trusted, sigverify.WithTransparencyLog(1), sigverify.WithIntegratedTimestamps(1), sigverify.WithSignedCertificateTimestamps(1))
-	if err != nil {
-		return err
-	}
-	id, err := sigverify.NewShortCertificateIdentity("https://token.actions.githubusercontent.com", "", ManifestIdentity, "")
-	if err != nil {
-		return err
-	}
 	digest := sha256.Sum256(artifact)
-	_, err = v.Verify(b, sigverify.NewPolicy(sigverify.WithArtifactDigest("sha256", digest[:]), sigverify.WithCertificateIdentity(id)))
-	if err != nil {
+	if _, err := verifyDigest(b, trusted, ManifestIdentity, digest); err != nil {
 		return fmt.Errorf("manifest signature verification failed: %w", err)
 	}
 	return nil
+}
+
+func verifyDigest(b *bundle.Bundle, trusted root.TrustedMaterial, identity string, digest [sha256.Size]byte) (*sigverify.VerificationResult, error) {
+	v, err := sigverify.NewVerifier(trusted, sigverify.WithTransparencyLog(1), sigverify.WithIntegratedTimestamps(1), sigverify.WithSignedCertificateTimestamps(1))
+	if err != nil {
+		return nil, err
+	}
+	id, err := sigverify.NewShortCertificateIdentity("https://token.actions.githubusercontent.com", "", identity, "")
+	if err != nil {
+		return nil, err
+	}
+	return v.Verify(b, sigverify.NewPolicy(sigverify.WithArtifactDigest("sha256", digest[:]), sigverify.WithCertificateIdentity(id)))
 }
 
 func parseBundle(artifact, envelope []byte) (*bundle.Bundle, error) {

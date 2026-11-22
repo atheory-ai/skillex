@@ -17,6 +17,10 @@ func SignFixture(t testing.TB, manifest []byte) ([]byte, []byte) {
 func UseFixtureRoot(t testing.TB, data []byte) {
 	t.Helper()
 	previous := trustedRootJSON
-	t.Cleanup(func() { trustedRootJSON = previous })
+	previousRegistries := manifestRegistries
+	t.Cleanup(func() { trustedRootJSON, manifestRegistries = previous, previousRegistries })
+	// These synthetic catalogs exercise the resolver, updates, and withdrawals
+	// without publishing fixture archives through the real release workflow.
+	manifestRegistries = map[string]registryPolicy{PackRegistry: {}, "fixture": {}}
 	trustedRootJSON = data
 }

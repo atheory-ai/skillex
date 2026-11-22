@@ -89,7 +89,7 @@ func (m *Manifest) Info(url, name string) (*PackInfo, error) {
 		return nil, err
 	}
 	info := &PackInfo{Registry: m.Registry, ManifestURL: url, ManifestBundleURL: url + ".bundle", ManifestSigner: verify.ManifestIdentity}
-	if m.Registry == "atheory-ai/skillex-packs" {
+	if m.Registry == verify.PackRegistry {
 		info.AttestationLookup = make(map[string]string)
 	}
 	revoked := m.revokedVersions()
@@ -102,7 +102,7 @@ func (m *Manifest) Info(url, name string) (*PackInfo, error) {
 		}
 		info.Versions = append(info.Versions, v.metadata)
 		if info.AttestationLookup != nil {
-			info.AttestationLookup[v.Version] = "https://api.github.com/repos/atheory-ai/skillex-packs/attestations/sha256:" + v.Tarball.SHA256
+			info.AttestationLookup[v.Version] = attestationURL(v.Entry)
 		}
 	}
 	return info, nil

@@ -34,12 +34,11 @@ func TestPrepareVerifiesBeforeInstall(t *testing.T) {
 	for _, tc := range []struct {
 		name                      string
 		manifest, bundle, archive []byte
-		valid                     bool
 	}{
-		{"published", manifest, bundle, archive, true},
-		{"manifest tampered", append(append([]byte{}, manifest...), ' '), bundle, archive, false},
-		{"missing signature", manifest, []byte(`{}`), archive, false},
-		{"tarball tampered", manifest, bundle, append(append([]byte{}, archive...), 0), false},
+		{"obsolete release without producer evidence", manifest, bundle, archive},
+		{"manifest tampered", append(append([]byte{}, manifest...), ' '), bundle, archive},
+		{"missing signature", manifest, []byte(`{}`), archive},
+		{"tarball tampered", manifest, bundle, append(append([]byte{}, archive...), 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			old := http.DefaultTransport
@@ -53,12 +52,8 @@ func TestPrepareVerifiesBeforeInstall(t *testing.T) {
 				}
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
 			})
-			prepared, err := PrepareForEngine(context.Background(), DefaultURL, "atheory-ai.javascript.tool.example", "0.13.0")
-			if tc.valid {
-				if err != nil || len(prepared.Files) == 0 {
-					t.Fatalf("published pin verification: %v", err)
-				}
-			} else if err == nil {
+			_, err := PrepareForEngine(context.Background(), DefaultURL, "atheory-ai.javascript.tool.example", "0.13.0")
+			if err == nil {
 				t.Fatal("accepted tampering")
 			}
 		})

@@ -20,6 +20,8 @@ import (
 
 const mirrorURL = "https://mirror.example/registry/manifest.json"
 const samplePack = "atheory-ai.javascript.tool.example"
+const sampleArchive = "https://github.com/atheory-ai/skillex-packs/releases/download/pack/" + samplePack + "/v0.1.1/" + samplePack + "-0.1.1.tar.gz"
+const sampleProvenance = "https://api.github.com/repos/atheory-ai/skillex-packs/attestations/sha256:14536a902ddfbbb42c96c6eba04756a722bcb4900f42b03b7a07aa6307b52f00"
 
 // Re-enter the actual CLI with offline HTTP responses for the signed public
 // release. Only transport is replaced. Signature policy and archive checks run.
@@ -37,8 +39,12 @@ func TestPackFixtureCommand(t *testing.T) {
 			file = "manifest.json"
 		case mirrorURL + ".bundle":
 			file = "manifest.json.bundle"
-		case "https://github.com/atheory-ai/skillex-packs/releases/download/pack/" + samplePack + "/v0.1.1/" + samplePack + "-0.1.1.tar.gz":
+		case sampleArchive:
 			file = "archive.tar.gz"
+		case sampleArchive + ".bundle":
+			file = "archive.tar.gz.bundle"
+		case sampleProvenance + "?predicate_type=provenance":
+			file = "attestations.json"
 		default:
 			return nil, fmt.Errorf("unexpected request %s", r.URL)
 		}
@@ -70,7 +76,7 @@ func TestVerifiedPackDiscoveryAndProposal(t *testing.T) {
 		t.Helper()
 		out, err := command(args...).Output()
 		if err != nil {
-			t.Fatalf("%v: %v", args, err)
+			t.Fatalf("%v: %v: %s", args, err, err.(*exec.ExitError).Stderr)
 		}
 		return bytes.TrimSpace(out)
 	}
@@ -140,6 +146,11 @@ func TestVerifiedPackDiscoveryAndProposal(t *testing.T) {
 
 	archive := load("testdata/pack-registry/archive.tar.gz")
 	store(filepath.Join(fixture, "archive.tar.gz"), archive)
+	store(filepath.Join(fixture, "archive.tar.gz.bundle"), load("testdata/pack-registry/archive.tar.gz.bundle"))
+	if out, err := command("pack", "get", samplePack, "--yes").CombinedOutput(); err == nil || !strings.Contains(string(out), "provenance") {
+		t.Fatalf("install without provenance: %s (%v)", out, err)
+	}
+	store(filepath.Join(fixture, "attestations.json"), load("testdata/pack-registry/attestations.json"))
 	preview := run("pack", "get", samplePack, "--preview", "--json")
 	sameJSON(preview, tool("propose_pack_install", nameArg))
 	var proposal struct {
@@ -170,5 +181,18 @@ func TestVerifiedPackDiscoveryAndProposal(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(project, ".skillex", "packs")); !os.IsNotExist(err) {
 		t.Fatalf("unexpected pack cache after preview: %v", err)
+	}
+
+	store(manifestPath, manifest)
+	run("pack", "get", samplePack, "--yes", "--json")
+	for _, file := range []string{"manifest.json", "manifest.json.bundle", "archive.tar.gz", "archive.tar.gz.bundle", "attestations.json"} {
+		if err := os.Remove(filepath.Join(fixture, file)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("refresh", "--quiet")
+	var installed []packregistry.PackStatus
+	if err := json.Unmarshal(run("pack", "list", "--json"), &installed); err != nil || len(installed) != 1 || installed[0].Version != "0.1.1" || installed[0].Name != samplePack {
+		t.Fatalf("verified pack unavailable offline: %+v (%v)", installed, err)
 	}
 }
