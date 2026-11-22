@@ -141,3 +141,23 @@ Optional for registry pack users: inspect advertised versions with
 stable version whose Skillex range matches the running engine. Other runtime
 ranges are advisory. Existing installations change only when you approve an
 update.
+
+## 0.15.0
+
+Update the CLI or project dependency to 0.15.0 using the existing installation
+method. No project changes required. Confirm the project's `skillex version`
+reports 0.15.0 and reconnect running Skillex MCP sessions.
+
+For fresh registry downloads, the archive's cosign signature bundle and its
+GitHub SLSA build attestation must be available and verifiable for the exact
+pack release tag. This applies to CLI and MCP previews, installs and updates.
+Previously installed packs remain usable offline with their saved signed
+manifest and pinned archive.
+
+Optional for registry pack users: run `skillex pack get <name> --preview`
+to verify a published release. For an installed pack, run
+`skillex pack update --preview --json`. If it proposes a rename, review the
+old and new publisher handles, names and archive pins. To accept, use the same
+selector and pass the preview's approval token with `--approve` and each
+approved name pair with `--replace old-name=new-name`. A fresh install keeps
+the requested name.
